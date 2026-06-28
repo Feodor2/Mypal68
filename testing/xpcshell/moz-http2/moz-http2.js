@@ -707,7 +707,7 @@ function handleRequest(req, res) {
         });
       }
 
-      // for use with test_esni_dns_fetch.js
+      // for use with test_dns_by_type_resolve.js
       if (packet.questions[0].type == "TXT") {
         answers.push({
           name: packet.questions[0].name,
@@ -720,7 +720,7 @@ function handleRequest(req, res) {
             "hex"
           ),
         });
-      } else if (packet.questions[0].type == "HTTPSSVC") {
+      } else if (packet.questions[0].type == "HTTPS") {
         answers.push({
           name: packet.questions[0].name,
           type: packet.questions[0].type,
@@ -730,7 +730,7 @@ function handleRequest(req, res) {
           data: {
             priority: 1,
             name: "some.domain.stuff.",
-            values: [{ key: "esniconfig", value: "testytestystringstring" }],
+            values: [{ key: "echconfig", value: "testytestystringstring" }],
           },
         });
       }
@@ -838,7 +838,7 @@ function handleRequest(req, res) {
             { key: "no-default-alpn" },
             { key: "port", value: 8888 },
             { key: "ipv4hint", value: "1.2.3.4" },
-            { key: "esniconfig", value: "123..." },
+            { key: "echconfig", value: "123..." },
             { key: "ipv6hint", value: "::1" },
             { key: 30, value: "somelargestring" },
           ],
@@ -856,7 +856,7 @@ function handleRequest(req, res) {
           values: [
             { key: "alpn", value: "h2" },
             { key: "ipv4hint", value: ["1.2.3.4", "5.6.7.8"] },
-            { key: "esniconfig", value: "abc..." },
+            { key: "echconfig", value: "abc..." },
             { key: "ipv6hint", value: ["::1", "fe80::794f:6d2c:3d5e:7836"] },
           ],
         },
@@ -873,6 +873,96 @@ function handleRequest(req, res) {
           values: [],
         },
       });
+      let buf = dnsPacket.encode({
+        type: "response",
+        id: packet.id,
+        flags: dnsPacket.RECURSION_DESIRED,
+        questions: packet.questions,
+        answers,
+      });
+
+      res.setHeader("Content-Type", "application/dns-message");
+      res.setHeader("Content-Length", buf.length);
+      res.writeHead(200);
+      res.write(buf);
+      res.end("");
+    });
+    return;
+  } else if (u.pathname === "/httpssvc_as_altsvc") {
+    let payload = Buffer.from("");
+    req.on("data", function receiveData(chunk) {
+      payload = Buffer.concat([payload, chunk]);
+    });
+    req.on("end", function finishedData() {
+      let packet = dnsPacket.decode(payload);
+      let answers = [];
+      if (packet.questions[0].type == "HTTPS") {
+        answers.push({
+          name: packet.questions[0].name,
+          type: packet.questions[0].type,
+          ttl: 55,
+          class: "IN",
+          flush: false,
+          data: {
+            priority: 1,
+            name: "foo.example.com",
+            values: [
+              { key: "alpn", value: "h2" },
+              { key: "port", value: serverPort },
+              { key: 30, value: "somelargestring" },
+            ],
+          },
+        });
+      } else {
+        answers.push({
+          name: packet.questions[0].name,
+          type: "A",
+          ttl: 55,
+          flush: false,
+          data: "127.0.0.1",
+        });
+      }
+
+      let buf = dnsPacket.encode({
+        type: "response",
+        id: packet.id,
+        flags: dnsPacket.RECURSION_DESIRED,
+        questions: packet.questions,
+        answers,
+      });
+
+      res.setHeader("Content-Type", "application/dns-message");
+      res.setHeader("Content-Length", buf.length);
+      res.writeHead(200);
+      res.write(buf);
+      res.end("");
+    });
+    return;
+  } else if (u.pathname === "/httpssvc_use_iphint") {
+    let payload = Buffer.from("");
+    req.on("data", function receiveData(chunk) {
+      payload = Buffer.concat([payload, chunk]);
+    });
+    req.on("end", function finishedData() {
+      let packet = dnsPacket.decode(payload);
+      let answers = [];
+      answers.push({
+        name: packet.questions[0].name,
+        type: "HTTPS",
+        ttl: 55,
+        class: "IN",
+        flush: false,
+        data: {
+          priority: 1,
+          name: ".",
+          values: [
+            { key: "alpn", value: "h2" },
+            { key: "port", value: serverPort },
+            { key: "ipv4hint", value: "127.0.0.1" },
+          ],
+        },
+      });
+
       let buf = dnsPacket.encode({
         type: "response",
         id: packet.id,
@@ -931,8 +1021,8 @@ function handleRequest(req, res) {
     // it's just meant to be this slow - the test doesn't care about the actual response
     return;
   }
-  // for use with test_esni_dns_fetch.js
-  else if (u.pathname === "/esni-dns-push") {
+  // for use with test_dns_by_type_resolve.js
+  else if (u.pathname === "/txt-dns-push") {
     // _esni_push.example.com has A entry 127.0.0.1
     let rContent = Buffer.from(
       "0000010000010001000000000A5F65736E695F70757368076578616D706C6503636F6D0000010001C00C000100010000003700047F000001",

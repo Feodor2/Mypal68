@@ -28,7 +28,6 @@ TASKBAR_AUTOHIDE_REG_PATH = {
 config = {
     "options": [
         "--prefs-root=%(test_path)s/prefs",
-        "--processes=1",
         "--config=%(test_path)s/wptrunner.ini",
         "--ca-cert-path=%(test_path)s/tests/tools/certs/cacert.pem",
         "--host-key-path=%(test_path)s/tests/tools/certs/web-platform.test.key",
@@ -68,7 +67,7 @@ config = {
             'name': 'disable windows security and maintenance notifications',
             'cmd': [
                 'powershell', '-command',
-                '"&{$p=\'HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.SecurityAndMaintenance\';if(!(Test-Path -Path $p)){&New-Item -Path $p -Force}&Set-ItemProperty -Path $p -Name Enabled -Value 0}"'
+                '"&{$p=\'HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.SecurityAndMaintenance\';if(!(Test-Path -Path $p)){&New-Item -Path $p -Force}&Set-ItemProperty -Path $p -Name Enabled -Value 0}"'  # noqa
             ],
             'architectures': ['32bit', '64bit'],
             'halt_on_failure': True,

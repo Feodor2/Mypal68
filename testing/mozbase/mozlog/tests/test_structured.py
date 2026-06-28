@@ -248,10 +248,45 @@ class TestStructuredLog(BaseStructuredTest):
         self.logger.test_end("test1", "OK")
         self.logger.suite_end()
 
+    def test_status_known_intermittent(self):
+        self.logger.suite_start([])
+        self.logger.test_start("test1")
+        self.logger.test_status("test1", "subtest name", "fail",
+                                known_intermittent=["FAIL"])
+        self.assert_log_equals({"action": "test_status",
+                                "subtest": "subtest name",
+                                "status": "FAIL",
+                                "expected": "PASS",
+                                "known_intermittent": ["FAIL"],
+                                "test": "test1"})
+        self.logger.test_end("test1", "OK")
+        self.logger.suite_end()
+
     def test_status_not_started(self):
         self.logger.test_status("test_UNKNOWN", "subtest", "PASS")
         self.assertTrue(self.pop_last_item()["message"].startswith(
             "test_status for test_UNKNOWN logged while not in progress. Logged with data: {"))
+
+    def test_remove_optional_defaults(self):
+        self.logger.suite_start([])
+        self.logger.test_start("test1")
+        self.logger.test_status("test1", "subtest name", "fail",
+                                message=None, stack=None)
+        self.assert_log_equals({"action": "test_status",
+                                "subtest": "subtest name",
+                                "status": "FAIL",
+                                "expected": "PASS",
+                                "test": "test1"})
+        self.logger.test_end("test1", "OK")
+        self.logger.suite_end()
+
+    def test_remove_optional_defaults_raw_log(self):
+        self.logger.log_raw({"action": "suite_start",
+                             "tests": [1],
+                             "name": None})
+        self.assert_log_equals({"action": "suite_start",
+                                "tests": {"default": ["1"]}})
+        self.logger.suite_end()
 
     def test_end(self):
         self.logger.suite_start([])
@@ -570,7 +605,7 @@ class TestTypeConversions(BaseStructuredTest):
         self.assertRaises(TypeError, self.logger.test_status, subtest="subtest2",
                           status="FAIL", expected="PASS")
         self.assertRaises(TypeError, self.logger.test_status, "test1", "subtest1",
-                          "PASS", "FAIL", "message", "stack", {}, "unexpected")
+                          "PASS", "FAIL", "message", "stack", {}, [], "unexpected")
         self.assertRaises(TypeError, self.logger.test_status,
                           "test1", test="test2")
         self.logger.suite_end()
@@ -849,7 +884,7 @@ Unexpected results: 3
 
         self.assertIn("OK", self.loglines)
         self.assertIn("Expected results: 5", self.loglines)
-        self.assertNotIn("Unexpected results: 0", self.loglines)
+        self.assertIn("Unexpected results: 0", self.loglines)
 
     def test_process_start(self):
         self.logger.process_start(1234)

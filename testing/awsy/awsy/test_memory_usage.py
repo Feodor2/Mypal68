@@ -94,15 +94,13 @@ class TestMemoryUsage(AwsyTestCase):
         config = {
             'playback_tool': 'mitmproxy',
             'playback_version': '4.0.4',
-            'playback_binary_manifest': 'mitmproxy-rel-bin-4.0.4-{platform}.manifest',
             'playback_pageset_manifest': tp6_pageset_manifest,
-            'playback_upstream_cert': False,
             'platform': mozinfo.os,
             'obj_path': self._webroot_dir,
             'binary': self._binary,
             'run_local': self._run_local,
             'app': 'firefox',
-            'host': 'localhost',
+            'host': '127.0.0.1',
             'ignore_mitmdump_exit_failure': True,
         }
 
@@ -191,10 +189,10 @@ class TestMemoryUsage(AwsyTestCase):
                 self.logger.info(result)
 
     def test_open_tabs(self):
-        """Marionette test entry that returns an array of checkoint arrays.
+        """Marionette test entry that returns an array of checkpoint arrays.
 
         This will generate a set of checkpoints for each iteration requested.
-        Upon succesful completion the results will be stored in
+        Upon successful completion the results will be stored in
         |self.testvars["results"]| and accessible to the test runner via the
         |testvars| object it passed in.
         """

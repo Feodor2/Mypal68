@@ -360,11 +360,18 @@ class XPCShellRemote(xpcshell.XPCShellTests, object):
         self.env["HOME"] = self.profileDir
         self.env["XPCSHELL_TEST_TEMP_DIR"] = self.remoteTmpDir
         self.env["XPCSHELL_MINIDUMP_DIR"] = self.remoteMinidumpDir
+        self.env["MOZ_ANDROID_DATA_DIR"] = self.remoteBinDir
 
-        self.env["MOZ_ANDROID_CPU_ABI"] = self.device.get_prop("ro.product.cpu.abi")
-
-        if self.options['setup']:
-            self.pushWrapper()
+        # Guard against intermittent failures to retrieve abi property;
+        # without an abi, xpcshell cannot find greprefs.js and crashes.
+        abi = None
+        retries = 0
+        while ((not abi) or len(abi) == 0) and retries < 3:
+            abi = self.device.get_prop("ro.product.cpu.abi")
+            retries += 1
+        if ((not abi) or len(abi) == 0):
+            raise Exception("failed to get ro.product.cpu.abi from device")
+        self.env["MOZ_ANDROID_CPU_ABI"] = abi
 
     def setAppRoot(self):
         # Determine the application root directory associated with the package
@@ -473,9 +480,20 @@ class XPCShellRemote(xpcshell.XPCShellTests, object):
         # The tests directory can be quite large: 5000 files and growing!
         # Sometimes - like on a low-end aws instance running an emulator - the push
         # may exceed the default 5 minute timeout, so we increase it here to 10 minutes.
-        self.initDir(self.remoteScriptsDir)
+        self.device.rm(self.remoteScriptsDir, recursive=True, force=True, timeout=None, root=True)
         self.device.push(self.xpcDir, self.remoteScriptsDir, timeout=600)
         self.device.chmod(self.remoteScriptsDir, recursive=True, root=True)
+
+    def setupSocketConnections(self):
+        # make node host ports visible to device
+        if "MOZHTTP2_PORT" in self.env:
+            port = "tcp:{}".format(self.env["MOZHTTP2_PORT"])
+            self.device.create_socket_connection(ADBDevice.SOCKET_DIRECTON_REVERSE, port, port)
+            self.log.info("reversed MOZHTTP2_PORT connection for port " + port)
+        if "MOZNODE_EXEC_PORT" in self.env:
+            port = "tcp:{}".format(self.env["MOZNODE_EXEC_PORT"])
+            self.device.create_socket_connection(ADBDevice.SOCKET_DIRECTON_REVERSE, port, port)
+            self.log.info("reversed MOZNODE_EXEC_PORT connection for port " + port)
 
     def buildTestList(self, test_tags=None, test_paths=None, verify=False):
         xpcshell.XPCShellTests.buildTestList(
@@ -487,6 +505,13 @@ class XPCShellRemote(xpcshell.XPCShellTests, object):
             abbrevTestDir = os.path.relpath(testdir, self.xpcDir)
             remoteScriptDir = posixpath.join(self.remoteScriptsDir, abbrevTestDir)
             self.pathMapping.append(PathMapping(testdir, remoteScriptDir))
+        # This is not related to building the test list, but since this is called late
+        # in the test suite run, this is a convenient place to finalize preparations;
+        # in particular, these operations cannot be executed much earlier because
+        # self.env may not be finalized.
+        self.setupSocketConnections()
+        if self.options['setup']:
+            self.pushWrapper()
 
 
 def verifyRemoteOptions(parser, options):

@@ -6,7 +6,7 @@ import os
 import pytest
 import sys
 
-from urlparse import parse_qs, urlsplit
+from six.moves.urllib.parse import parse_qs, urlsplit
 
 # need this so raptor imports work both from /raptor and via mach
 here = os.path.abspath(os.path.dirname(__file__))
@@ -59,7 +59,6 @@ VALID_MANIFESTS = [{
     'alert_threshold': 2.0,
     'apps': 'geckoview',
     'browser_cycles': 10,
-    'cold': True,
     'lower_is_better': False,
     'manifest': 'valid_details_2',
     'measure': 'fcp',
@@ -166,8 +165,8 @@ def test_get_raptor_test_list_firefox(create_args):
     test_list = get_raptor_test_list(args, mozinfo.os)
     assert len(test_list) == 4
 
-    subtests = ['raptor-tp6-google-firefox', 'raptor-tp6-amazon-firefox',
-                'raptor-tp6-facebook-firefox', 'raptor-tp6-youtube-firefox']
+    subtests = ['raptor-tp6-unittest-google-firefox', 'raptor-tp6-unittest-amazon-firefox',
+                'raptor-tp6-unittest-facebook-firefox', 'raptor-tp6-unittest-youtube-firefox']
 
     for next_subtest in test_list:
         assert next_subtest['name'] in subtests
@@ -321,7 +320,7 @@ def test_get_raptor_test_list_fenix(create_args):
 
     test_list = get_raptor_test_list(args, mozinfo.os)
     # we don't have any actual fenix tests yet
-    assert len(test_list) == 0
+    assert len(test_list) == 1
 
 
 def test_add_test_url_params_with_single_extra_param():

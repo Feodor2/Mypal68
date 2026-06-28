@@ -45,7 +45,6 @@ config = {
         "cppunittest": "runcppunittests.py",
         "gtest": "rungtests.py",
         "jittest": "jit_test.py",
-        "mozmill": "runtestlist.py",
     },
     "minimum_tests_zip_dirs": [
         "bin/*",
@@ -99,16 +98,6 @@ config = {
             "run_filename": "runtests.py",
             "testsdir": "mochitest"
         },
-        "mozmill": {
-            "options": [
-                "--binary=%(binary_path)s",
-                "--testing-modules-dir=test/modules",
-                "--plugins-path=%(test_plugin_path)s",
-                "--symbols-path=%(symbols_path)s"
-            ],
-            "run_filename": "runtestlist.py",
-            "testsdir": "mozmill"
-        },
         "reftest": {
             "options": [
                 "--appname=%(binary_path)s",
@@ -149,48 +138,50 @@ config = {
     # local mochi suites
     "all_mochitest_suites":
     {
-        "mochitest-plain": [],
+        "mochitest-plain": ["--chunk-by-dir=4"],
         "mochitest-plain-gpu": ["--subsuite=gpu"],
-        "mochitest-plain-chunked": ["--chunk-by-dir=4"],
         "mochitest-media": ["--subsuite=media"],
-        "mochitest-chrome": ["--flavor=chrome", "--disable-e10s"],
+        "mochitest-chrome": ["--flavor=chrome", "--chunk-by-dir=4", "--disable-e10s"],
         "mochitest-chrome-gpu": ["--flavor=chrome", "--subsuite=gpu", "--disable-e10s"],
-        "mochitest-chrome-chunked": ["--flavor=chrome", "--chunk-by-dir=4", "--disable-e10s"],
-        "mochitest-browser-chrome": ["--flavor=browser"],
-        "mochitest-browser-chrome-chunked": ["--flavor=browser", "--chunk-by-runtime"],
+        "mochitest-browser-chrome": ["--flavor=browser", "--chunk-by-runtime"],
         "mochitest-browser-chrome-screenshots": ["--flavor=browser", "--subsuite=screenshots"],
         "mochitest-webgl1-core": ["--subsuite=webgl1-core"],
         "mochitest-webgl1-ext": ["--subsuite=webgl1-ext"],
         "mochitest-webgl2-core": ["--subsuite=webgl2-core"],
         "mochitest-webgl2-ext": ["--subsuite=webgl2-ext"],
         "mochitest-webgl2-deqp": ["--subsuite=webgl2-deqp"],
-        "mochitest-devtools-chrome": ["--flavor=browser", "--subsuite=devtools"],
-        "mochitest-devtools-chrome-chunked": ["--flavor=browser", "--subsuite=devtools", "--chunk-by-runtime"],
+        "mochitest-webgpu": ["--subsuite=webgpu"],
+        "mochitest-devtools-chrome": ["--flavor=browser", "--subsuite=devtools", "--chunk-by-runtime"],
         "mochitest-a11y": ["--flavor=a11y", "--disable-e10s"],
     },
     # local reftest suites
     "all_reftest_suites": {
         "crashtest": {
-            'options': ["--suite=crashtest"],
+            'options': ["--suite=crashtest",
+                        "--topsrcdir=tests/reftest/tests"],
             'tests': ["tests/reftest/tests/testing/crashtest/crashtests.list"]
         },
         "jsreftest": {
-            'options':["--extra-profile-file=tests/jsreftest/tests/user.js",
-                       "--suite=jstestbrowser"],
-            'tests': ["tests/jsreftest/tests/jstests.list"]
+            'options':["--extra-profile-file=tests/jsreftest/tests/js/src/tests/user.js",
+                       "--suite=jstestbrowser",
+                       "--topsrcdir=tests/jsreftest/tests"],
+            'tests': ["tests/jsreftest/tests/js/src/tests/jstests.list"]
         },
         "reftest": {
-            'options': ["--suite=reftest"],
+            'options': ["--suite=reftest",
+                        "--topsrcdir=tests/reftest/tests"],
             'tests': ["tests/reftest/tests/layout/reftests/reftest.list"]
         },
         "reftest-gpu": {
             'options': ["--suite=reftest",
-                        "--setpref=layers.gpu-process.force-enabled=true"],
+                        "--setpref=layers.gpu-process.force-enabled=true",
+                        "--topsrcdir=tests/reftest/tests"],
             'tests': ["tests/reftest/tests/layout/reftests/reftest.list"]
         },
         "reftest-no-accel": {
             "options": ["--suite=reftest",
-                        "--setpref=layers.acceleration.disabled=true"],
+                        "--setpref=layers.acceleration.disabled=true",
+                        "--topsrcdir=tests/reftest/tests"],
             "tests": ["tests/reftest/tests/layout/reftests/reftest.list"]
         },
     },
@@ -238,7 +229,7 @@ config = {
             'name': 'disable windows security and maintenance notifications',
             'cmd': [
                 'powershell', '-command',
-                '"&{$p=\'HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.SecurityAndMaintenance\';if(!(Test-Path -Path $p)){&New-Item -Path $p -Force}&Set-ItemProperty -Path $p -Name Enabled -Value 0}"'
+                '"&{$p=\'HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.SecurityAndMaintenance\';if(!(Test-Path -Path $p)){&New-Item -Path $p -Force}&Set-ItemProperty -Path $p -Name Enabled -Value 0}"'  # noqa
             ],
             'architectures': ['32bit', '64bit'],
             'halt_on_failure': True,
@@ -279,11 +270,8 @@ config = {
     "minidump_save_path": "%(abs_work_dir)s/../minidumps",
     "unstructured_flavors": {"xpcshell": [],
                              "gtest": [],
-                             "mozmill": [],
                              "cppunittest": [],
                              "jittest": [],
                              },
-    "minidump_stackwalk_path": "win32-minidump_stackwalk.exe",
-    "minidump_tooltool_manifest_path": "config/tooltool-manifests/win32/releng.manifest",
     "nodejs_path": NODEJS_PATH,
 }

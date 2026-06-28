@@ -13,12 +13,13 @@ pytestrunner = None
 here = os.path.join(os.path.split(__file__)[0])
 
 from .base import (CallbackHandler,
+                   CrashtestExecutor,
                    RefTestExecutor,
                    RefTestImplementation,
                    TestharnessExecutor,
+                   TimedRunner,
                    WdspecExecutor,
                    WebDriverProtocol,
-                   extra_timeout,
                    strip_server)
 from .protocol import (ActionSequenceProtocolPart,
                        AssertsProtocolPart,
@@ -56,8 +57,8 @@ class MarionetteBaseProtocolPart(BaseProtocolPart):
     def setup(self):
         self.marionette = self.parent.marionette
 
-    def execute_script(self, script, async=False):
-        method = self.marionette.execute_async_script if async else self.marionette.execute_script
+    def execute_script(self, script, asynchronous=False):
+        method = self.marionette.execute_async_script if asynchronous else self.marionette.execute_script
         return method(script, new_sandbox=False, sandbox=None)
 
     def set_timeout(self, timeout):
@@ -76,6 +77,9 @@ class MarionetteBaseProtocolPart(BaseProtocolPart):
 
     def set_window(self, handle):
         self.marionette.switch_to_window(handle)
+
+    def load(self, url):
+        self.marionette.navigate(url)
 
     def wait(self):
         try:
@@ -566,27 +570,14 @@ class MarionetteProtocol(Protocol):
             self.prefs.set(name, value)
 
 
-class ExecuteAsyncScriptRun(object):
-    def __init__(self, logger, func, protocol, url, timeout):
-        self.logger = logger
-        self.result = (None, None)
-        self.protocol = protocol
-        self.func = func
-        self.url = url
-        self.timeout = timeout
-        self.result_flag = threading.Event()
+class ExecuteAsyncScriptRun(TimedRunner):
 
-    def run(self):
-        index = self.url.rfind("/storage/")
-        if index != -1:
-            # Clear storage
-            self.protocol.storage.clear_origin(self.url)
-
+    def set_timeout(self):
         timeout = self.timeout
 
         try:
             if timeout is not None:
-                self.protocol.base.set_timeout(timeout + extra_timeout)
+                self.protocol.base.set_timeout(timeout + self.extra_timeout)
             else:
                 # We just want it to never time out, really, but marionette doesn't
                 # make that possible. It also seems to time out immediately if the
@@ -596,33 +587,13 @@ class ExecuteAsyncScriptRun(object):
             self.logger.error("Lost marionette connection before starting test")
             return Stop
 
-        if timeout is not None:
-            wait_timeout = timeout + 2 * extra_timeout
-        else:
-            wait_timeout = None
+    def before_run(self):
+        index = self.url.rfind("/storage/")
+        if index != -1:
+            # Clear storage
+            self.protocol.storage.clear_origin(self.url)
 
-        timer = threading.Timer(wait_timeout, self._timeout)
-        timer.start()
-
-        self._run()
-
-        self.result_flag.wait()
-        timer.cancel()
-
-        if self.result == (None, None):
-            self.logger.debug("Timed out waiting for a result")
-            self.result = False, ("EXTERNAL-TIMEOUT", None)
-        elif self.result[1] is None:
-            # We didn't get any data back from the test, so check if the
-            # browser is still responsive
-            if self.protocol.is_alive:
-                self.result = False, ("INTERNAL-ERROR", None)
-            else:
-                self.logger.info("Browser not responding, setting status to CRASH")
-                self.result = False, ("CRASH", None)
-        return self.result
-
-    def _run(self):
+    def run_func(self):
         try:
             self.result = True, self.func(self.protocol, self.url, self.timeout)
         except errors.ScriptTimeoutException:
@@ -649,10 +620,6 @@ class ExecuteAsyncScriptRun(object):
             self.result = False, ("INTERNAL-ERROR", message)
         finally:
             self.result_flag.set()
-
-    def _timeout(self):
-        self.result = False, ("EXTERNAL-TIMEOUT", None)
-        self.result_flag.set()
 
 
 class MarionetteTestharnessExecutor(TestharnessExecutor):
@@ -703,7 +670,8 @@ class MarionetteTestharnessExecutor(TestharnessExecutor):
                                               self.do_testharness,
                                               self.protocol,
                                               self.test_url(test),
-                                              timeout).run()
+                                              timeout,
+                                              self.extra_timeout).run()
         # The format of data depends on whether the test ran to completion or not
         # For asserts we only care about the fact that if it didn't complete, the
         # status is in the first field.
@@ -738,7 +706,7 @@ class MarionetteTestharnessExecutor(TestharnessExecutor):
         protocol.marionette.navigate(url)
         while True:
             result = protocol.base.execute_script(
-                self.script_resume % format_map, async=True)
+                self.script_resume % format_map, asynchronous=True)
             if result is None:
                 # This can happen if we get an content process crash
                 return None
@@ -782,8 +750,8 @@ class MarionetteRefTestExecutor(RefTestExecutor):
 
         with open(os.path.join(here, "reftest.js")) as f:
             self.script = f.read()
-        with open(os.path.join(here, "reftest-wait_webdriver.js")) as f:
-            self.wait_script = f.read()
+        with open(os.path.join(here, "test-wait.js")) as f:
+            self.wait_script = f.read() % {"classname": "reftest-wait"}
 
     def setup(self, runner):
         super(self.__class__, self).setup(runner)
@@ -841,7 +809,7 @@ class MarionetteRefTestExecutor(RefTestExecutor):
         return self.convert_result(test, result)
 
     def screenshot(self, test, viewport_size, dpi):
-        # https://github.com/w3c/wptrunner/issues/166
+        # https://github.com/web-platform-tests/wpt/issues/7135
         assert viewport_size is None
         assert dpi is None
 
@@ -853,12 +821,13 @@ class MarionetteRefTestExecutor(RefTestExecutor):
                                      self._screenshot,
                                      self.protocol,
                                      test_url,
-                                     timeout).run()
+                                     timeout,
+                                     self.extra_timeout).run()
 
     def _screenshot(self, protocol, url, timeout):
         protocol.marionette.navigate(url)
 
-        protocol.base.execute_script(self.wait_script, async=True)
+        protocol.base.execute_script(self.wait_script, asynchronous=True)
 
         screenshot = protocol.marionette.screenshot(full=False)
         # strip off the data:img/png, part of the url
@@ -926,10 +895,78 @@ class InternalRefTestImplementation(RefTestImplementation):
             self.logger.warning(traceback.format_exc(e))
 
 
-
 class GeckoDriverProtocol(WebDriverProtocol):
     server_cls = GeckoDriverServer
 
 
 class MarionetteWdspecExecutor(WdspecExecutor):
     protocol_cls = GeckoDriverProtocol
+
+
+class MarionetteCrashtestExecutor(CrashtestExecutor):
+    def __init__(self, browser, server_config, timeout_multiplier=1,
+                 debug_info=None, capabilities=None, debug=False,
+                 ccov=False, **kwargs):
+        """Marionette-based executor for testharness.js tests"""
+        CrashtestExecutor.__init__(self, browser, server_config,
+                                   timeout_multiplier=timeout_multiplier,
+                                   debug_info=debug_info)
+        self.protocol = MarionetteProtocol(self,
+                                           browser,
+                                           capabilities,
+                                           timeout_multiplier,
+                                           kwargs["e10s"],
+                                           ccov)
+
+        self.original_pref_values = {}
+        self.debug = debug
+
+        with open(os.path.join(here, "test-wait.js")) as f:
+            self.wait_script = f.read() % {"classname": "test-wait"}
+
+        if marionette is None:
+            do_delayed_imports()
+
+    def is_alive(self):
+        return self.protocol.is_alive
+
+    def on_environment_change(self, new_environment):
+        self.protocol.on_environment_change(self.last_environment, new_environment)
+
+    def do_test(self, test):
+        timeout = (test.timeout * self.timeout_multiplier if self.debug_info is None
+                   else None)
+
+        success, data = ExecuteAsyncScriptRun(self.logger,
+                                              self.do_crashtest,
+                                              self.protocol,
+                                              self.test_url(test),
+                                              timeout,
+                                              self.extra_timeout).run()
+        status = None
+        if not success:
+            status = data[0]
+
+        extra = None
+        if self.debug and (success or status not in ("CRASH", "INTERNAL-ERROR")):
+            assertion_count = self.protocol.asserts.get()
+            if assertion_count is not None:
+                extra = {"assertion_count": assertion_count}
+
+        if success:
+            return self.convert_result(test, data)
+
+        return (test.result_cls(extra=extra, *data), [])
+
+    def do_crashtest(self, protocol, url, timeout):
+        if self.protocol.coverage.is_enabled:
+            self.protocol.coverage.reset()
+
+        protocol.base.load(url)
+        protocol.base.execute_script(self.wait_script, asynchronous=True)
+
+        if self.protocol.coverage.is_enabled:
+            self.protocol.coverage.dump()
+
+        return {"status": "PASS",
+                "message": None}

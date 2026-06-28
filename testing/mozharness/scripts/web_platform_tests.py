@@ -86,18 +86,18 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
             "default": "1200",
             "help": "Specify headless virtual screen height (default: 1200)."}
          ],
-        [["--single-stylo-traversal"], {
-            "action": "store_true",
-            "dest": "single_stylo_traversal",
-            "default": False,
-            "help": "Forcibly enable single thread traversal in Stylo with STYLO_THREADS=1"}
-         ],
         [["--setpref"], {
             "action": "append",
             "metavar": "PREF=VALUE",
             "dest": "extra_prefs",
             "default": [],
             "help": "Defines an extra user preference."}
+         ],
+        [["--include"], {
+            "action": "store",
+            "dest": "include",
+            "default": None,
+            "help": "URL prefix to include."}
          ],
     ] + copy.deepcopy(testing_config_options) + \
         copy.deepcopy(code_coverage_config_options)
@@ -207,11 +207,6 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
         cmd = [self.query_python_path('python'), '-u']
         cmd.append(os.path.join(dirs["abs_wpttest_dir"], run_file_name))
 
-        # Make sure that the logging directory exists
-        if self.mkdir_p(dirs["abs_blob_upload_dir"]) == -1:
-            self.fatal("Could not create blobber upload directory")
-            # Exit
-
         mozinfo.find_and_update_from_json(dirs['abs_test_install_dir'])
 
         cmd += ["--log-raw=-",
@@ -227,6 +222,12 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
                 "--stackfix-dir=%s" % os.path.join(dirs["abs_test_install_dir"], "bin"),
                 "--run-by-dir=%i" % (3 if not mozinfo.info["asan"] else 0),
                 "--no-pause-after-test"]
+
+        if self.is_android or "wdspec" in test_types:
+            processes = 1
+        else:
+            processes = 2
+        cmd.append("--processes=%s" % processes)
 
         if self.is_android:
             cmd += ["--device-serial=%s" % self.device_serial,
@@ -248,11 +249,6 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
             cmd.append("--disable-e10s")
         if c["enable_webrender"]:
             cmd.append("--enable-webrender")
-
-        if c["single_stylo_traversal"]:
-            cmd.append("--stylo-threads=1")
-        else:
-            cmd.append("--stylo-threads=4")
 
         if not (self.verify_enabled or self.per_test_coverage):
             test_paths = json.loads(os.environ.get('MOZHARNESS_TEST_PATHS', '""'))
@@ -284,6 +280,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
 
         test_type_suite = {
             "testharness": "web-platform-tests",
+            "crashtest": "web-platform-tests-crashtests",
             "reftest": "web-platform-tests-reftests",
             "wdspec": "web-platform-tests-wdspec",
         }
@@ -295,6 +292,8 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
                                           str_format_values=str_format_values))
             cmd.extend(self.query_tests_args(try_tests,
                                              str_format_values=str_format_values))
+        if "include" in c and c["include"]:
+            cmd.append("--include=%s" % c["include"])
 
         return cmd
 
@@ -310,9 +309,13 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
                           "mozpack/*",
                           "mozbuild/*"],
             suite_categories=["web-platform"])
+        dirs = self.query_abs_dirs()
         if self.is_android:
-            dirs = self.query_abs_dirs()
             self.xre_path = self.download_hostutils(dirs['abs_xre_dir'])
+        # Make sure that the logging directory exists
+        if self.mkdir_p(dirs["abs_blob_upload_dir"]) == -1:
+            self.fatal("Could not create blobber upload directory")
+            # Exit
 
     def install(self):
         if self.is_android:
@@ -357,10 +360,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
             env['MOZ_HEADLESS_WIDTH'] = self.config['headless_width']
             env['MOZ_HEADLESS_HEIGHT'] = self.config['headless_height']
 
-        if self.config['single_stylo_traversal']:
-            env['STYLO_THREADS'] = '1'
-        else:
-            env['STYLO_THREADS'] = '4'
+        env['STYLO_THREADS'] = '4'
 
         if self.is_android:
             env['ADB_PATH'] = self.adb_path

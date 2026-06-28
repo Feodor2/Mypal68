@@ -13,7 +13,7 @@
             "tests": ["tart_flex", "ts_paint_flex"]
         },
         "other": {
-            "tests": ["a11yr", "ts_paint", "twinopen", "sessionrestore", "sessionrestore_no_auto_restore", "tabpaint", "cpstartup", "startup_about_home_paint"]
+            "tests": ["a11yr", "ts_paint", "twinopen", "sessionrestore", "sessionrestore_no_auto_restore", "tabpaint", "cpstartup", "startup_about_home_paint", "pdfpaint"]
         },
         "sessionrestore-many-windows": {
             "tests": ["sessionrestore_many_windows"]
@@ -53,9 +53,6 @@
         "perf-reftest-singletons": {
             "tests": ["perf_reftest_singletons"]
         },
-        "speedometer": {
-            "tests": ["speedometer", "stylebench"]
-        },
         "tp5o": {
             "tests": ["tp5o"],
             "pagesets_name": "tp5n.zip"
@@ -70,6 +67,10 @@
         },
         "h1": {
             "tests": ["ts_paint_heavy"]
+        },
+        "realworld-webextensions": {
+            "tests": ["startup_about_home_paint_realworld_webextensions"],
+            "webextensions_zip": "webextensions.zip"
         }
     }
 }

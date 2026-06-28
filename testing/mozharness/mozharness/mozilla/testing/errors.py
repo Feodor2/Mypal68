@@ -32,6 +32,7 @@ TinderBoxPrintRe = {
     "mochitest-webgl2-core_summary": _mochitest_summary,
     "mochitest-webgl2-ext_summary": _mochitest_summary,
     "mochitest-webgl2-deqp_summary": _mochitest_summary,
+    "mochitest-webgpu_summary": _mochitest_summary,
     "mochitest-media_summary": _mochitest_summary,
     "mochitest-plain_summary": _mochitest_summary,
     "mochitest-plain-gpu_summary": _mochitest_summary,
@@ -90,12 +91,6 @@ TinderBoxPrintRe = {
         'pass_group': "OK",
         'fail_group': "FAILED",
         'known_fail_group': None,
-    },
-    "mozmill_summary": {
-        'regex': re.compile(r'''INFO (Passed|Failed|Skipped): (\d+)'''),
-        'pass_group': "Passed",
-        'fail_group': "Failed",
-        'known_fail_group': "Skipped",
     },
     "geckoview_summary": {
         'regex': re.compile(r'''(Passed|Failed): (\d+)'''),

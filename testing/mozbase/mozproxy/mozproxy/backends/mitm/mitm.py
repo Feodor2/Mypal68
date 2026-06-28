@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import socket
+from subprocess import PIPE
 
 import mozinfo
 from mozprocess import ProcessHandler
@@ -19,9 +20,9 @@ from mozproxy.utils import (
     transform_platform,
     tooltool_download,
     download_file_from_url,
+    get_available_port,
     LOG,
 )
-
 
 here = os.path.dirname(__file__)
 # path for mitmproxy certificate, generated auto after mitmdump is started
@@ -53,8 +54,8 @@ POLICIES_CONTENT_ON = """{
     },
     "Proxy": {
       "Mode": "manual",
-      "HTTPProxy": "%(host)s:8080",
-      "SSLProxy": "%(host)s:8080",
+      "HTTPProxy": "%(host)s:%(port)d",
+      "SSLProxy": "%(host)s:%(port)d",
       "Passthrough": "%(host)s",
       "Locked": true
     }
@@ -74,6 +75,8 @@ POLICIES_CONTENT_OFF = """{
 class Mitmproxy(Playback):
     def __init__(self, config):
         self.config = config
+        self.host = "127.0.0.1" if 'localhost' in self.config["host"] else self.config["host"]
+        self.port = None
         self.mitmproxy_proc = None
         self.mitmdump_path = None
         self.browser_path = config.get("binary")
@@ -84,11 +87,13 @@ class Mitmproxy(Playback):
 
         if self.config.get("playback_version") is None:
             LOG.info("mitmproxy was not provided with a 'playback_version' "
-                     "getting 'playback_version' from 'playback_binary_manifest'")
-            if "4.0.4" in self.config["playback_binary_manifest"]:
-                self.config["playback_version"] = "4.0.4"
-            else:
-                self.config["playback_version"] = "2.0.2"
+                     "Using default playback version: 4.0.4")
+            self.config["playback_version"] = "4.0.4"
+
+        if self.config.get("playback_binary_manifest") is None:
+            LOG.info("mitmproxy was not provided with a 'playback_binary_manifest' "
+                     "Using default playback_binary_manifest")
+            self.config["playback_binary_manifest"] = "mitmproxy-rel-bin-4.0.4-{platform}.manifest"
 
         # mozproxy_dir is where we will download all mitmproxy required files
         # when running locally it comes from obj_path via mozharness/mach
@@ -187,6 +192,7 @@ class Mitmproxy(Playback):
         """Startup mitmproxy and replay the specified flow file"""
         if self.mitmproxy_proc is not None:
             raise Exception("Proxy already started.")
+        self.port = get_available_port()
         LOG.info("mitmdump path: %s" % mitmdump_path)
         LOG.info("browser path: %s" % browser_path)
 
@@ -195,14 +201,18 @@ class Mitmproxy(Playback):
         env["PATH"] = os.path.dirname(browser_path) + os.pathsep + env["PATH"]
         command = [mitmdump_path]
 
+        # add proxy host and port options
+        command.extend(["--listen-host", self.host,
+                        "--listen-port", str(self.port)])
+
         if "playback_tool_args" in self.config:
             LOG.info("Staring Proxy using provided command line!")
             command.extend(self.config["playback_tool_args"])
         elif "playback_files" in self.config:
             script = os.path.join(
-                                os.path.dirname(os.path.realpath(__file__)), "scripts",
-                                "alternate-server-replay-{}.py".format(
-                                    self.config["playback_version"]))
+                os.path.dirname(os.path.realpath(__file__)), "scripts",
+                "alternate-server-replay-{}.py".format(
+                    self.config["playback_version"]))
             recording_paths = self.config["playback_files"]
             # this part is platform-specific
             if mozinfo.os == "win":
@@ -210,31 +220,14 @@ class Mitmproxy(Playback):
                 recording_paths = [recording_path.replace("\\", "\\\\\\")
                                    for recording_path in recording_paths]
 
-            if self.config["playback_version"] == "2.0.2":
-                args = [
-                    "--replay-kill-extra",
-                    "-v",
-                    "--script",
-                    '""{} {}""'.format(script, " ".join(recording_paths)),
-                ]
-
-                if not self.config["playback_upstream_cert"]:
-                    LOG.info("No upstream certificate sniffing")
-                    args.insert(0, "--no-upstream-cert")
-                self.playback.config["playback_tool_args"] = args
-            elif self.config["playback_version"] == "4.0.4":
+            if self.config["playback_version"] == "4.0.4":
                 args = [
                     "-v",
-                    "--set",
-                    "websocket=false",
-                    "--set",
-                    "server_replay_files={}".format(",".join(recording_paths)),
-                    "--scripts",
-                    script,
+                    "--set", "upstream_cert=false",
+                    "--set", "websocket=false",
+                    "--set", "server_replay_files={}".format(",".join(recording_paths)),
+                    "--scripts", script,
                 ]
-                if not self.config["playback_upstream_cert"]:
-                    LOG.info("No upstream certificate sniffing")
-                    args = ["--set", "upstream_cert=false"] + args
                 command.extend(args)
             else:
                 raise Exception("Mitmproxy version is unknown!")
@@ -253,11 +246,11 @@ class Mitmproxy(Playback):
         end_time = time.time() + MITMDUMP_COMMAND_TIMEOUT
         ready = False
         while time.time() < end_time:
-            ready = self.check_proxy()
+            ready = self.check_proxy(host=self.host, port=self.port)
             if ready:
                 LOG.info(
-                    "Mitmproxy playback successfully started as pid %d"
-                    % self.mitmproxy_proc.pid
+                    "Mitmproxy playback successfully started on %s:%d as pid %d"
+                    % (self.host, self.port, self.mitmproxy_proc.pid)
                 )
                 return
             time.sleep(0.25)
@@ -291,7 +284,7 @@ class Mitmproxy(Playback):
 
         self.mitmproxy_proc = None
 
-    def check_proxy(self, host="localhost", port=8080):
+    def check_proxy(self, host, port):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             s.connect((host, port))
@@ -303,9 +296,6 @@ class Mitmproxy(Playback):
 
 
 class MitmproxyDesktop(Mitmproxy):
-    def __init__(self, config):
-        Mitmproxy.__init__(self, config)
-
     def setup(self):
         """
         Installs certificates.
@@ -349,8 +339,9 @@ class MitmproxyDesktop(Mitmproxy):
 
         self.write_policies_json(
             self.policies_dir,
-            policies_content=POLICIES_CONTENT_ON
-            % {"cert": self.cert_path, "host": self.config["host"]},
+            policies_content=POLICIES_CONTENT_ON % {"cert": self.cert_path,
+                                                    "host": self.host,
+                                                    "port": self.port},
         )
 
         # cannot continue if failed to add CA cert to Firefox, need to check
@@ -383,8 +374,8 @@ class MitmproxyDesktop(Mitmproxy):
             LOG.info("Firefox policies file contents:")
             LOG.info(contents)
             if (
-                POLICIES_CONTENT_ON
-                % {"cert": self.cert_path, "host": self.config["host"]}
+                    POLICIES_CONTENT_ON
+                    % {"cert": self.cert_path, "host": self.host, "port": self.port}
             ) in contents:
                 LOG.info("Verified mitmproxy CA certificate is installed in Firefox")
             else:
@@ -412,49 +403,28 @@ class MitmproxyDesktop(Mitmproxy):
 
 
 class MitmproxyAndroid(Mitmproxy):
-    def __init__(self, config, android_device):
-        Mitmproxy.__init__(self, config)
-        self.android_device = android_device
-
-    @property
-    def certutil_sleep_seconds(self):
-        """Time to sleep, in seconds, after issuing a `certutil` command."""
-        return 10 if not self.config["run_local"] else 1
-
     def setup(self):
-        """For geckoview we need to install the generated mitmproxy CA cert"""
-        if self.config["app"] in ["fennec", "geckoview", "refbrow", "fenix"]:
-            # install the generated CA certificate into android geckoview
-            self.install_mitmproxy_cert(self.browser_path)
+        self.download_and_install_host_utils()
+        self.install_mitmproxy_cert(self.browser_path)
 
-    def install_mitmproxy_cert(self, browser_path):
-        """Install the CA certificate generated by mitmproxy, into geckoview android
+    def download_and_install_host_utils(self):
+        """
         If running locally:
         1. Will use the `certutil` tool from the local Firefox desktop build
 
         If running in production:
         1. Get the tooltools manifest file for downloading hostutils (contains certutil)
         2. Get the `certutil` tool by downloading hostutils using the tooltool manifest
-
-        Then, both locally and in production:
-        1. Create an NSS certificate database in the geckoview browser profile dir, only
-           if it doesn't already exist. Use this certutil command:
-           `certutil -N -d sql:<path to profile> --empty-password`
-        2. Import the mitmproxy certificate into the database, i.e.:
-           `certutil -A -d sql:<path to profile> -n "some nickname" -t TC,, -a -i <path to CA.pem>`
         """
         if self.config["run_local"]:
             # when running locally, it is found in the Firefox desktop build (..obj../dist/bin)
-            self.certutil = os.path.join(os.environ["MOZ_HOST_BIN"], "certutil")
+            self.certutil_path = os.path.join(os.environ["MOZ_HOST_BIN"], "certutil")
             if not (
-                os.path.isfile(self.certutil) and os.access(self.certutil, os.X_OK)
+                    os.path.isfile(self.certutil_path) and os.access(self.certutil_path, os.X_OK)
             ):
-                LOG.critical(
-                    "Abort: unable to execute certutil: {}".format(self.certutil)
-                )
-                raise
-            self.certutil = os.environ["MOZ_HOST_BIN"]
-            os.environ["LD_LIBRARY_PATH"] = self.certutil
+                raise Exception("Abort: unable to execute certutil: {}".format(self.certutil_path))
+            self.certutil_path = os.environ["MOZ_HOST_BIN"]
+            os.environ["LD_LIBRARY_PATH"] = self.certutil_path
         else:
             # must download certutil inside hostutils via tooltool; use this manifest:
             # mozilla-central/testing/config/tooltool-manifests/linux64/hostutils.manifest
@@ -467,12 +437,10 @@ class MitmproxyAndroid(Mitmproxy):
             # mozilla-central/testing/config/tooltool-manifests/linux64/hostutils.manifest
             # the bitbar container is always linux64
             if os.environ.get("GECKO_HEAD_REPOSITORY", None) is None:
-                LOG.critical("Abort: unable to get GECKO_HEAD_REPOSITORY")
-                raise
+                raise Exception("Abort: unable to get GECKO_HEAD_REPOSITORY")
 
             if os.environ.get("GECKO_HEAD_REV", None) is None:
-                LOG.critical("Abort: unable to get GECKO_HEAD_REV")
-                raise
+                raise Exception("Abort: unable to get GECKO_HEAD_REV")
 
             if os.environ.get("HOSTUTILS_MANIFEST_PATH", None) is not None:
                 manifest_url = os.path.join(
@@ -482,106 +450,105 @@ class MitmproxyAndroid(Mitmproxy):
                     os.environ["HOSTUTILS_MANIFEST_PATH"],
                 )
             else:
-                LOG.critical("Abort: unable to get HOSTUTILS_MANIFEST_PATH!")
-                raise
+                raise Exception("Abort: unable to get HOSTUTILS_MANIFEST_PATH!")
 
             # first need to download the hostutils tooltool manifest file itself
             _dest = os.path.join(self.mozproxy_dir, "hostutils.manifest")
             have_manifest = download_file_from_url(manifest_url, _dest)
             if not have_manifest:
-                LOG.critical("failed to download the hostutils tooltool manifest")
-                raise
+                raise Exception("failed to download the hostutils tooltool manifest")
 
             # now use the manifest to download hostutils so we can get certutil
             tooltool_download(_dest, self.config["run_local"], self.mozproxy_dir)
 
             # the production bitbar container host is always linux
-            self.certutil = glob.glob(
+            self.certutil_path = glob.glob(
                 os.path.join(self.mozproxy_dir, "host-utils*[!z|checksum]")
             )[0]
 
             # must add hostutils/certutil to the path
-            os.environ["LD_LIBRARY_PATH"] = self.certutil
+            os.environ["LD_LIBRARY_PATH"] = self.certutil_path
 
         bin_suffix = mozinfo.info.get("bin_suffix", "")
-        self.certutil = os.path.join(self.certutil, "certutil" + bin_suffix)
-
-        if os.path.isfile(self.certutil):
-            LOG.info("certutil is found at: %s" % self.certutil)
+        self.certutil_path = os.path.join(self.certutil_path, "certutil" + bin_suffix)
+        if os.path.isfile(self.certutil_path):
+            LOG.info("certutil is found at: %s" % self.certutil_path)
         else:
-            LOG.critical("unable to find certutil at %s" % self.certutil)
-            raise
+            raise Exception("unable to find certutil at %s" % self.certutil_path)
+
+    def install_mitmproxy_cert(self, browser_path):
+        """Install the CA certificate generated by mitmproxy, into geckoview android
+
+        1. Create an NSS certificate database in the geckoview browser profile dir, only
+           if it doesn't already exist. Use this certutil command:
+           `certutil -N -d sql:<path to profile> --empty-password`
+        2. Import the mitmproxy certificate into the database, i.e.:
+           `certutil -A -d sql:<path to profile> -n "some nickname" -t TC,, -a -i <path to CA.pem>`
+        """
+
+        cert_db_location = "sql:%s/" % self.config["local_profile_dir"]
+
+        if not self.cert_db_exists(cert_db_location):
+            self.create_cert_db(cert_db_location)
 
         # DEFAULT_CERT_PATH has local path and name of mitmproxy cert i.e.
         # /home/cltbld/.mitmproxy/mitmproxy-ca-cert.cer
-        self.local_cert_path = DEFAULT_CERT_PATH
+        self.import_certificate_in_cert_db(cert_db_location, DEFAULT_CERT_PATH)
 
-        # check if the nss ca cert db already exists in the device profile
-        LOG.info(
-            "checking if the nss cert db already exists in the android browser profile"
-        )
-        param1 = "sql:%s/" % self.config["local_profile_dir"]
-        command = [self.certutil, "-d", param1, "-L"]
+        # cannot continue if failed to add CA cert to Firefox, need to check
+        if not self.is_mitmproxy_cert_installed(cert_db_location):
+            LOG.error("Aborting: failed to install mitmproxy CA cert into Firefox")
+            self.stop_mitmproxy_playback()
+            sys.exit()
 
-        try:
-            subprocess.check_output(command, env=os.environ.copy())
-            LOG.info("the nss cert db already exists")
-            cert_db_exists = True
-        except subprocess.CalledProcessError:
-            # this means the nss cert db doesn't exist yet
-            LOG.info("nss cert db doesn't exist yet")
-            cert_db_exists = False
-
-        # try a forced pause between certutil cmds; possibly reduce later
-        time.sleep(self.certutil_sleep_seconds)
-
-        if not cert_db_exists:
-            # create cert db if it doesn't already exist; it may exist already
-            # if a previous pageload test ran in the same test suite
-            param1 = "sql:%s/" % self.config["local_profile_dir"]
-            command = [self.certutil, "-N", "-v", "-d", param1, "--empty-password"]
-
-            LOG.info("creating nss cert database using command: %s" % " ".join(command))
-            cmd_proc = subprocess.Popen(command, env=os.environ.copy())
-            time.sleep(self.certutil_sleep_seconds)
-            cmd_terminated = cmd_proc.poll()
-            if cmd_terminated is None:  # None value indicates process hasn't terminated
-                LOG.critical("nss cert db creation command failed to complete")
-                raise
-
+    def import_certificate_in_cert_db(self, cert_db_location, local_cert_path):
         # import mitmproxy cert into the db
-        command = [
-            self.certutil,
+        args = [
             "-A",
             "-d",
-            param1,
+            cert_db_location,
             "-n",
             "mitmproxy-cert",
             "-t",
             "TC,,",
             "-a",
             "-i",
-            self.local_cert_path,
+            local_cert_path,
         ]
-
         LOG.info(
-            "importing mitmproxy cert into db using command: %s" % " ".join(command)
+            "importing mitmproxy cert into db using command"
         )
-        cmd_proc = subprocess.Popen(command, env=os.environ.copy())
-        time.sleep(self.certutil_sleep_seconds)
-        cmd_terminated = cmd_proc.poll()
-        if cmd_terminated is None:  # None value indicates process hasn't terminated
-            LOG.critical(
-                "command to import mitmproxy cert into cert db failed to complete"
-            )
+        self.certutil(args)
 
-        # cannot continue if failed to add CA cert to Firefox, need to check
-        if not self.is_mitmproxy_cert_installed():
-            LOG.error("Aborting: failed to install mitmproxy CA cert into Firefox")
-            self.stop_mitmproxy_playback()
-            sys.exit()
+    def create_cert_db(self, cert_db_location):
+        # create cert db if it doesn't already exist; it may exist already
+        # if a previous pageload test ran in the same test suite
+        args = ["-d", cert_db_location, "-N", "--empty-password"]
 
-    def is_mitmproxy_cert_installed(self):
+        LOG.info("creating nss cert database")
+
+        self.certutil(args)
+
+        if not self.cert_db_exists(cert_db_location):
+            raise Exception("nss cert db creation command failed. Cert db not created.")
+
+    def cert_db_exists(self, cert_db_location):
+        # check if the nss ca cert db already exists in the device profile
+        LOG.info(
+            "checking if the nss cert db already exists in the android browser profile"
+        )
+
+        args = ["-d", cert_db_location, "-L"]
+        cert_db_exists = self.certutil(args, raise_exception=False)
+
+        if cert_db_exists:
+            LOG.info("the nss cert db exists")
+            return True
+        else:
+            LOG.info("nss cert db doesn't exist yet.")
+            return False
+
+    def is_mitmproxy_cert_installed(self, cert_db_location):
         """Verify mitmxproy CA cert was added to Firefox on android"""
         LOG.info("verifying that the mitmproxy ca cert is installed on android")
 
@@ -589,23 +556,39 @@ class MitmproxyAndroid(Mitmproxy):
         LOG.info(
             "getting the list of certs in the nss cert db in the android browser profile"
         )
-        param1 = "sql:%s/" % self.config["local_profile_dir"]
-        command = [self.certutil, "-d", param1, "-L"]
+        args = ["-d", cert_db_location, "-L"]
 
-        try:
-            cmd_output = subprocess.check_output(command, env=os.environ.copy())
+        cmd_output = self.certutil(args)
 
-        except subprocess.CalledProcessError:
-            # cmd itself failed
-            LOG.critical("certutil command failed")
-            raise
-
-        # check output from the certutil command, see if 'mitmproxy-cert' is listed
-        time.sleep(self.certutil_sleep_seconds)
-        LOG.info(cmd_output)
         if "mitmproxy-cert" in cmd_output:
             LOG.info(
                 "verfied the mitmproxy-cert is installed in the nss cert db on android"
             )
             return True
         return False
+
+    def certutil(self, args, raise_exception=True):
+        cmd = [self.certutil_path] + list(args)
+        LOG.info("Certutil: Running command: %s" % " ".join(cmd))
+        try:
+            cmd_proc = subprocess.Popen(cmd, stdout=PIPE, stderr=PIPE, env=os.environ.copy())
+
+            cmd_output, errs = cmd_proc.communicate()
+        except subprocess.SubprocessError:
+            LOG.critical("could not run the certutil command")
+            raise
+
+        if cmd_proc.returncode == 0:
+            # Debug purpose only remove if stable
+            LOG.info("Certutil returncode: %s" % cmd_proc.returncode)
+            LOG.info("Certutil output: %s" % cmd_output)
+            return cmd_output
+        else:
+            if raise_exception:
+                LOG.critical("Certutil command failed!!")
+                LOG.info("Certutil returncode: %s" % cmd_proc.returncode)
+                LOG.info("Certutil output: %s" % cmd_output)
+                LOG.info("Certutil error: %s" % errs)
+                raise Exception("Certutil command failed!!")
+            else:
+                return False

@@ -853,9 +853,9 @@ class XPCShellTests(object):
 
     def normalizeTest(self, root, test_object):
         path = test_object.get('file_relpath', test_object['relpath'])
-        if 'dupe-manifest' in test_object and 'ancestor-manifest' in test_object:
+        if 'dupe-manifest' in test_object and 'ancestor_manifest' in test_object:
             test_object['id'] = '%s:%s' % (os.path.basename
-                                           (test_object['ancestor-manifest']), path)
+                                           (test_object['ancestor_manifest']), path)
         else:
             test_object['id'] = path
 
@@ -1197,7 +1197,7 @@ class XPCShellTests(object):
         self.failCount += test.failCount
         self.todoCount += test.todoCount
 
-    def updateMozinfo(self, prefs):
+    def updateMozinfo(self, prefs, options):
         # Handle filenames in mozInfo
         if not isinstance(self.mozInfo, dict):
             mozInfoFile = self.mozInfo
@@ -1219,7 +1219,11 @@ class XPCShellTests(object):
 
         self.mozInfo['serviceworker_e10s'] = prefs.get(
             'dom.serviceWorkers.parent_intercept', False)
+        self.mozInfo['verify'] = options.get('verify', False)
         self.mozInfo['webrender'] = self.enable_webrender
+
+        self.mozInfo['socketprocess_networking'] = prefs.get(
+            'network.http.network_access_on_socket_process.enabled', False)
 
         mozinfo.update(self.mozInfo)
 
@@ -1319,7 +1323,7 @@ class XPCShellTests(object):
 
         self.event = Event()
 
-        if not self.updateMozinfo(prefs):
+        if not self.updateMozinfo(prefs, options):
             return False
 
         self.stack_fixer_function = None
@@ -1631,7 +1635,7 @@ class XPCShellTests(object):
 
         # Clean up any slacker directories that might be lying around
         # Some might fail because of windows taking too long to unlock them.
-        # We don't do anything if this fails because the test slaves will have
+        # We don't do anything if this fails because the test machines will have
         # their $TEMP dirs cleaned up on reboot anyway.
         for directory in self.cleanup_dir_list:
             try:

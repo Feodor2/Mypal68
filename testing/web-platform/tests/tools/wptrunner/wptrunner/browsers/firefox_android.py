@@ -8,9 +8,10 @@ from .base import (get_free_port,
                    cmd_arg,
                    browser_command)
 from ..executors.executormarionette import (MarionetteTestharnessExecutor,  # noqa: F401
-                                            MarionetteRefTestExecutor)  # noqa: F401
+                                            MarionetteRefTestExecutor,  # noqa: F401
+                                            MarionetteCrashtestExecutor)  # noqa: F401
 from .firefox import (get_timeout_multiplier,  # noqa: F401
-                      run_info_browser_version,
+                      run_info_extras as fx_run_info_extras,
                       update_properties,  # noqa: F401
                       executor_kwargs,  # noqa: F401
                       FirefoxBrowser)  # noqa: F401
@@ -20,7 +21,8 @@ __wptrunner__ = {"product": "firefox_android",
                  "check_args": "check_args",
                  "browser": "FirefoxAndroidBrowser",
                  "executor": {"testharness": "MarionetteTestharnessExecutor",
-                              "reftest": "MarionetteRefTestExecutor"},
+                              "reftest": "MarionetteRefTestExecutor",
+                              "crashtest": "MarionetteCrashtestExecutor"},
                  "browser_kwargs": "browser_kwargs",
                  "executor_kwargs": "executor_kwargs",
                  "env_extras": "env_extras",
@@ -65,11 +67,10 @@ def env_extras(**kwargs):
 
 
 def run_info_extras(**kwargs):
+    rv = fx_run_info_extras(**kwargs)
     package = kwargs["package_name"]
-    rv = {"e10s": True if package is not None and "geckoview" in package else False,
-          "headless": False,
-          "sw-e10s": False}
-    rv.update(run_info_browser_version(kwargs["binary"]))
+    rv.update({"e10s": True if package is not None and "geckoview" in package else False,
+               "headless": False})
     return rv
 
 

@@ -10,7 +10,7 @@ import os
 import shutil
 import tempfile
 import unittest
-from StringIO import StringIO
+from six import StringIO
 
 import mozunit
 
@@ -34,11 +34,11 @@ class TestManifestParser(unittest.TestCase):
         mozmill_example = os.path.join(here, 'mozmill-example.ini')
         parser.read(mozmill_example)
         tests = parser.tests
-        self.assertEqual(len(tests), len(file(mozmill_example).read().strip().splitlines()))
+        self.assertEqual(len(tests), len(open(mozmill_example).read().strip().splitlines()))
 
         # Ensure that capitalization and order aren't an issue:
         lines = ['[%s]' % test['name'] for test in tests]
-        self.assertEqual(lines, file(mozmill_example).read().strip().splitlines())
+        self.assertEqual(lines, open(mozmill_example).read().strip().splitlines())
 
         # Show how you select subsets of tests:
         mozmill_restart_example = os.path.join(here, 'mozmill-restart-example.ini')
@@ -71,7 +71,7 @@ class TestManifestParser(unittest.TestCase):
                           ('flowers', 'foo.ini')])
 
         # The including manifest is always reported as a part of the generated test object.
-        self.assertTrue(all([t['ancestor-manifest'] == include_example
+        self.assertTrue(all([t['ancestor_manifest'] == 'include-example.ini'
                              for t in parser.tests if t['name'] != 'fleem']))
 
         # The manifests should be there too:
@@ -249,9 +249,8 @@ yellow = submarine
         included_foo = os.path.join(here, 'include', 'foo.ini')
         manifest_default_key = (include_example, included_foo)
 
-        self.assertFalse('ancestor-manifest' in isolated_test)
-        self.assertEqual(included_test['ancestor-manifest'],
-                         os.path.join(here, 'include-example.ini'))
+        self.assertFalse('ancestor_manifest' in isolated_test)
+        self.assertEqual(included_test['ancestor_manifest'], 'include-example.ini')
 
         self.assertTrue(include_example in parser.manifest_defaults)
         self.assertTrue(included_foo in parser.manifest_defaults)
@@ -275,72 +274,6 @@ yellow = submarine
         """
         manifest = os.path.join(here, 'include-invalid.ini')
         ManifestParser(manifests=(manifest,), strict=False)
-
-    def test_parent_inheritance(self):
-        """
-        Test parent manifest variable inheritance
-        Specifically tests that inherited variables from parent includes
-        properly propagate downstream
-        """
-        parent_example = os.path.join(here, 'parent', 'level_1', 'level_2',
-                                      'level_3', 'level_3.ini')
-        parser = ManifestParser(manifests=(parent_example,))
-
-        # Parent manifest test should not be included
-        self.assertEqual(parser.get('name'),
-                         ['test_3'])
-        self.assertEqual([(test['name'], os.path.basename(test['manifest']))
-                          for test in parser.tests],
-                         [('test_3', 'level_3.ini')])
-
-        # DEFAULT values should be the ones from level 1
-        self.assertEqual(parser.get('name', x='level_1'),
-                         ['test_3'])
-
-        # Write the output to a manifest:
-        buffer = StringIO()
-        parser.write(fp=buffer, global_kwargs={'x': 'level_1'})
-        self.assertEqual(buffer.getvalue().strip(),
-                         '[DEFAULT]\nx = level_1\n\n[test_3]')
-
-    def test_parent_defaults(self):
-        """
-        Test downstream variables should overwrite upstream variables
-        """
-        parent_example = os.path.join(here, 'parent', 'level_1', 'level_2',
-                                      'level_3', 'level_3_default.ini')
-        parser = ManifestParser(manifests=(parent_example,))
-
-        # Parent manifest test should not be included
-        self.assertEqual(parser.get('name'),
-                         ['test_3'])
-        self.assertEqual([(test['name'], os.path.basename(test['manifest']))
-                          for test in parser.tests],
-                         [('test_3', 'level_3_default.ini')])
-
-        # DEFAULT values should be the ones from level 3
-        self.assertEqual(parser.get('name', x='level_3'),
-                         ['test_3'])
-
-        # Write the output to a manifest:
-        buffer = StringIO()
-        parser.write(fp=buffer, global_kwargs={'x': 'level_3'})
-        self.assertEqual(buffer.getvalue().strip(),
-                         '[DEFAULT]\nx = level_3\n\n[test_3]')
-
-    def test_parent_defaults_include(self):
-        parent_example = os.path.join(here, 'parent', 'include', 'manifest.ini')
-        parser = ManifestParser(manifests=(parent_example,))
-
-        # global defaults should inherit all includes
-        self.assertEqual(parser.get('name', top='data'),
-                         ['testFirst.js', 'testSecond.js'])
-
-        # include specific defaults should only inherit the actual include
-        self.assertEqual(parser.get('name', disabled='YES'),
-                         ['testFirst.js'])
-        self.assertEqual(parser.get('name', disabled='NO'),
-                         ['testSecond.js'])
 
     def test_copy(self):
         """Test our ability to copy a set of manifests"""

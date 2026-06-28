@@ -6,3 +6,6 @@ wptserve ~= 1.4.0
 mozdevice >= 3.0.1
 mozproxy >= 1.0
 pyyaml ~= 3.1
+mozpower >= 1.0.0
+mozversion >= 1.0
+../condprofile

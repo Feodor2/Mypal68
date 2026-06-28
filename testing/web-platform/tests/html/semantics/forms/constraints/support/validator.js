@@ -271,6 +271,7 @@ var validator = {
       "minlength",
       "multiple",
       "pattern",
+      "readonly",
       "required",
       "selected",
       "step",

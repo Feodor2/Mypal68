@@ -324,6 +324,7 @@ SET TIMEOUT: resources/test/tests/functional/worker.js
 SET TIMEOUT: resources/test/tests/functional/worker-uncaught-allow.js
 SET TIMEOUT: resources/test/tests/unit/exceptional-cases.html
 SET TIMEOUT: resources/testharness.js
+SET TIMEOUT: dom/abort/crashtests/timeout-close.html
 
 # setTimeout use in reftests
 SET TIMEOUT: acid/acid3/test.html

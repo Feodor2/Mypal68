@@ -50,12 +50,6 @@ class AWSY(TestingMixin, MercurialScript, TooltoolMixin, CodeCoverageMixin):
           "default": [],
           "help": "Extra user prefs.",
           }],
-        [["--single-stylo-traversal"],
-         {"action": "store_true",
-          "dest": "single_stylo_traversal",
-          "default": False,
-          "help": "Set STYLO_THREADS=1.",
-          }],
         [["--enable-webrender"],
          {"action": "store_true",
           "dest": "enable_webrender",
@@ -147,7 +141,7 @@ class AWSY(TestingMixin, MercurialScript, TooltoolMixin, CodeCoverageMixin):
         self.register_virtualenv_module('awsy', self.awsy_path)
 
     def populate_webroot(self):
-        """Populate the production test slaves' webroots"""
+        """Populate the production test machines' webroots"""
         self.info("Downloading pageset with tooltool...")
         manifest_file = os.path.join(self.awsy_path, 'tp5n-pageset.manifest')
         page_load_test_dir = os.path.join(self.webroot_dir, 'page_load_test')
@@ -256,13 +250,7 @@ class AWSY(TestingMixin, MercurialScript, TooltoolMixin, CodeCoverageMixin):
         if self.config['enable_webrender']:
             cmd.append('--enable-webrender')
 
-        if self.config['single_stylo_traversal']:
-            env['STYLO_THREADS'] = '1'
-        else:
-            env['STYLO_THREADS'] = '4'
-
-        # TODO: consider getting rid of this as stylo is enabled by default
-        env['STYLO_FORCE_ENABLED'] = '1'
+        env['STYLO_THREADS'] = '4'
 
         env['MOZ_UPLOAD_DIR'] = dirs['abs_blob_upload_dir']
         if not os.path.isdir(env['MOZ_UPLOAD_DIR']):

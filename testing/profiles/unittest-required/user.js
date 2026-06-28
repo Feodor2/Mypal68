@@ -66,13 +66,9 @@ user_pref("browser.urlbar.speculativeConnect.enabled", false);
 // connections.
 user_pref("browser.urlbar.suggest.searches", false);
 user_pref("browser.urlbar.usepreloadedtopurls.enabled", false);
-// Turn off the location bar search suggestions opt-in.  It interferes with
-// tests that don't expect it to be there.
-user_pref("browser.urlbar.userMadeSearchSuggestionsChoice", true);
 user_pref("browser.warnOnQuit", false);
 // Enable webapps testing mode, which bypasses native installation.
 user_pref("browser.webapps.testing", true);
-user_pref("captivedetect.canonicalURL", "http://{server}/captive-detect/success.txt");
 // Point Firefox Health Report at a local server. We don't care if it actually
 // works. It just can't hit the default production endpoint.
 user_pref("datareporting.healthreport.documentServerURI", "http://{server}/healthreport/");

@@ -2,12 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import ConfigParser
 import argparse
 import hashlib
 import imp
 import os
+import six
 import sys
+
+from six.moves import configparser
 
 from mozboot.util import get_state_dir
 
@@ -91,7 +93,7 @@ def run(src_root, obj_root, logger=None, **kwargs):
     test_paths = wptcommandline.get_test_paths(
         wptcommandline.config.read(config_path))
 
-    for paths in test_paths.itervalues():
+    for paths in six.itervalues(test_paths):
         if "manifest_path" not in paths:
             paths["manifest_path"] = os.path.join(paths["metadata_path"],
                                                   "MANIFEST.json")
@@ -124,7 +126,7 @@ def run(src_root, obj_root, logger=None, **kwargs):
 
 
 def ensure_manifest_directories(logger, test_paths):
-    for paths in test_paths.itervalues():
+    for paths in six.itervalues(test_paths):
         manifest_dir = os.path.dirname(paths["manifest_path"])
         if not os.path.exists(manifest_dir):
             logger.info("Creating directory %s" % manifest_dir)
@@ -136,7 +138,7 @@ def ensure_manifest_directories(logger, test_paths):
 def read_local_config(wpt_dir):
     src_config_path = os.path.join(wpt_dir, "wptrunner.ini")
 
-    parser = ConfigParser.SafeConfigParser()
+    parser = configparser.SafeConfigParser()
     success = parser.read(src_config_path)
     assert src_config_path in success
     return parser
@@ -168,7 +170,7 @@ def generate_config(logger, repo_root, wpt_dir, dest_path, force_rewrite=False):
 
     parser.set('paths', 'prefs', os.path.abspath(os.path.join(wpt_dir, parser.get("paths", "prefs"))))
 
-    with open(dest_config_path, 'wb') as config_file:
+    with open(dest_config_path, 'wt') as config_file:
         parser.write(config_file)
 
     return dest_config_path
@@ -178,7 +180,7 @@ def load_and_update(logger, wpt_dir, test_paths, rebuild=False, config_dir=None,
                     update=True):
     rv = {}
     wptdir_hash = hashlib.sha256(os.path.abspath(wpt_dir)).hexdigest()
-    for url_base, paths in test_paths.iteritems():
+    for url_base, paths in six.iteritems(test_paths):
         manifest_path = paths["manifest_path"]
         this_cache_root = os.path.join(cache_root, wptdir_hash, os.path.dirname(paths["manifest_rel_path"]))
         m = manifest.manifest.load_and_update(paths["tests_path"],

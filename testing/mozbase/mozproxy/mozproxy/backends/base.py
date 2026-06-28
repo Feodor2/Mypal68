@@ -10,9 +10,10 @@ from abc import ABCMeta, abstractmethod
 class Playback(object):
     __metaclass__ = ABCMeta
 
-    def __init__(self, config, android_device=None):
+    def __init__(self, config):
         self.config = config
-        self.android_device = android_device
+        self.host = None
+        self.port = None
 
     @abstractmethod
     def download(self):

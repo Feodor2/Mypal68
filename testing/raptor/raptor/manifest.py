@@ -5,12 +5,13 @@ from __future__ import absolute_import
 
 import json
 import os
-from urlparse import parse_qs, urlsplit, urlunsplit
-from urllib import urlencode, unquote
+
+from six.moves.urllib.parse import parse_qs, urlsplit, urlunsplit, urlencode, unquote
 
 from logger.logger import RaptorLogger
 from manifestparser import TestManifest
-from utils import transform_platform
+from utils import transform_platform, transform_subtest
+from constants.raptor_tests_constants import YOUTUBE_PLAYBACK_MEASURE
 
 here = os.path.abspath(os.path.dirname(__file__))
 raptor_ini = os.path.join(here, 'raptor.ini')
@@ -116,6 +117,11 @@ def validate_test_ini(test_details):
         # convert to a list; and remove any spaces
         test_details['alert_on'] = [_item.strip() for _item in test_details['alert_on'].split(',')]
 
+        # if test is raptor-youtube-playback and measure is empty, use all the tests
+        if test_details.get('measure') is None \
+                and 'youtube-playback' in test_details.get('name', ''):
+            test_details['measure'] = YOUTUBE_PLAYBACK_MEASURE
+
         # now make sure each alert_on value provided is valid
         for alert_on_value in test_details['alert_on']:
             if alert_on_value not in test_details['measure']:
@@ -189,21 +195,19 @@ def write_test_settings_json(args, test_details, oskey):
 
     test_settings['raptor-options']['unit'] = test_details.get("unit", "ms")
 
-    test_settings['raptor-options']['lower_is_better'] = bool_from_str(
-        test_details.get("lower_is_better", "true"))
+    test_settings['raptor-options']['lower_is_better'] = test_details.get("lower_is_better", True)
 
     # support optional subtest unit/lower_is_better fields
     val = test_details.get('subtest_unit', test_settings['raptor-options']['unit'])
     test_settings['raptor-options']['subtest_unit'] = val
-    subtest_lower_is_better = test_details.get('subtest_lower_is_better', None)
+    subtest_lower_is_better = test_details.get('subtest_lower_is_better')
 
     if subtest_lower_is_better is None:
         # default to main test values if not set
         test_settings['raptor-options']['subtest_lower_is_better'] = (
             test_settings['raptor-options']['lower_is_better'])
     else:
-        test_settings['raptor-options']['subtest_lower_is_better'] = bool_from_str(
-            subtest_lower_is_better)
+        test_settings['raptor-options']['subtest_lower_is_better'] = subtest_lower_is_better
 
     if test_details.get("alert_change_type", None) is not None:
         test_settings['raptor-options']['alert_change_type'] = test_details['alert_change_type']
@@ -228,8 +232,8 @@ def write_test_settings_json(args, test_details, oskey):
 
         test_settings['raptor-options'].update({
             'gecko_profile': True,
-            'gecko_profile_entries': int(test_details.get('gecko_profile_entries')),
-            'gecko_profile_interval': int(test_details.get('gecko_profile_interval')),
+            'gecko_profile_entries': int(test_details.get('gecko_profile_entries', 1000000)),
+            'gecko_profile_interval': int(test_details.get('gecko_profile_interval', 1)),
             'gecko_profile_threads': ','.join(set(threads)),
         })
 
@@ -309,6 +313,15 @@ def get_raptor_test_list(args, oskey):
         LOG.info("configuring settings for test %s" % next_test['name'])
         max_page_cycles = next_test.get('page_cycles', 1)
 
+        # if using playback, the playback recording info may need to be transformed
+        if next_test.get('playback') is not None:
+            next_test['playback_pageset_manifest'] = \
+                transform_subtest(next_test['playback_pageset_manifest'],
+                                  next_test['name'])
+            next_test['playback_recordings'] = \
+                transform_subtest(next_test['playback_recordings'],
+                                  next_test['name'])
+
         if args.gecko_profile is True:
             next_test['gecko_profile'] = True
             LOG.info('gecko-profiling enabled')
@@ -357,7 +370,20 @@ def get_raptor_test_list(args, oskey):
             LOG.info("setting browser-cycles to %d as specified on cmd line" % args.browser_cycles)
             next_test['browser_cycles'] = args.browser_cycles
 
-        if next_test.get("cold", "false") == "true":
+        # for browsertime jobs, cold page-load mode is determined by command line argument; for
+        # raptor-webext jobs cold page-load is determined by the 'cold' key in test manifest INI
+        _running_cold = False
+        if args.browsertime is True:
+            if args.cold is True:
+                _running_cold = True
+            else:
+                # running warm page-load so ignore browser-cycles if it was provided (set to 1)
+                next_test['browser_cycles'] = 1
+        else:
+            if next_test.get("cold", "false") == "true":
+                _running_cold = True
+
+        if _running_cold:
             # when running in cold mode, set browser-cycles to the page-cycles value; as we want
             # the browser to restart between page-cycles; and set page-cycles to 1 as we only
             # want 1 single page-load for every browser-cycle
@@ -410,6 +436,9 @@ def get_raptor_test_list(args, oskey):
                 next_test['measure'].remove('hero')
                 # remove the 'hero =' line since no longer measuring hero
                 del next_test['hero']
+
+        if next_test.get('lower_is_better') is not None:
+            next_test['lower_is_better'] = bool_from_str(next_test.get('lower_is_better'))
 
     # write out .json test setting files for the control server to read and send to web ext
     if len(tests_to_run) != 0:

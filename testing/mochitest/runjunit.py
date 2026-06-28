@@ -2,6 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import print_function
+
 import argparse
 import os
 import posixpath
@@ -112,7 +114,7 @@ class JUnitTestRunner(MochitestDesktop):
         self.options.profilePath = self.profile.profile
 
         # Set preferences
-        self.merge_base_profiles(self.options)
+        self.merge_base_profiles(self.options, 'geckoview-junit')
 
         if self.fillCertificateDB(self.options):
             self.log.error("Certificate integration failed")
@@ -292,22 +294,12 @@ class JUnitTestRunner(MochitestDesktop):
         return 1 if self.fail_count else 0
 
     def check_for_crashes(self):
-        logcat = self.device.get_logcat()
-        if logcat:
-            if mozcrash.check_for_java_exception(logcat, self.current_full_name):
-                return True
         symbols_path = self.options.symbolsPath
         try:
             dump_dir = tempfile.mkdtemp()
             remote_dir = posixpath.join(self.remote_profile, 'minidumps')
             if not self.device.is_dir(remote_dir):
-                # If crash reporting is enabled (MOZ_CRASHREPORTER=1), the
-                # minidumps directory is automatically created when the app
-                # (first) starts, so its lack of presence is a hint that
-                # something went wrong.
-                print "Automation Error: No crash directory (%s) found on remote device" % \
-                    remote_dir
-                return True
+                return False
             self.device.pull(remote_dir, dump_dir)
             crashed = mozcrash.log_crashes(self.log, dump_dir, symbols_path,
                                            test=self.current_full_name)

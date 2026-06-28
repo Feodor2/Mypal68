@@ -5,6 +5,8 @@
 profile_files = [
     'base/*',
     'common/*',
+    'geckoview-junit/*',
+    'mochitest/*',
     'perf/*',
     'profiles.json',
     'profileserver/*',

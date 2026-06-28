@@ -23,6 +23,18 @@ promise_test(async (t)=> {
 
 promise_test(async (t)=> {
     const pc1 = new RTCPeerConnection();
+    t.add_cleanup(() => pc1.close());
+
+    pc1.addTransceiver("audio", { direction: "sendonly" });
+    pc1.addTransceiver("video");
+    assert_equals(null, pc1.getTransceivers()[1].receiver.transport);
+
+    pc1.getTransceivers()[1].stop();
+    assert_equals(pc1.getTransceivers()[1].receiver.transport, null);
+}, "A transceiver added and stopped should not crash when getting receiver's transport");
+
+promise_test(async (t)=> {
+    const pc1 = new RTCPeerConnection();
     const pc2 = new RTCPeerConnection();
     t.add_cleanup(() => pc1.close());
     t.add_cleanup(() => pc2.close());
@@ -59,8 +71,8 @@ promise_test(async (t)=> {
 
     const offer = await pc1.createOffer();
 
-    assert_true(offer.sdp.includes("a=inactive"), "The audio m-section should be inactive");
-}, "A stopped sendonly transceiver should generate an inactive m-section in the offer");
+    assert_true(offer.sdp.includes("a=sendonly"), "The audio m-section should be sendonly");
+}, "A stopped sendonly transceiver should generate a sendonly m-section in the offer");
 
 promise_test(async (t)=> {
     const pc1 = new RTCPeerConnection();

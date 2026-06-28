@@ -44,6 +44,7 @@ import bisection
 from ctypes.util import find_library
 from datetime import datetime, timedelta
 from manifestparser import TestManifest
+from manifestparser.util import normsep
 from manifestparser.filters import (
     chunk_by_dir,
     chunk_by_runtime,
@@ -56,10 +57,10 @@ from manifestparser.filters import (
 try:
     from marionette_driver.addons import Addons
     from marionette_harness import Marionette
-except ImportError as e:
+except ImportError as e:  # noqa
     # Defer ImportError until attempt to use Marionette
     def reraise(*args, **kwargs):
-        raise(e)
+        raise(e)  # noqa
     Marionette = reraise
 
 from leaks import ShutdownLeaks, LSANLeaks
@@ -82,6 +83,8 @@ try:
     HAVE_PSUTIL = True
 except ImportError:
     pass
+
+import six
 
 here = os.path.abspath(os.path.dirname(__file__))
 
@@ -202,7 +205,12 @@ class MessageLogger(object):
     def parse_line(self, line):
         """Takes a given line of input (structured or not) and
         returns a list of structured messages"""
-        line = line.rstrip().decode("UTF-8", "replace")
+        if isinstance(line, six.binary_type):
+            # if line is a sequence of bytes, let's decode it
+            line = line.rstrip().decode("UTF-8", "replace")
+        else:
+            # line is in unicode - so let's use it as it is
+            line = line.rstrip()
 
         messages = []
         for fragment in line.split(MessageLogger.DELIMITER):
@@ -459,7 +467,7 @@ class MochitestServer(object):
 
         # When running with an ASan build, our xpcshell server will also be ASan-enabled,
         # thus consuming too much resources when running together with the browser on
-        # the test slaves. Try to limit the amount of resources by disabling certain
+        # the test machines. Try to limit the amount of resources by disabling certain
         # features.
         env["ASAN_OPTIONS"] = "quarantine_size=1:redzone=32:malloc_context_size=5"
 
@@ -778,9 +786,12 @@ def findTestMediaDevices(log):
 
     # Feed it a frame of output so it has something to display
     gst01 = spawn.find_executable("gst-launch-0.1")
+    gst010 = spawn.find_executable("gst-launch-0.10")
     gst10 = spawn.find_executable("gst-launch-1.0")
     if gst01:
         gst = gst01
+    if gst010:
+        gst = gst010
     else:
         gst = gst10
     subprocess.check_call([gst, 'videotestsrc',
@@ -788,22 +799,29 @@ def findTestMediaDevices(log):
                            'v4l2sink', 'device=%s' % device])
     info['video'] = name
 
-    pactl = spawn.find_executable("pactl")
+    if platform.linux_distribution()[0] == 'debian':
+        # Debian 10 doesn't seem to appreciate starting pactl here.
+        # Still WIP (bug 1565332)
+        pass
+    else:
+        # Use pactl to see if the PulseAudio module-null-sink module is loaded.
+        pactl = spawn.find_executable("pactl")
 
-    # Use pactl to see if the PulseAudio module-null-sink module is loaded.
-    def null_sink_loaded():
-        o = subprocess.check_output(
-            [pactl, 'list', 'short', 'modules'])
-        return filter(lambda x: 'module-null-sink' in x, o.splitlines())
+        def null_sink_loaded():
+            o = subprocess.check_output(
+                [pactl, 'list', 'short', 'modules'])
+            return filter(lambda x: 'module-null-sink' in x, o.splitlines())
 
-    if not null_sink_loaded():
-        # Load module-null-sink
-        subprocess.check_call([pactl, 'load-module',
-                               'module-null-sink'])
+        if not null_sink_loaded():
+            subprocess.check_call([
+                pactl,
+                'load-module',
+                'module-null-sink'
+            ])
 
-    if not null_sink_loaded():
-        log.error('Couldn\'t load module-null-sink')
-        return None
+        if not null_sink_loaded():
+            log.error('Couldn\'t load module-null-sink')
+            return None
 
     # Hardcode the name since it's always the same.
     info['audio'] = 'Monitor of Null Output'
@@ -1440,32 +1458,30 @@ toolbar#nav-bar {
 
             # Add chunking filters if specified
             if options.totalChunks:
-                if options.chunkByRuntime:
-                    runtime_file = self.resolve_runtime_file(options)
-                    if not os.path.exists(runtime_file):
-                        self.log.warning("runtime file %s not found; defaulting to chunk-by-dir" %
-                                         runtime_file)
-                        options.chunkByRuntime = None
-                        if options.flavor == 'browser':
-                            # these values match current mozharness configs
-                            options.chunkbyDir = 5
-                        else:
-                            options.chunkByDir = 4
-
                 if options.chunkByDir:
                     filters.append(chunk_by_dir(options.thisChunk,
                                                 options.totalChunks,
                                                 options.chunkByDir))
                 elif options.chunkByRuntime:
+                    if mozinfo.info['os'] == 'android':
+                        platkey = 'android'
+                    elif mozinfo.isWin:
+                        platkey = 'windows'
+                    else:
+                        platkey = 'unix'
+
+                    runtime_file = os.path.join(SCRIPT_DIR, 'runtimes',
+                                                'manifest-runtimes-{}.json'.format(platkey))
+                    if not os.path.exists(runtime_file):
+                        self.log.error("runtime file %s not found!" % runtime_file)
+                        sys.exit(1)
+
                     with open(runtime_file, 'r') as f:
-                        runtime_data = json.loads(f.read())
-                    runtimes = runtime_data['runtimes']
-                    default = runtime_data['excluded_test_average']
+                        runtimes = json.loads(f.read())
                     filters.append(
                         chunk_by_runtime(options.thisChunk,
                                          options.totalChunks,
-                                         runtimes,
-                                         default_runtime=default))
+                                         runtimes))
                 else:
                     filters.append(chunk_by_slice(options.thisChunk,
                                                   options.totalChunks))
@@ -1477,10 +1493,6 @@ toolbar#nav-bar {
                 self.log.error(NO_TESTS_FOUND.format(options.flavor, manifest.fmt_filters()))
 
         paths = []
-
-        # When running mochitest locally the manifest is based on topsrcdir,
-        # but when running in automation it is based on the test root.
-        manifest_root = build_obj.topsrcdir if build_obj else self.testRootAbs
         for test in tests:
             if len(tests) == 1 and 'disabled' in test:
                 del test['disabled']
@@ -1495,18 +1507,23 @@ toolbar#nav-bar {
                     (test['name'], test['manifest']))
                 continue
 
-            manifest_relpath = os.path.relpath(test['manifest'], manifest_root)
-            self.tests_by_manifest[manifest_relpath].append(tp)
-            self.prefs_by_manifest[manifest_relpath].add(test.get('prefs'))
-            self.env_vars_by_manifest[manifest_relpath].add(test.get('environment'))
+            manifest_key = test['manifest_relpath']
+            # Ignore ancestor_manifests that live at the root (e.g, don't have a
+            # path separator).
+            if 'ancestor_manifest' in test and '/' in normsep(test['ancestor_manifest']):
+                manifest_key = '{}:{}'.format(test['ancestor_manifest'], manifest_key)
+
+            self.tests_by_manifest[manifest_key].append(tp)
+            self.prefs_by_manifest[manifest_key].add(test.get('prefs'))
+            self.env_vars_by_manifest[manifest_key].add(test.get('environment'))
 
             for key in ['prefs', 'environment']:
                 if key in test and not options.runByManifest and 'disabled' not in test:
                     self.log.error("parsing {}: runByManifest mode must be enabled to "
-                                   "set the `{}` key".format(manifest_relpath, key))
+                                   "set the `{}` key".format(test['manifest_relpath'], key))
                     sys.exit(1)
 
-            testob = {'path': tp, 'manifest': manifest_relpath}
+            testob = {'path': tp, 'manifest': manifest_key}
             if 'disabled' in test:
                 testob['disabled'] = test['disabled']
             if 'expected' in test:
@@ -1836,7 +1853,7 @@ toolbar#nav-bar {
             'ws': options.sslPort,
         }
 
-    def merge_base_profiles(self, options):
+    def merge_base_profiles(self, options, category):
         """Merge extra profile data from testing/profiles."""
         profile_data_dir = os.path.join(SCRIPT_DIR, 'profile_data')
 
@@ -1849,7 +1866,7 @@ toolbar#nav-bar {
                 profile_data_dir = path
 
         with open(os.path.join(profile_data_dir, 'profiles.json'), 'r') as fh:
-            base_profiles = json.load(fh)['mochitest']
+            base_profiles = json.load(fh)[category]
 
         # values to use when interpolating preferences
         interpolation = {
@@ -1902,7 +1919,7 @@ toolbar#nav-bar {
         # 3) Prefs from --setpref
 
         # Prefs from base profiles
-        self.merge_base_profiles(options)
+        self.merge_base_profiles(options, 'mochitest')
 
         # Hardcoded prefs (TODO move these into a base profile)
         prefs = {
@@ -2346,7 +2363,7 @@ toolbar#nav-bar {
 
         if marionette_exception is not None:
             exc, value, tb = marionette_exception
-            raise exc, value, tb
+            six.reraise(exc, value, tb)
 
         return status, self.lastTestSeen
 
@@ -2359,30 +2376,6 @@ toolbar#nav-bar {
         self.result.clear()
         options.manifestFile = None
         options.profilePath = None
-
-    def resolve_runtime_file(self, options):
-        """
-        Return a path to the runtimes file for a given flavor and
-        subsuite.
-        """
-        template = "mochitest-{suite_slug}{e10s}.runtimes.json"
-        data_dir = os.path.join(SCRIPT_DIR, 'runtimes')
-
-        # Determine the suite slug in the runtimes file name
-        slug = self.normflavor(options.flavor)
-        if slug == 'browser-chrome' and options.subsuite == 'devtools':
-            slug = 'devtools-chrome'
-        elif slug == 'mochitest':
-            slug = 'plain'
-            if options.subsuite:
-                slug = options.subsuite
-
-        e10s = ''
-        if options.e10s:
-            e10s = '-e10s'
-
-        return os.path.join(data_dir, template.format(
-            e10s=e10s, suite_slug=slug))
 
     def normalize_paths(self, paths):
         # Normalize test paths so they are relative to test root
@@ -2573,6 +2566,7 @@ toolbar#nav-bar {
                 'dom.serviceWorkers.parent_intercept', False),
             "socketprocess_e10s": self.extraPrefs.get(
                 'network.process.enabled', False),
+            "verify": options.verify,
             "webrender": options.enable_webrender,
         })
 

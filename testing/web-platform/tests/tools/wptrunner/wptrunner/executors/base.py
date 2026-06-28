@@ -7,6 +7,7 @@ import os
 import threading
 import traceback
 import socket
+import sys
 from six.moves.urllib.parse import urljoin, urlsplit, urlunsplit
 from abc import ABCMeta, abstractmethod
 
@@ -14,10 +15,6 @@ from ..testrunner import Stop
 from .protocol import Protocol, BaseProtocolPart
 
 here = os.path.split(__file__)[0]
-
-# Extra timeout to use after internal test timeout at which the harness
-# should force a timeout
-extra_timeout = 5  # seconds
 
 
 def executor_kwargs(test_type, server_config, cache_manager, run_info_data,
@@ -122,33 +119,95 @@ def pytest_result_converter(self, test, data):
     return (harness_result, subtest_results)
 
 
+def crashtest_result_converter(self, test, result):
+    return test.result_cls(**result), []
+
 class ExecutorException(Exception):
     def __init__(self, status, message):
         self.status = status
         self.message = message
 
 
+class TimedRunner(object):
+    def __init__(self, logger, func, protocol, url, timeout, extra_timeout):
+        self.func = func
+        self.result = None
+        self.protocol = protocol
+        self.url = url
+        self.timeout = timeout
+        self.extra_timeout = extra_timeout
+        self.result_flag = threading.Event()
+
+    def run(self):
+        if self.set_timeout() is Stop:
+            return Stop
+
+        if self.before_run() is Stop:
+            return Stop
+
+        executor = threading.Thread(target=self.run_func)
+        executor.start()
+
+        # Add twice the timeout multiplier since the called function is expected to
+        # wait at least self.timeout + self.extra_timeout and this gives some leeway
+        finished = self.result_flag.wait(self.timeout + 2 * self.extra_timeout)
+        if self.result is None:
+            if finished:
+                # flag is True unless we timeout; this *shouldn't* happen, but
+                # it can if self.run_func fails to set self.result due to raising
+                self.result = False, ("INTERNAL-ERROR", "%s.run_func didn't set a result" %
+                                      self.__class__.__name__)
+            else:
+                message = "Executor hit external timeout (this may indicate a hang)\n"
+                # get a traceback for the current stack of the executor thread
+                message += "".join(traceback.format_stack(sys._current_frames()[executor.ident]))
+                self.result = False, ("EXTERNAL-TIMEOUT", message)
+        elif self.result[1] is None:
+            # We didn't get any data back from the test, so check if the
+            # browser is still responsive
+            if self.protocol.is_alive:
+                self.result = False, ("INTERNAL-ERROR", None)
+            else:
+                self.logger.info("Browser not responding, setting status to CRASH")
+                self.result = False, ("CRASH", None)
+
+        return self.result
+
+    def set_timeout(self):
+        raise NotImplementedError
+
+    def before_run(self):
+        pass
+
+    def run_func(self):
+        raise NotImplementedError
+
+
 class TestExecutor(object):
+    """Abstract Base class for object that actually executes the tests in a
+    specific browser. Typically there will be a different TestExecutor
+    subclass for each test type and method of executing tests.
+
+    :param browser: ExecutorBrowser instance providing properties of the
+                    browser that will be tested.
+    :param server_config: Dictionary of wptserve server configuration of the
+                          form stored in TestEnvironment.config
+    :param timeout_multiplier: Multiplier relative to base timeout to use
+                               when setting test timeout.
+    """
     __metaclass__ = ABCMeta
 
     test_type = None
     convert_result = None
     supports_testdriver = False
     supports_jsshell = False
+    # Extra timeout to use after internal test timeout at which the harness
+    # should force a timeout
+    extra_timeout = 5  # seconds
+
 
     def __init__(self, browser, server_config, timeout_multiplier=1,
                  debug_info=None, **kwargs):
-        """Abstract Base class for object that actually executes the tests in a
-        specific browser. Typically there will be a different TestExecutor
-        subclass for each test type and method of executing tests.
-
-        :param browser: ExecutorBrowser instance providing properties of the
-                        browser that will be tested.
-        :param server_config: Dictionary of wptserve server configuration of the
-                              form stored in TestEnvironment.config
-        :param timeout_multiplier: Multiplier relative to base timeout to use
-                                   when setting test timeout.
-        """
         self.runner = None
         self.browser = browser
         self.server_config = server_config
@@ -254,6 +313,10 @@ class RefTestExecutor(TestExecutor):
                               debug_info=debug_info)
 
         self.screenshot_cache = screenshot_cache
+
+
+class CrashtestExecutor(TestExecutor):
+    convert_result = crashtest_result_converter
 
 
 class RefTestImplementation(object):
@@ -434,7 +497,7 @@ class WdspecExecutor(TestExecutor):
         pass
 
     def do_test(self, test):
-        timeout = test.timeout * self.timeout_multiplier + extra_timeout
+        timeout = test.timeout * self.timeout_multiplier + self.extra_timeout
 
         success, data = WdspecRun(self.do_wdspec,
                                   self.protocol.session_config,
@@ -498,7 +561,10 @@ class WdspecRun(object):
 
 
 class ConnectionlessBaseProtocolPart(BaseProtocolPart):
-    def execute_script(self, script, async=False):
+    def load(self, url):
+        pass
+
+    def execute_script(self, script, asynchronous=False):
         pass
 
     def set_timeout(self, timeout):
@@ -592,7 +658,15 @@ class CallbackHandler(object):
             "click": ClickAction(self.logger, self.protocol),
             "send_keys": SendKeysAction(self.logger, self.protocol),
             "action_sequence": ActionSequenceAction(self.logger, self.protocol),
-            "generate_test_report": GenerateTestReportAction(self.logger, self.protocol)
+            "generate_test_report": GenerateTestReportAction(self.logger, self.protocol),
+            "set_permission": SetPermissionAction(self.logger, self.protocol),
+            "add_virtual_authenticator": AddVirtualAuthenticatorAction(self.logger, self.protocol),
+            "remove_virtual_authenticator": RemoveVirtualAuthenticatorAction(self.logger, self.protocol),
+            "add_credential": AddCredentialAction(self.logger, self.protocol),
+            "get_credentials": GetCredentialsAction(self.logger, self.protocol),
+            "remove_credential": RemoveCredentialAction(self.logger, self.protocol),
+            "remove_all_credentials": RemoveAllCredentialsAction(self.logger, self.protocol),
+            "set_user_verified": SetUserVerifiedAction(self.logger, self.protocol),
         }
 
     def __call__(self, result):
@@ -687,3 +761,94 @@ class GenerateTestReportAction(object):
         message = payload["message"]
         self.logger.debug("Generating test report: %s" % message)
         self.protocol.generate_test_report.generate_test_report(message)
+
+class SetPermissionAction(object):
+    def __init__(self, logger, protocol):
+        self.logger = logger
+        self.protocol = protocol
+
+    def __call__(self, payload):
+        permission_params = payload["permission_params"]
+        descriptor = permission_params["descriptor"]
+        name = descriptor["name"]
+        state = permission_params["state"]
+        one_realm = permission_params.get("oneRealm", False)
+        self.logger.debug("Setting permission %s to %s, oneRealm=%s" % (name, state, one_realm))
+        self.protocol.set_permission.set_permission(name, state, one_realm)
+
+class AddVirtualAuthenticatorAction(object):
+    def __init__(self, logger, protocol):
+        self.logger = logger
+        self.protocol = protocol
+
+    def __call__(self, payload):
+        self.logger.debug("Adding virtual authenticator")
+        config = payload["config"]
+        authenticator_id = self.protocol.virtual_authenticator.add_virtual_authenticator(config)
+        self.logger.debug("Authenticator created with ID %s" % authenticator_id)
+        return authenticator_id
+
+class RemoveVirtualAuthenticatorAction(object):
+    def __init__(self, logger, protocol):
+        self.logger = logger
+        self.protocol = protocol
+
+    def __call__(self, payload):
+        authenticator_id = payload["authenticator_id"]
+        self.logger.debug("Removing virtual authenticator %s" % authenticator_id)
+        return self.protocol.virtual_authenticator.remove_virtual_authenticator(authenticator_id)
+
+
+class AddCredentialAction(object):
+    def __init__(self, logger, protocol):
+        self.logger = logger
+        self.protocol = protocol
+
+    def __call__(self, payload):
+        authenticator_id = payload["authenticator_id"]
+        credential = payload["credential"]
+        self.logger.debug("Adding credential to virtual authenticator %s " % authenticator_id)
+        return self.protocol.virtual_authenticator.add_credential(authenticator_id, credential)
+
+class GetCredentialsAction(object):
+    def __init__(self, logger, protocol):
+        self.logger = logger
+        self.protocol = protocol
+
+    def __call__(self, payload):
+        authenticator_id = payload["authenticator_id"]
+        self.logger.debug("Getting credentials from virtual authenticator %s " % authenticator_id)
+        return self.protocol.virtual_authenticator.get_credentials(authenticator_id)
+
+class RemoveCredentialAction(object):
+    def __init__(self, logger, protocol):
+        self.logger = logger
+        self.protocol = protocol
+
+    def __call__(self, payload):
+        authenticator_id = payload["authenticator_id"]
+        credential_id = payload["credential_id"]
+        self.logger.debug("Removing credential %s from authenticator %s" % (credential_id, authenticator_id))
+        return self.protocol.virtual_authenticator.remove_credential(authenticator_id, credential_id)
+
+class RemoveAllCredentialsAction(object):
+    def __init__(self, logger, protocol):
+        self.logger = logger
+        self.protocol = protocol
+
+    def __call__(self, payload):
+        authenticator_id = payload["authenticator_id"]
+        self.logger.debug("Removing all credentials from authenticator %s" % authenticator_id)
+        return self.protocol.virtual_authenticator.remove_all_credentials(authenticator_id)
+
+class SetUserVerifiedAction(object):
+    def __init__(self, logger, protocol):
+        self.logger = logger
+        self.protocol = protocol
+
+    def __call__(self, payload):
+        authenticator_id = payload["authenticator_id"]
+        uv = payload["uv"]
+        self.logger.debug(
+            "Setting user verified flag on authenticator %s to %s" % (authenticator_id, uv["isUserVerified"]))
+        return self.protocol.virtual_authenticator.set_user_verified(authenticator_id, uv)

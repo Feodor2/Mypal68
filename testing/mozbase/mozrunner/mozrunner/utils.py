@@ -175,7 +175,7 @@ def test_environment(xrePath, env=None, crashreporter=True, debugger=False,
 
             # Only 4 GB RAM or less available? Use custom ASan options to reduce
             # the amount of resources required to do the tests. Standard options
-            # will otherwise lead to OOM conditions on the current test slaves.
+            # will otherwise lead to OOM conditions on the current test machines.
             message = "INFO | runtests.py | ASan running in %s configuration"
             asanOptions = []
             if totalMemory <= 1024 * 1024 * 4:
@@ -253,22 +253,10 @@ def get_stack_fixer_function(utilityPath, symbolsPath):
         def stack_fixer_function(line):
             return stack_fixer_module.fixSymbols(line, symbolsPath)
 
-    elif mozinfo.isMac:
-        # Run each line through fix_macosx_stack.py (uses atos).
-        # This method is preferred for developer machines, so we don't
-        # have to run "make buildsymbols".
-        stack_fixer_module = import_stack_fixer_module(
-            'fix_macosx_stack')
-
-        def stack_fixer_function(line):
-            return stack_fixer_module.fixSymbols(line)
-
-    elif mozinfo.isLinux:
-        # Run each line through fix_linux_stack.py (uses addr2line).
-        # This method is preferred for developer machines, so we don't
-        # have to run "make buildsymbols".
-        stack_fixer_module = import_stack_fixer_module(
-            'fix_linux_stack')
+    elif mozinfo.isLinux or mozinfo.isMac or mozinfo.isWin:
+        # Run each line through fix_stacks.py. This method is preferred for
+        # developer machines, so we don't have to run "mach buildsymbols".
+        stack_fixer_module = import_stack_fixer_module('fix_stacks')
 
         def stack_fixer_function(line):
             return stack_fixer_module.fixSymbols(line)

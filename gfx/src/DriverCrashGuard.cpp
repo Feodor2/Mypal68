@@ -14,7 +14,7 @@
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/dom/ContentChild.h"
 
@@ -90,7 +90,7 @@ void DriverCrashGuard::Initialize() {
     return;
   }
 
-  mGfxInfo = services::GetGfxInfo();
+  mGfxInfo = components::GfxInfo::Service();
 
   if (XRE_IsContentProcess()) {
     // Ask the parent whether or not activating the guard is okay. The parent

@@ -5,7 +5,7 @@
 #ifndef GFX_VR_THREAD_H
 #define GFX_VR_THREAD_H
 
-#include "ThreadSafeRefcountingWithMainThreadDestruction.h"
+#include "nsISupportsImpl.h"
 #include "base/thread.h"  // for Thread
 
 namespace mozilla {

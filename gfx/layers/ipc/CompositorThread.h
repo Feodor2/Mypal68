@@ -9,13 +9,12 @@
 #include "base/thread.h"           // for Thread
 #include "base/message_loop.h"
 #include "nsISupportsImpl.h"
-#include "ThreadSafeRefcountingWithMainThreadDestruction.h"
 
 namespace mozilla {
 namespace layers {
 
 class CompositorThreadHolder final {
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_MAIN_THREAD_DESTRUCTION(
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING_WITH_DELETE_ON_MAIN_THREAD(
       CompositorThreadHolder)
 
  public:

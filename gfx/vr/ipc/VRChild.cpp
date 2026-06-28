@@ -59,7 +59,11 @@ class OpenVRControllerManifestManager {
 
   nsCString mAction;
   nsTHashMap<nsUint32HashKey, nsCString> mManifest;
-  DISALLOW_COPY_AND_ASSIGN(OpenVRControllerManifestManager);
+  OpenVRControllerManifestManager(const OpenVRControllerManifestManager&) =
+      delete;
+
+  const OpenVRControllerManifestManager& operator=(
+      const OpenVRControllerManifestManager&) = delete;
 };
 
 StaticRefPtr<OpenVRControllerManifestManager> sOpenVRControllerManifestManager;

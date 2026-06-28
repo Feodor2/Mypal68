@@ -70,7 +70,6 @@
 #endif
 #include "mozilla/media/MediaSystemResourceService.h"  // for MediaSystemResourceService
 #include "mozilla/mozalloc.h"                          // for operator new, etc
-#include "mozilla/Telemetry.h"
 #ifdef MOZ_WIDGET_GTK
 #  include "basic/X11BasicCompositor.h"  // for X11BasicCompositor
 #endif
@@ -93,7 +92,6 @@
 #include "mozilla/Hal.h"
 #include "mozilla/HalTypes.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Telemetry.h"
 #ifdef MOZ_GECKO_PROFILER
 #  include "ProfilerMarkerPayload.h"
 #endif
@@ -1074,9 +1072,6 @@ void CompositorBridgeParent::CompositeToTarget(VsyncId aId, DrawTarget* aTarget,
 
   // TODO(bug 1328602) Need an equivalent that works with the rende thread.
   mLayerManager->SetCompositionTime(TimeStamp());
-
-  mozilla::Telemetry::AccumulateTimeDelta(mozilla::Telemetry::COMPOSITE_TIME,
-                                          start);
 }
 
 mozilla::ipc::IPCResult CompositorBridgeParent::RecvRemotePluginsReady() {
@@ -1555,18 +1550,6 @@ RefPtr<Compositor> CompositorBridgeParent::NewCompositor(
         failureReason = "SUCCESS";
       }
 
-      // should only report success here
-      if (aBackendHints[i] == LayersBackend::LAYERS_OPENGL) {
-        Telemetry::Accumulate(Telemetry::OPENGL_COMPOSITING_FAILURE_ID,
-                              failureReason);
-      }
-#ifdef XP_WIN
-      else if (aBackendHints[i] == LayersBackend::LAYERS_D3D11) {
-        Telemetry::Accumulate(Telemetry::D3D11_COMPOSITING_FAILURE_ID,
-                              failureReason);
-      }
-#endif
-
       return compositor;
     }
 
@@ -1574,8 +1557,6 @@ RefPtr<Compositor> CompositorBridgeParent::NewCompositor(
     if (aBackendHints[i] == LayersBackend::LAYERS_OPENGL) {
       gfxCriticalNote << "[OPENGL] Failed to init compositor with reason: "
                       << failureReason.get();
-      Telemetry::Accumulate(Telemetry::OPENGL_COMPOSITING_FAILURE_ID,
-                            failureReason);
     }
 #ifdef XP_WIN
     else if (aBackendHints[i] == LayersBackend::LAYERS_D3D9) {
@@ -1584,8 +1565,6 @@ RefPtr<Compositor> CompositorBridgeParent::NewCompositor(
     } else if (aBackendHints[i] == LayersBackend::LAYERS_D3D11) {
       gfxCriticalNote << "[D3D11] Failed to init compositor with reason: "
                       << failureReason.get();
-      Telemetry::Accumulate(Telemetry::D3D11_COMPOSITING_FAILURE_ID,
-                            failureReason);
     }
 #endif
   }

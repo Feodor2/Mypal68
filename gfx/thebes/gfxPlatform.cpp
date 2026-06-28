@@ -34,7 +34,7 @@
 #include "mozilla/IntegerPrintfMacros.h"
 
 #include "mozilla/Logging.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsCSSProps.h"
 
@@ -946,7 +946,7 @@ void gfxPlatform::Init() {
    * incase that code crashes. See bug #591561. */
   nsCOMPtr<nsIGfxInfo> gfxInfo;
   /* this currently will only succeed on Windows */
-  gfxInfo = services::GetGfxInfo();
+  gfxInfo = components::GfxInfo::Service();
 
   if (XRE_IsParentProcess()) {
     // Some gfxVars must be initialized prior gPlatform for coherent results.
@@ -1099,7 +1099,7 @@ void gfxPlatform::Init() {
 }
 
 static bool IsFeatureSupported(long aFeature, bool aDefault) {
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
   nsCString blockId;
   int32_t status;
   if (!NS_SUCCEEDED(gfxInfo->GetFeatureStatus(aFeature, blockId, &status))) {
@@ -2396,7 +2396,7 @@ void gfxPlatform::InitAcceleration() {
   // explicit.
   MOZ_ASSERT(NS_IsMainThread(), "can only initialize prefs on the main thread");
 
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
   nsCString discardFailureId;
   int32_t status;
 
@@ -3384,7 +3384,6 @@ uint32_t gfxPlatform::TargetFrameRate() {
 
 /* static */
 bool gfxPlatform::UseDesktopZoomingScrollbars() {
-  // bug 1657822 to enable this by default
   return StaticPrefs::apz_allow_zooming() &&
          !StaticPrefs::apz_force_disable_desktop_zooming_scrollbars();
 }
@@ -3581,7 +3580,7 @@ void gfxPlatform::InitOpenGLConfig() {
 
 bool gfxPlatform::IsGfxInfoStatusOkay(int32_t aFeature, nsCString* aOutMessage,
                                       nsCString& aFailureId) {
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
   if (!gfxInfo) {
     return true;
   }

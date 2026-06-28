@@ -189,10 +189,10 @@ struct ParamTraits<mozilla::layers::FrameMetrics>
     WriteParam(aMsg, aParam.mScrollOffset);
     WriteParam(aMsg, aParam.mZoom);
     WriteParam(aMsg, aParam.mScrollGeneration);
-    WriteParam(aMsg, aParam.mRootCompositionSize);
+    WriteParam(aMsg, aParam.mBoundingCompositionSize);
     WriteParam(aMsg, aParam.mPresShellId);
     WriteParam(aMsg, aParam.mLayoutViewport);
-    WriteParam(aMsg, aParam.mExtraResolution);
+    WriteParam(aMsg, aParam.mTransformToAncestorScale);
     WriteParam(aMsg, aParam.mPaintRequestTime);
     WriteParam(aMsg, aParam.mVisualDestination);
     WriteParam(aMsg, aParam.mVisualScrollUpdateType);
@@ -214,10 +214,10 @@ struct ParamTraits<mozilla::layers::FrameMetrics>
             ReadParam(aMsg, aIter, &aResult->mScrollOffset) &&
             ReadParam(aMsg, aIter, &aResult->mZoom) &&
             ReadParam(aMsg, aIter, &aResult->mScrollGeneration) &&
-            ReadParam(aMsg, aIter, &aResult->mRootCompositionSize) &&
+            ReadParam(aMsg, aIter, &aResult->mBoundingCompositionSize) &&
             ReadParam(aMsg, aIter, &aResult->mPresShellId) &&
             ReadParam(aMsg, aIter, &aResult->mLayoutViewport) &&
-            ReadParam(aMsg, aIter, &aResult->mExtraResolution) &&
+            ReadParam(aMsg, aIter, &aResult->mTransformToAncestorScale) &&
             ReadParam(aMsg, aIter, &aResult->mPaintRequestTime) &&
             ReadParam(aMsg, aIter, &aResult->mVisualDestination) &&
             ReadParam(aMsg, aIter, &aResult->mVisualScrollUpdateType) &&
@@ -229,6 +229,12 @@ struct ParamTraits<mozilla::layers::FrameMetrics>
                                 &paramType::SetHasNonZeroDisplayPortMargins));
   }
 };
+
+template <>
+struct ParamTraits<mozilla::APZScrollAnimationType>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::APZScrollAnimationType, mozilla::APZScrollAnimationType::No,
+          mozilla::APZScrollAnimationType::TriggeredByUserInput> {};
 
 template <>
 struct ParamTraits<mozilla::layers::RepaintRequest>
@@ -247,11 +253,11 @@ struct ParamTraits<mozilla::layers::RepaintRequest>
     WriteParam(aMsg, aParam.mDisplayPortMargins);
     WriteParam(aMsg, aParam.mPresShellId);
     WriteParam(aMsg, aParam.mLayoutViewport);
-    WriteParam(aMsg, aParam.mExtraResolution);
+    WriteParam(aMsg, aParam.mTransformToAncestorScale);
     WriteParam(aMsg, aParam.mPaintRequestTime);
     WriteParam(aMsg, aParam.mScrollUpdateType);
+    WriteParam(aMsg, aParam.mScrollAnimationType);
     WriteParam(aMsg, aParam.mIsRootContent);
-    WriteParam(aMsg, aParam.mIsAnimationInProgress);
     WriteParam(aMsg, aParam.mIsScrollInfoLayer);
   }
 
@@ -268,13 +274,12 @@ struct ParamTraits<mozilla::layers::RepaintRequest>
             ReadParam(aMsg, aIter, &aResult->mDisplayPortMargins) &&
             ReadParam(aMsg, aIter, &aResult->mPresShellId) &&
             ReadParam(aMsg, aIter, &aResult->mLayoutViewport) &&
-            ReadParam(aMsg, aIter, &aResult->mExtraResolution) &&
+            ReadParam(aMsg, aIter, &aResult->mTransformToAncestorScale) &&
             ReadParam(aMsg, aIter, &aResult->mPaintRequestTime) &&
             ReadParam(aMsg, aIter, &aResult->mScrollUpdateType) &&
+            ReadParam(aMsg, aIter, &aResult->mScrollAnimationType) &&
             ReadBoolForBitfield(aMsg, aIter, aResult,
                                 &paramType::SetIsRootContent) &&
-            ReadBoolForBitfield(aMsg, aIter, aResult,
-                                &paramType::SetIsAnimationInProgress) &&
             ReadBoolForBitfield(aMsg, aIter, aResult,
                                 &paramType::SetIsScrollInfoLayer));
   }

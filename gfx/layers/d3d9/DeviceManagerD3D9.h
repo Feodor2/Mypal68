@@ -10,7 +10,6 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/layers/CompositorTypes.h"
-#include "nsAutoPtr.h"
 #include "nsTArray.h"
 
 namespace mozilla {

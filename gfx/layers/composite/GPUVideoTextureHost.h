@@ -42,6 +42,8 @@ class GPUVideoTextureHost : public TextureHost {
 
   gfx::IntSize GetSize() const override;
 
+  bool IsValid() override;
+
 #ifdef MOZ_LAYERS_HAVE_LOG
   const char* Name() override { return "GPUVideoTextureHost"; }
 #endif
@@ -51,6 +53,8 @@ class GPUVideoTextureHost : public TextureHost {
 #ifdef MOZ_BUILD_WEBRENDER
   void CreateRenderTexture(
       const wr::ExternalImageId& aExternalImageId) override;
+
+  void MaybeDestroyRenderTexture() override;
 
   uint32_t NumSubTextures() override;
 
@@ -74,10 +78,11 @@ class GPUVideoTextureHost : public TextureHost {
   void UpdatedInternal(const nsIntRegion* Region) override;
 
   RefPtr<TextureHost> mWrappedTextureHost;
+  RefPtr<TextureSourceProvider> mPendingSourceProvider;
+  bool mPendingUpdatedInternal = false;
+  Maybe<nsIntRegion> mPendingIntRegion;
+  Maybe<CompositableTextureSourceRef> mPendingPrepareTextureSource;
   SurfaceDescriptorGPUVideo mDescriptor;
-#ifdef MOZ_BUILD_WEBRENDER
-  wr::MaybeExternalImageId mExternalImageId;
-#endif
 };
 
 }  // namespace layers

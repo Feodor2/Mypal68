@@ -40,7 +40,6 @@
 #endif
 #include "mozilla/widget/CompositorWidget.h"
 #include "nsISupportsImpl.h"
-#include "ThreadSafeRefcountingWithMainThreadDestruction.h"
 #include "mozilla/layers/UiCompositorControllerParent.h"
 #include "mozilla/VsyncDispatcher.h"
 

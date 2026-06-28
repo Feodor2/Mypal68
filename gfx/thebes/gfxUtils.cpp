@@ -13,6 +13,7 @@
 #include "gfxQuad.h"
 #include "imgIEncoder.h"
 #include "mozilla/Base64.h"
+#include "mozilla/Components.h"
 #include "mozilla/dom/ImageEncoder.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
@@ -1418,7 +1419,7 @@ void gfxUtils::RemoveShaderCacheFromDiskIfNecessary() {
     return;
   }
 
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
 
   // Get current values
   nsCString buildID(mozilla::PlatformBuildID());

@@ -99,16 +99,16 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
       nsTArray<RefCountedShmem>&& aSmallShmems,
       nsTArray<ipc::Shmem>&& aLargeShmems) override;
   mozilla::ipc::IPCResult RecvSetDisplayList(
-      nsTArray<RenderRootDisplayListData>&& aDisplayLists,
-      nsTArray<OpDestroy>&& aToDestroy, const uint64_t& aFwdTransactionId,
-      const TransactionId& aTransactionId, const bool& aContainsSVGGroup,
-      const VsyncId& aVsyncId, const TimeStamp& aVsyncStartTime,
-      const TimeStamp& aRefreshStartTime, const TimeStamp& aTxnStartTime,
-      const nsCString& aTxnURL, const TimeStamp& aFwdTime,
+      DisplayListData&& aDisplayList, nsTArray<OpDestroy>&& aToDestroy,
+      const uint64_t& aFwdTransactionId, const TransactionId& aTransactionId,
+      const bool& aContainsSVGGroup, const VsyncId& aVsyncId,
+      const TimeStamp& aVsyncStartTime, const TimeStamp& aRefreshStartTime,
+      const TimeStamp& aTxnStartTime, const nsCString& aTxnURL,
+      const TimeStamp& aFwdTime,
       nsTArray<CompositionPayload>&& aPayloads) override;
   mozilla::ipc::IPCResult RecvEmptyTransaction(
       const FocusTarget& aFocusTarget,
-      nsTArray<RenderRootUpdates>&& aRenderRootUpdates,
+      Maybe<TransactionData>&& aTransactionData,
       nsTArray<OpDestroy>&& aToDestroy, const uint64_t& aFwdTransactionId,
       const TransactionId& aTransactionId, const VsyncId& aVsyncId,
       const TimeStamp& aVsyncStartTime, const TimeStamp& aRefreshStartTime,
@@ -251,14 +251,13 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   explicit WebRenderBridgeParent(const wr::PipelineId& aPipelineId);
   virtual ~WebRenderBridgeParent();
 
-  bool ProcessEmptyTransactionUpdates(RenderRootUpdates& aUpdates,
+  bool ProcessEmptyTransactionUpdates(TransactionData& aData,
                                       bool* aScheduleComposite);
 
-  bool ProcessRenderRootDisplayListData(RenderRootDisplayListData& aDisplayList,
-                                        wr::Epoch aWrEpoch,
-                                        const TimeStamp& aTxnStartTime,
-                                        bool aValidTransaction,
-                                        bool aObserveLayersUpdate);
+  bool ProcessDisplayListData(DisplayListData& aDisplayList, wr::Epoch aWrEpoch,
+                              const TimeStamp& aTxnStartTime,
+                              bool aValidTransaction,
+                              bool aObserveLayersUpdate);
 
   bool SetDisplayList(const LayoutDeviceRect& aRect,
                       const wr::LayoutSize& aContentSize, ipc::ByteBuf&& aDL,
@@ -428,6 +427,7 @@ class WebRenderBridgeParent final : public PWebRenderBridgeParent,
   std::queue<CompositorAnimationIdsForEpoch> mCompositorAnimationsToDelete;
   wr::Epoch mWrEpoch;
   wr::IdNamespace mIdNamespace;
+  CompositionOpportunityId mCompositionOpportunityId;
 
   VsyncId mSkippedCompositeId;
   TimeStamp mMostRecentComposite;

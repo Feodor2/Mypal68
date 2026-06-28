@@ -1869,6 +1869,8 @@ bool BuildLayer(nsDisplayItem* aItem, BlobItemData* aData,
   RefPtr<Layer> root = aItem->AsPaintedDisplayItem()->BuildLayer(
       aDisplayListBuilder, blm, param);
 
+  aDisplayListBuilder->NotifyAndClearScrollFrames();
+
   if (root) {
     blm->SetRoot(root);
     layerBuilder->WillEndTransaction();
@@ -1910,6 +1912,8 @@ static bool PaintByLayer(nsDisplayItem* aItem,
   ContainerLayerParameters param(aScale.width, aScale.height);
   RefPtr<Layer> root = aItem->AsPaintedDisplayItem()->BuildLayer(
       aDisplayListBuilder, aManager, param);
+
+  aDisplayListBuilder->NotifyAndClearScrollFrames();
 
   if (root) {
     aManager->SetRoot(root);

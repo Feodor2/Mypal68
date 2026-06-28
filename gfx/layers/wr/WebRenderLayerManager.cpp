@@ -235,24 +235,25 @@ bool WebRenderLayerManager::EndEmptyTransaction(EndTransactionFlags aFlags) {
     }
   }
 
-  AutoTArray<RenderRootUpdates, 1> renderRootUpdates;
+  Maybe<TransactionData> transactionData;
   if (mStateManager.mAsyncResourceUpdates || !mPendingScrollUpdates.IsEmpty() ||
       WrBridge()->HasWebRenderParentCommands()) {
-    auto updates = renderRootUpdates.AppendElement();
-    updates->mPaintSequenceNumber = mPaintSequenceNumber;
+    transactionData.emplace();
+    transactionData->mPaintSequenceNumber = mPaintSequenceNumber;
     if (mStateManager.mAsyncResourceUpdates) {
-      mStateManager.mAsyncResourceUpdates->Flush(updates->mResourceUpdates,
-                                                 updates->mSmallShmems,
-                                                 updates->mLargeShmems);
+      mStateManager.mAsyncResourceUpdates->Flush(
+          transactionData->mResourceUpdates, transactionData->mSmallShmems,
+          transactionData->mLargeShmems);
     }
-    updates->mScrollUpdates = std::move(mPendingScrollUpdates);
-    for (auto it = updates->mScrollUpdates.Iter(); !it.Done(); it.Next()) {
+    transactionData->mScrollUpdates = std::move(mPendingScrollUpdates);
+    for (auto it = transactionData->mScrollUpdates.Iter(); !it.Done();
+         it.Next()) {
       nsLayoutUtils::NotifyPaintSkipTransaction(/*scroll id=*/it.Key());
     }
   }
 
   Maybe<wr::IpcResourceUpdateQueue> nothing;
-  WrBridge()->EndEmptyTransaction(mFocusTarget, renderRootUpdates,
+  WrBridge()->EndEmptyTransaction(mFocusTarget, std::move(transactionData),
                                   mLatestTransactionId,
                                   mTransactionIdAllocator->GetVsyncId(),
                                   mTransactionIdAllocator->GetVsyncStart(),
@@ -377,18 +378,16 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
 
   {
     AUTO_PROFILER_TRACING_MARKER("Paint", "ForwardDPTransaction", GRAPHICS);
-    InfallibleTArray<RenderRootDisplayListData> renderRootDLs;
-    auto renderRootDL = renderRootDLs.AppendElement();
-    builder.Finalize(*renderRootDL);
-    mLastDisplayListSize = renderRootDL->mDL->mCapacity;
-    resourceUpdates.Flush(renderRootDL->mResourceUpdates,
-                          renderRootDL->mSmallShmems,
-                          renderRootDL->mLargeShmems);
-    renderRootDL->mRect =
+    DisplayListData dlData;
+    builder.Finalize(dlData);
+    mLastDisplayListSize = dlData.mDL->mCapacity;
+    resourceUpdates.Flush(dlData.mResourceUpdates, dlData.mSmallShmems,
+                          dlData.mLargeShmems);
+    dlData.mRect =
         LayoutDeviceRect(LayoutDevicePoint(), LayoutDeviceSize(size));
-    renderRootDL->mScrollData.emplace(std::move(mScrollData));
+    dlData.mScrollData.emplace(std::move(mScrollData));
 
-    WrBridge()->EndTransaction(renderRootDLs, mLatestTransactionId,
+    WrBridge()->EndTransaction(dlData, mLatestTransactionId,
                                containsSVGGroup,
                                mTransactionIdAllocator->GetVsyncId(),
                                mTransactionIdAllocator->GetVsyncStart(),

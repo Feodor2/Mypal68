@@ -474,12 +474,6 @@ typedef PlatformSpecificStateBase
  * How long to delay between repaint requests during a scale.
  * A negative number prevents repaint requests during a scale.\n
  * Units: ms
- *
- * \li\b apz.relative-update.enabled
- * Whether to enable relative scroll offset updates or not. Relative scroll
- * offset updates allow APZ and the main thread to concurrently update
- * the scroll offset and merge the result.
- *
  */
 
 /**
@@ -1906,7 +1900,7 @@ nsEventStatus AsyncPanZoomController::OnKeyboard(const KeyboardInput& aEvent) {
     // existing smooth scroll animation if there is one.
     APZC_LOG("%p keyboard scrolling to snap point %s\n", this,
              Stringify(destination).c_str());
-    SmoothMsdScrollTo(destination);
+    SmoothMsdScrollTo(destination, ScrollTriggeredByScript::No);
     return nsEventStatus_eConsumeDoDefault;
   }
 
@@ -2271,7 +2265,7 @@ nsEventStatus AsyncPanZoomController::OnScrollWheel(
         // existing smooth scroll animation if there is one.
         APZC_LOG("%p wheel scrolling to snap point %s\n", this,
                  Stringify(startPosition).c_str());
-        SmoothMsdScrollTo(startPosition);
+        SmoothMsdScrollTo(startPosition, ScrollTriggeredByScript::No);
         break;
       }
 
@@ -3330,12 +3324,13 @@ void AsyncPanZoomController::SmoothScrollTo(const CSSPoint& aDestination,
   StartAnimation(animation.get());
 }
 
-void AsyncPanZoomController::SmoothMsdScrollTo(const CSSPoint& aDestination) {
+void AsyncPanZoomController::SmoothMsdScrollTo(
+    const CSSPoint& aDestination, ScrollTriggeredByScript aTriggeredByScript) {
   if (mState == SMOOTHMSD_SCROLL && mAnimation) {
     APZC_LOG("%p updating destination on existing animation\n", this);
     RefPtr<SmoothMsdScrollAnimation> animation(
         static_cast<SmoothMsdScrollAnimation*>(mAnimation.get()));
-    animation->SetDestination(aDestination);
+    animation->SetDestination(aDestination, aTriggeredByScript);
   } else {
     CancelAnimation();
     SetState(SMOOTHMSD_SCROLL);
@@ -3347,7 +3342,8 @@ void AsyncPanZoomController::SmoothMsdScrollTo(const CSSPoint& aDestination) {
     StartAnimation(new SmoothMsdScrollAnimation(
         *this, Metrics().GetVisualScrollOffset(), initialVelocity, aDestination,
         StaticPrefs::layout_css_scroll_behavior_spring_constant(),
-        StaticPrefs::layout_css_scroll_behavior_damping_ratio()));
+        StaticPrefs::layout_css_scroll_behavior_damping_ratio(),
+        aTriggeredByScript));
   }
 }
 
@@ -3848,9 +3844,14 @@ void AsyncPanZoomController::RequestContentRepaint(
   }
   MOZ_ASSERT(controller->IsRepaintThread());
 
-  const bool isAnimationInProgress = !!mAnimation;
+  APZScrollAnimationType animationType = APZScrollAnimationType::No;
+  if (mAnimation) {
+    animationType = mAnimation->WasTriggeredByScript()
+                        ? APZScrollAnimationType::TriggeredByScript
+                        : APZScrollAnimationType::TriggeredByUserInput;
+  }
   RepaintRequest request(aFrameMetrics, aDisplayportMargins, aUpdateType,
-                         isAnimationInProgress);
+                         animationType);
 
   // If we're trying to paint what we already think is painted, discard this
   // request since it's a pointless paint.
@@ -3867,8 +3868,8 @@ void AsyncPanZoomController::RequestContentRepaint(
           mLastPaintRequestMetrics.GetScrollGeneration() &&
       request.GetScrollUpdateType() ==
           mLastPaintRequestMetrics.GetScrollUpdateType() &&
-      request.IsAnimationInProgress() ==
-          mLastPaintRequestMetrics.IsAnimationInProgress()) {
+      request.GetScrollAnimationType() ==
+          mLastPaintRequestMetrics.GetScrollAnimationType()) {
     return;
   }
 
@@ -4590,9 +4591,12 @@ void AsyncPanZoomController::NotifyLayersUpdated(
       Metrics().SetCompositionBounds(aLayerMetrics.GetCompositionBounds());
       needToReclampScroll = true;
     }
-    Metrics().SetRootCompositionSize(aLayerMetrics.GetRootCompositionSize());
+    Metrics().SetBoundingCompositionSize(
+        aLayerMetrics.GetBoundingCompositionSize());
     Metrics().SetPresShellResolution(aLayerMetrics.GetPresShellResolution());
     Metrics().SetCumulativeResolution(aLayerMetrics.GetCumulativeResolution());
+    Metrics().SetTransformToAncestorScale(
+        aLayerMetrics.GetTransformToAncestorScale());
     mScrollMetadata.SetHasScrollgrab(aScrollMetadata.GetHasScrollgrab());
     mScrollMetadata.SetLineScrollAmount(aScrollMetadata.GetLineScrollAmount());
     mScrollMetadata.SetPageScrollAmount(aScrollMetadata.GetPageScrollAmount());
@@ -4615,6 +4619,9 @@ void AsyncPanZoomController::NotifyLayersUpdated(
   }
 
   bool scrollOffsetUpdated = false;
+  bool smoothScrollRequested = false;
+  bool didCancelAnimation = false;
+  Maybe<CSSPoint> cumulativeRelativeDelta;
   for (const auto& scrollUpdate : aScrollMetadata.GetScrollUpdates()) {
     APZC_LOG("%p processing scroll update %s\n", this,
              Stringify(scrollUpdate).c_str());
@@ -4636,10 +4643,10 @@ void AsyncPanZoomController::NotifyLayersUpdated(
     // in this loop don't get dropped by the check above. Need to add a test
     // that exercises this scenario, as we don't currently have one.
 
-    scrollOffsetUpdated = true;
-
     if (scrollUpdate.GetMode() == ScrollMode::Smooth ||
         scrollUpdate.GetMode() == ScrollMode::SmoothMsd) {
+      smoothScrollRequested = true;
+
       // Requests to animate the visual scroll position override requests to
       // simply update the visual scroll offset to a particular point. Since
       // we have an animation request, we set ignoreVisualUpdate to true to
@@ -4654,8 +4661,7 @@ void AsyncPanZoomController::NotifyLayersUpdated(
           Metrics().GetVisualScrollOffset());
 
       CSSPoint destination;
-      if (StaticPrefs::apz_relative_update_enabled() &&
-          scrollUpdate.GetType() == ScrollUpdateType::Relative) {
+      if (scrollUpdate.GetType() == ScrollUpdateType::Relative) {
         CSSPoint delta =
             scrollUpdate.GetDestination() - scrollUpdate.GetSource();
         APZC_LOG("%p relative smooth scrolling from %s by %s\n", this,
@@ -4673,9 +4679,11 @@ void AsyncPanZoomController::NotifyLayersUpdated(
       }
 
       if (scrollUpdate.GetMode() == ScrollMode::SmoothMsd) {
-        SmoothMsdScrollTo(destination);
+        SmoothMsdScrollTo(destination,
+                          scrollUpdate.GetScrollTriggeredByScript());
       } else {
         MOZ_ASSERT(scrollUpdate.GetMode() == ScrollMode::Smooth);
+        MOZ_ASSERT(!scrollUpdate.WasTriggeredByScript());
         SmoothScrollTo(destination, scrollUpdate.GetOrigin());
       }
       continue;
@@ -4699,14 +4707,14 @@ void AsyncPanZoomController::NotifyLayersUpdated(
     }
 
     Maybe<CSSPoint> relativeDelta;
-
-    if (StaticPrefs::apz_relative_update_enabled() &&
-        scrollUpdate.GetType() == ScrollUpdateType::Relative) {
+    if (scrollUpdate.GetType() == ScrollUpdateType::Relative) {
       APZC_LOG(
           "%p relative updating scroll offset from %s by %s\n", this,
           ToString(Metrics().GetVisualScrollOffset()).c_str(),
           ToString(scrollUpdate.GetDestination() - scrollUpdate.GetSource())
               .c_str());
+
+      scrollOffsetUpdated = true;
 
       // It's possible that the main thread has ignored an APZ scroll offset
       // update for the pending relative scroll that we have just received.
@@ -4725,6 +4733,8 @@ void AsyncPanZoomController::NotifyLayersUpdated(
       APZC_LOG("%p pure-relative updating scroll offset from %s by %s\n", this,
                ToString(Metrics().GetVisualScrollOffset()).c_str(),
                ToString(scrollUpdate.GetDelta()).c_str());
+
+      scrollOffsetUpdated = true;
 
       // Always need a repaint request with a repaint type for pure relative
       // scrolls because apz is doing the scroll at the main thread's request.
@@ -4749,8 +4759,29 @@ void AsyncPanZoomController::NotifyLayersUpdated(
       APZC_LOG("%p updating scroll offset from %s to %s\n", this,
                ToString(Metrics().GetVisualScrollOffset()).c_str(),
                ToString(scrollUpdate.GetDestination()).c_str());
-      Metrics().ApplyScrollUpdateFrom(scrollUpdate);
+      bool offsetChanged = Metrics().ApplyScrollUpdateFrom(scrollUpdate);
       Metrics().RecalculateLayoutViewportOffset();
+
+      if (offsetChanged || scrollUpdate.GetMode() != ScrollMode::Instant ||
+          scrollUpdate.GetType() != ScrollUpdateType::Absolute ||
+          scrollUpdate.GetOrigin() != ScrollOrigin::None) {
+        // We get a NewScrollFrame update for newly created scroll frames. Only
+        // if this was not a NewScrollFrame update or the offset changed do we
+        // request repaint. This is important so that we don't request repaint
+        // for every new content and set a full display port on it.
+        scrollOffsetUpdated = true;
+      }
+    }
+
+    if (relativeDelta) {
+      cumulativeRelativeDelta =
+          !cumulativeRelativeDelta
+              ? relativeDelta
+              : Some(*cumulativeRelativeDelta + *relativeDelta);
+    } else {
+      // If the scroll update is not relative, clobber the cumulative delta,
+      // i.e. later updates win.
+      cumulativeRelativeDelta.reset();
     }
 
     // If an animation is underway, tell it about the scroll offset update.
@@ -4761,13 +4792,20 @@ void AsyncPanZoomController::NotifyLayersUpdated(
       // after we update the scroll offset above. Otherwise we can be left
       // in a state where things are out of sync.
       CancelAnimation();
+      didCancelAnimation = true;
     }
   }
 
   if (scrollOffsetUpdated) {
     for (auto& sampledState : mSampledState) {
-      sampledState.UpdateScrollProperties(Metrics());
+      if (!didCancelAnimation && cumulativeRelativeDelta.isSome()) {
+        sampledState.UpdateScrollPropertiesWithRelativeDelta(
+            Metrics(), *cumulativeRelativeDelta);
+      } else {
+        sampledState.UpdateScrollProperties(Metrics());
+      }
     }
+
     // Because of the scroll generation update, any inflight paint requests
     // are going to be ignored by layout, and so mExpectedGeckoMetrics becomes
     // incorrect for the purposes of calculating the LD transform. To correct
@@ -4796,6 +4834,12 @@ void AsyncPanZoomController::NotifyLayersUpdated(
     }
   }
 
+  if (smoothScrollRequested && !scrollOffsetUpdated) {
+    mExpectedGeckoMetrics.UpdateFrom(aLayerMetrics);
+    // Need to acknowledge the request.
+    needContentRepaint = true;
+  }
+
   // If `isDefault` is true, this APZC is a "new" one (this is the first time
   // it's getting a NotifyLayersUpdated call). In this case we want to apply the
   // visual scroll offset from the main thread to our scroll offset.
@@ -4813,9 +4857,20 @@ void AsyncPanZoomController::NotifyLayersUpdated(
              this, ToString(Metrics().GetVisualScrollOffset()).c_str(),
              ToString(aLayerMetrics.GetVisualDestination()).c_str(),
              (int)aLayerMetrics.GetVisualScrollUpdateType());
-    Metrics().ClampAndSetVisualScrollOffset(
+    bool offsetChanged = Metrics().ClampAndSetVisualScrollOffset(
         aLayerMetrics.GetVisualDestination());
 
+    // If this is the first time we got metrics for this content (isDefault) and
+    // the update type was none and the offset didn't change then we don't have
+    // to do anything. This is important because we don't want to request
+    // repaint on the initial NotifyLayersUpdated for every content and thus set
+    // a full display port.
+    if (aLayerMetrics.GetVisualScrollUpdateType() == FrameMetrics::eNone &&
+        !offsetChanged) {
+      visualScrollOffsetUpdated = false;
+    }
+  }
+  if (visualScrollOffsetUpdated) {
     // The rest of this branch largely follows the code in the
     // |if (scrollOffsetUpdated)| branch above. Eventually it should get
     // merged into that branch.
@@ -5374,7 +5429,7 @@ void AsyncPanZoomController::ScrollSnapNear(const CSSPoint& aDestination) {
     if (*snapPoint != Metrics().GetVisualScrollOffset()) {
       APZC_LOG("%p smooth scrolling to snap point %s\n", this,
                Stringify(*snapPoint).c_str());
-      SmoothMsdScrollTo(*snapPoint);
+      SmoothMsdScrollTo(*snapPoint, ScrollTriggeredByScript::No);
     }
   }
 }
@@ -5420,7 +5475,7 @@ void AsyncPanZoomController::ScrollSnapToDestination() {
         (float)Metrics().GetVisualScrollOffset().y, (float)startPosition.x,
         (float)startPosition.y);
 
-    SmoothMsdScrollTo(startPosition);
+    SmoothMsdScrollTo(startPosition, ScrollTriggeredByScript::No);
   }
 }
 

@@ -1435,7 +1435,8 @@ class AsyncPanZoomController {
 
   // Start a smooth-scrolling animation to the given destination, with MSD
   // physics that is suited for scroll-snapping.
-  void SmoothMsdScrollTo(const CSSPoint& aDestination);
+  void SmoothMsdScrollTo(const CSSPoint& aDestination,
+                         ScrollTriggeredByScript aTriggeredByScript);
 
   // Returns whether overscroll is allowed during an event.
   bool AllowScrollHandoffInCurrentBlock() const;

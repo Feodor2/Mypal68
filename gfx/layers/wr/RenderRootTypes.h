@@ -15,7 +15,7 @@ namespace mozilla {
 
 namespace layers {
 
-struct RenderRootDisplayListData {
+struct DisplayListData {
   wr::IdNamespace mIdNamespace;
   LayoutDeviceRect mRect;
   nsTArray<WebRenderParentCommand> mCommands;
@@ -29,7 +29,7 @@ struct RenderRootDisplayListData {
   Maybe<WebRenderScrollData> mScrollData;
 };
 
-struct RenderRootUpdates {
+struct TransactionData {
   nsTArray<WebRenderParentCommand> mCommands;
   nsTArray<OpUpdateResource> mResourceUpdates;
   nsTArray<RefCountedShmem> mSmallShmems;
@@ -38,13 +38,15 @@ struct RenderRootUpdates {
   uint32_t mPaintSequenceNumber;
 };
 
+typedef Maybe<TransactionData> MaybeTransactionData;
+
 }  // namespace layers
 
 namespace ipc {
 
 template <>
-struct IPDLParamTraits<mozilla::layers::RenderRootDisplayListData> {
-  typedef mozilla::layers::RenderRootDisplayListData paramType;
+struct IPDLParamTraits<mozilla::layers::DisplayListData> {
+  typedef mozilla::layers::DisplayListData paramType;
 
   static void Write(IPC::Message* aMsg, IProtocol* aActor, paramType&& aParam);
 
@@ -53,8 +55,8 @@ struct IPDLParamTraits<mozilla::layers::RenderRootDisplayListData> {
 };
 
 template <>
-struct IPDLParamTraits<mozilla::layers::RenderRootUpdates> {
-  typedef mozilla::layers::RenderRootUpdates paramType;
+struct IPDLParamTraits<mozilla::layers::TransactionData> {
+  typedef mozilla::layers::TransactionData paramType;
 
   static void Write(IPC::Message* aMsg, IProtocol* aActor, paramType&& aParam);
 

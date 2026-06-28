@@ -36,6 +36,9 @@ function chromeTouchEventCounter(operation) {
     addMessageListener("start", function() {
       const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
       var topWin = Services.wm.getMostRecentWindow("navigator:browser");
+      if (!topWin) {
+        topWin = Services.wm.getMostRecentWindow("navigator:geckoview");
+      }
       if (typeof topWin.eventCounts != "undefined") {
         dump("Found pre-existing eventCounts object on the top window!\n");
         return false;
@@ -55,12 +58,18 @@ function chromeTouchEventCounter(operation) {
     addMessageListener("report", function() {
       const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
       var topWin = Services.wm.getMostRecentWindow("navigator:browser");
+      if (!topWin) {
+        topWin = Services.wm.getMostRecentWindow("navigator:geckoview");
+      }
       return JSON.stringify(topWin.eventCounts);
     });
 
     addMessageListener("end", function() {
       const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
       var topWin = Services.wm.getMostRecentWindow("navigator:browser");
+      if (!topWin) {
+        topWin = Services.wm.getMostRecentWindow("navigator:geckoview");
+      }
       if (typeof topWin.eventCounts == "undefined") {
         dump("The eventCounts object was not found on the top window!\n");
         return false;

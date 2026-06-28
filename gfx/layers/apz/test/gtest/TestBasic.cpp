@@ -528,3 +528,154 @@ TEST_F(APZCBasicTester, RelativeScrollOffset) {
   EXPECT_EQ(metrics.GetLayoutScrollOffset(), CSSPoint(200, 200));
   EXPECT_EQ(metrics.GetVisualScrollOffset(), CSSPoint(220, 220));
 }
+
+TEST_F(APZCBasicTester, MultipleSmoothScrollsSmooth) {
+  // We want to test that if we send multiple smooth scroll requests that we
+  // still smoothly animate, ie that we get non-zero change every frame while
+  // the animation is running.
+
+  ScrollMetadata metadata;
+  FrameMetrics& metrics = metadata.GetMetrics();
+  metrics.SetScrollableRect(CSSRect(0, 0, 100, 10000));
+  metrics.SetLayoutViewport(CSSRect(0, 0, 100, 100));
+  metrics.SetZoom(CSSToParentLayerScale2D(1.0, 1.0));
+  metrics.SetCompositionBounds(ParentLayerRect(0, 0, 100, 100));
+  metrics.SetVisualScrollOffset(CSSPoint(0, 0));
+  metrics.SetIsRootContent(true);
+  apzc->SetFrameMetrics(metrics);
+
+  // Structure of this test.
+  //   -send a pure relative smooth scroll request via NotifyLayersUpdated
+  //   -advance animations a few times, check that scroll offset is increasing
+  //    after the first few advances
+  //   -send a pure relative smooth scroll request via NotifyLayersUpdated
+  //   -advance animations a few times, check that scroll offset is increasing
+  //   -send a pure relative smooth scroll request via NotifyLayersUpdated
+  //   -advance animations a few times, check that scroll offset is increasing
+
+  ScrollMetadata metadata2 = metadata;
+  nsTArray<ScrollPositionUpdate> scrollUpdates2;
+  scrollUpdates2.AppendElement(ScrollPositionUpdate::NewPureRelativeScroll(
+      ScrollOrigin::Other, ScrollMode::Smooth,
+      CSSPoint::ToAppUnits(CSSPoint(0, 200))));
+  metadata2.SetScrollUpdates(scrollUpdates2);
+  metadata2.GetMetrics().SetScrollGeneration(
+      scrollUpdates2.LastElement().GetGeneration());
+  apzc->NotifyLayersUpdated(metadata2, /*isFirstPaint=*/false,
+                            /*thisLayerTreeUpdated=*/true);
+
+  // Get the animation going
+  for (uint32_t i = 0; i < 3; i++) {
+    SampleAnimationOneFrame();
+  }
+
+  float offset =
+      apzc->GetCurrentAsyncScrollOffset(AsyncPanZoomController::eForCompositing)
+          .y;
+  ASSERT_GT(offset, 0);
+  float lastOffset = offset;
+
+  for (uint32_t i = 0; i < 2; i++) {
+    for (uint32_t j = 0; j < 3; j++) {
+      SampleAnimationOneFrame();
+      offset = apzc->GetCurrentAsyncScrollOffset(
+                       AsyncPanZoomController::eForCompositing)
+                   .y;
+      ASSERT_GT(offset, lastOffset);
+      lastOffset = offset;
+    }
+
+    ScrollMetadata metadata3 = metadata;
+    nsTArray<ScrollPositionUpdate> scrollUpdates3;
+    scrollUpdates3.AppendElement(ScrollPositionUpdate::NewPureRelativeScroll(
+        ScrollOrigin::Other, ScrollMode::Smooth,
+        CSSPoint::ToAppUnits(CSSPoint(0, 200))));
+    metadata3.SetScrollUpdates(scrollUpdates3);
+    metadata3.GetMetrics().SetScrollGeneration(
+        scrollUpdates3.LastElement().GetGeneration());
+    apzc->NotifyLayersUpdated(metadata3, /*isFirstPaint=*/false,
+                              /*thisLayerTreeUpdated=*/true);
+  }
+
+  for (uint32_t j = 0; j < 7; j++) {
+    SampleAnimationOneFrame();
+    offset = apzc->GetCurrentAsyncScrollOffset(
+                     AsyncPanZoomController::eForCompositing)
+                 .y;
+    ASSERT_GT(offset, lastOffset);
+    lastOffset = offset;
+  }
+}
+
+TEST_F(APZCBasicTester, ZoomAndScrollableRectChangeAfterZoomChange) {
+  // We want to check that a small scrollable rect change (which causes us to
+  // reclamp our scroll position, including in the sampled state) does not move
+  // the scroll offset in the sample state based the zoom in the apzc, only
+  // based on the zoom in the sampled state.
+
+  // First we zoom in to the right hand side. Then start zooming out, then send
+  // a scrollable rect change and check that it doesn't change the sampled state
+  // scroll offset.
+
+  ScrollMetadata metadata;
+  FrameMetrics& metrics = metadata.GetMetrics();
+  metrics.SetCompositionBounds(ParentLayerRect(0, 0, 100, 100));
+  metrics.SetScrollableRect(CSSRect(0, 0, 100, 1000));
+  metrics.SetLayoutViewport(CSSRect(0, 0, 100, 100));
+  metrics.SetVisualScrollOffset(CSSPoint(0, 0));
+  metrics.SetZoom(CSSToParentLayerScale2D(1.0, 1.0));
+  metrics.SetIsRootContent(true);
+  apzc->SetFrameMetrics(metrics);
+
+  MakeApzcZoomable();
+
+  // Zoom to right side.
+  ZoomTarget zoomTarget{CSSRect(75, 25, 25, 25), Nothing()};
+  apzc->ZoomToRect(zoomTarget, 0);
+
+  // Run the animation to completion, should take 250ms/16.67ms = 15 frames, but
+  // do extra to make sure.
+  for (uint32_t i = 0; i < 30; i++) {
+    SampleAnimationOneFrame();
+  }
+
+  EXPECT_FALSE(apzc->IsAsyncZooming());
+
+  // Zoom out.
+  ZoomTarget zoomTarget2{CSSRect(0, 0, 100, 100), Nothing()};
+  apzc->ZoomToRect(zoomTarget2, 0);
+
+  // Run the animation a few times to get it going.
+  for (uint32_t i = 0; i < 2; i++) {
+    SampleAnimationOneFrame();
+  }
+
+  // Check that it is decreasing in scale.
+  float prevScale =
+      apzc->GetCurrentPinchZoomScale(AsyncPanZoomController::eForCompositing)
+          .scale;
+  for (uint32_t i = 0; i < 2; i++) {
+    SampleAnimationOneFrame();
+    float scale =
+        apzc->GetCurrentPinchZoomScale(AsyncPanZoomController::eForCompositing)
+            .scale;
+    ASSERT_GT(prevScale, scale);
+    prevScale = scale;
+  }
+
+  float offset =
+      apzc->GetCurrentAsyncScrollOffset(AsyncPanZoomController::eForCompositing)
+          .x;
+
+  // Change the scrollable rect slightly to trigger a reclamp.
+  ScrollMetadata metadata2 = metadata;
+  metadata2.GetMetrics().SetScrollableRect(CSSRect(0, 0, 100, 1000.2));
+  apzc->NotifyLayersUpdated(metadata2, /*isFirstPaint=*/false,
+                            /*thisLayerTreeUpdated=*/true);
+
+  float newOffset =
+      apzc->GetCurrentAsyncScrollOffset(AsyncPanZoomController::eForCompositing)
+          .x;
+
+  ASSERT_EQ(newOffset, offset);
+}

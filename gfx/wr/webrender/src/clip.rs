@@ -2,12 +2,102 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+//! Internal representation of clips in WebRender.
+//!
+//! # Data structures
+//!
+//! There are a number of data structures involved in the clip module:
+//!
+//! - ClipStore - Main interface used by other modules.
+//!
+//! - ClipItem - A single clip item (e.g. a rounded rect, or a box shadow).
+//!              These are an exposed API type, stored inline in a ClipNode.
+//!
+//! - ClipNode - A ClipItem with an attached GPU handle. The GPU handle is populated
+//!              when a ClipNodeInstance is built from this node (which happens while
+//!              preparing primitives for render).
+//!
+//! ClipNodeInstance - A ClipNode with attached positioning information (a spatial
+//!                    node index). This is stored as a contiguous array of nodes
+//!                    within the ClipStore.
+//!
+//! ```ascii
+//! +-----------------------+-----------------------+-----------------------+
+//! | ClipNodeInstance      | ClipNodeInstance      | ClipNodeInstance      |
+//! +-----------------------+-----------------------+-----------------------+
+//! | ClipItem              | ClipItem              | ClipItem              |
+//! | Spatial Node Index    | Spatial Node Index    | Spatial Node Index    |
+//! | GPU cache handle      | GPU cache handle      | GPU cache handle      |
+//! | ...                   | ...                   | ...                   |
+//! +-----------------------+-----------------------+-----------------------+
+//!            0                        1                       2
+//!    +----------------+    |                                              |
+//!    | ClipNodeRange  |____|                                              |
+//!    |    index: 1    |                                                   |
+//!    |    count: 2    |___________________________________________________|
+//!    +----------------+
+//! ```
+//!
+//! - ClipNodeRange - A clip item range identifies a range of clip nodes instances.
+//!                   It is stored as an (index, count).
+//!
+//! - ClipChainNode - A clip chain node contains a handle to an interned clip item,
+//!                   positioning information (from where the clip was defined), and
+//!                   an optional parent link to another ClipChainNode. ClipChainId
+//!                   is an index into an array, or ClipChainId::NONE for no parent.
+//!
+//! ```ascii
+//! +----------------+    ____+----------------+    ____+----------------+   /---> ClipChainId::NONE
+//! | ClipChainNode  |   |    | ClipChainNode  |   |    | ClipChainNode  |   |
+//! +----------------+   |    +----------------+   |    +----------------+   |
+//! | ClipDataHandle |   |    | ClipDataHandle |   |    | ClipDataHandle |   |
+//! | Spatial index  |   |    | Spatial index  |   |    | Spatial index  |   |
+//! | Parent Id      |___|    | Parent Id      |___|    | Parent Id      |___|
+//! | ...            |        | ...            |        | ...            |
+//! +----------------+        +----------------+        +----------------+
+//! ```
+//!
+//! - ClipChainInstance - A ClipChain that has been built for a specific primitive + positioning node.
+//!
+//!    When given a clip chain ID, and a local primitive rect and its spatial node, the clip module
+//!    creates a clip chain instance. This is a struct with various pieces of useful information
+//!    (such as a local clip rect). It also contains a (index, count)
+//!    range specifier into an index buffer of the ClipNodeInstance structures that are actually relevant
+//!    for this clip chain instance. The index buffer structure allows a single array to be used for
+//!    all of the clip-chain instances built in a single frame. Each entry in the index buffer
+//!    also stores some flags relevant to the clip node in this positioning context.
+//!
+//! ```ascii
+//! +----------------------+
+//! | ClipChainInstance    |
+//! +----------------------+
+//! | ...                  |
+//! | local_clip_rect      |________________________________________________________________________
+//! | clips_range          |_______________                                                        |
+//! +----------------------+              |                                                        |
+//!                                       |                                                        |
+//! +------------------+------------------+------------------+------------------+------------------+
+//! | ClipNodeInstance | ClipNodeInstance | ClipNodeInstance | ClipNodeInstance | ClipNodeInstance |
+//! +------------------+------------------+------------------+------------------+------------------+
+//! | flags            | flags            | flags            | flags            | flags            |
+//! | ...              | ...              | ...              | ...              | ...              |
+//! +------------------+------------------+------------------+------------------+------------------+
+//! ```
+//!
+//! # Rendering clipped primitives
+//!
+//! See the [`segment` module documentation][segment.rs].
+//!
+//!
+//! [segment.rs]: ../segment/index.html
+//!
+
 use api::{BorderRadius, ClipIntern, ClipMode, ComplexClipRegion, ImageMask};
 use api::{BoxShadowClipMode, ImageKey, ImageRendering};
 use api::units::*;
 use crate::border::{ensure_no_corner_overlap, BorderRadiusAu};
 use crate::box_shadow::{BLUR_SAMPLE_SCALE, BoxShadowClipSource, BoxShadowCacheKey};
-use crate::clip_scroll_tree::{ROOT_SPATIAL_NODE_INDEX, CoordinateSystemId, ClipScrollTree, SpatialNodeIndex};
+use crate::clip_scroll_tree::{ROOT_SPATIAL_NODE_INDEX, ClipScrollTree, SpatialNodeIndex};
 use crate::ellipse::Ellipse;
 use crate::gpu_cache::{GpuCache, GpuCacheHandle, ToGpuBlocks};
 use crate::gpu_types::{BoxShadowStretchMode};
@@ -19,85 +109,6 @@ use crate::render_task_cache::to_cache_size;
 use crate::resource_cache::{ImageRequest, ResourceCache};
 use std::{cmp, ops, u32};
 use crate::util::{extract_inner_rect_safe, project_rect, ScaleOffset};
-
-/*
-
- Module Overview
-
- There are a number of data structures involved in the clip module:
-
- ClipStore - Main interface used by other modules.
-
- ClipItem - A single clip item (e.g. a rounded rect, or a box shadow).
-            These are an exposed API type, stored inline in a ClipNode.
-
- ClipNode - A ClipItem with an attached GPU handle. The GPU handle is populated
-            when a ClipNodeInstance is built from this node (which happens while
-            preparing primitives for render).
-
- ClipNodeInstance - A ClipNode with attached positioning information (a spatial
-                    node index). This is stored as a contiguous array of nodes
-                    within the ClipStore.
-
-    +-----------------------+-----------------------+-----------------------+
-    | ClipNodeInstance      | ClipNodeInstance      | ClipNodeInstance      |
-    +-----------------------+-----------------------+-----------------------+
-    | ClipItem              | ClipItem              | ClipItem              |
-    | Spatial Node Index    | Spatial Node Index    | Spatial Node Index    |
-    | GPU cache handle      | GPU cache handle      | GPU cache handle      |
-    | ...                   | ...                   | ...                   |
-    +-----------------------+-----------------------+-----------------------+
-               0                        1                       2
-
-       +----------------+    |                                              |
-       | ClipNodeRange  |____|                                              |
-       |    index: 1    |                                                   |
-       |    count: 2    |___________________________________________________|
-       +----------------+
-
- ClipNodeRange - A clip item range identifies a range of clip nodes instances.
-                 It is stored as an (index, count).
-
- ClipChainNode - A clip chain node contains a handle to an interned clip item,
-                 positioning information (from where the clip was defined), and
-                 an optional parent link to another ClipChainNode. ClipChainId
-                 is an index into an array, or ClipChainId::NONE for no parent.
-
-    +----------------+    ____+----------------+    ____+----------------+   /---> ClipChainId::NONE
-    | ClipChainNode  |   |    | ClipChainNode  |   |    | ClipChainNode  |   |
-    +----------------+   |    +----------------+   |    +----------------+   |
-    | ClipDataHandle |   |    | ClipDataHandle |   |    | ClipDataHandle |   |
-    | Spatial index  |   |    | Spatial index  |   |    | Spatial index  |   |
-    | Parent Id      |___|    | Parent Id      |___|    | Parent Id      |___|
-    | ...            |        | ...            |        | ...            |
-    +----------------+        +----------------+        +----------------+
-
- ClipChainInstance - A ClipChain that has been built for a specific primitive + positioning node.
-
-    When given a clip chain ID, and a local primitive rect and its spatial node, the clip module
-    creates a clip chain instance. This is a struct with various pieces of useful information
-    (such as a local clip rect). It also contains a (index, count)
-    range specifier into an index buffer of the ClipNodeInstance structures that are actually relevant
-    for this clip chain instance. The index buffer structure allows a single array to be used for
-    all of the clip-chain instances built in a single frame. Each entry in the index buffer
-    also stores some flags relevant to the clip node in this positioning context.
-
-    +----------------------+
-    | ClipChainInstance    |
-    +----------------------+
-    | ...                  |
-    | local_clip_rect      |________________________________________________________________________
-    | clips_range          |_______________                                                        |
-    +----------------------+              |                                                        |
-                                          |                                                        |
-    +------------------+------------------+------------------+------------------+------------------+
-    | ClipNodeInstance | ClipNodeInstance | ClipNodeInstance | ClipNodeInstance | ClipNodeInstance |
-    +------------------+------------------+------------------+------------------+------------------+
-    | flags            | flags            | flags            | flags            | flags            |
-    | ...              | ...              | ...              | ...              | ...              |
-    +------------------+------------------+------------------+------------------+------------------+
-
- */
 
 // Type definitions for interning clip nodes.
 
@@ -343,15 +354,14 @@ impl ClipNodeInfo {
         let mut flags = self.conversion.to_flags();
 
         // Some clip shaders support a fast path mode for simple clips.
-        // For now, the fast path is only selected if:
-        //  - The clip item content supports fast path
-        //  - Both clip and primitive are in the root coordinate system (no need for AA along edges)
         // TODO(gw): We could also apply fast path when segments are created, since we only write
         //           the mask for a single corner at a time then, so can always consider radii uniform.
-        let clip_spatial_node = &clip_scroll_tree.spatial_nodes[node.item.spatial_node_index.0 as usize];
-        if clip_spatial_node.coordinate_system_id == CoordinateSystemId::root() &&
-           flags.contains(ClipNodeFlags::SAME_COORD_SYSTEM) &&
-           node.item.kind.supports_fast_path_rendering() {
+        let is_raster_2d =
+            flags.contains(ClipNodeFlags::SAME_COORD_SYSTEM) ||
+            clip_scroll_tree
+                .get_world_viewport_transform(node.item.spatial_node_index)
+                .is_2d_axis_aligned();
+        if is_raster_2d && node.item.kind.supports_fast_path_rendering() {
             flags |= ClipNodeFlags::USE_FAST_PATH;
         }
 
@@ -1258,6 +1268,8 @@ impl ClipItemKind {
 
     /// Returns true if this clip mask can run through the fast path
     /// for the given clip item type.
+    ///
+    /// Note: this logic has to match `ClipBatcher::add` behavior.
     fn supports_fast_path_rendering(&self) -> bool {
         match *self {
             ClipItemKind::Rectangle { .. } |

@@ -10,6 +10,7 @@
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/LayersTypes.h"
+#include "mozilla/layers/ProfilerScreenshots.h"
 #include "mozilla/webrender/RenderCompositor.h"
 #include "mozilla/webrender/RenderTextureHost.h"
 #include "mozilla/widget/CompositorWidget.h"
@@ -114,12 +115,17 @@ RenderedFrameId RendererOGL::UpdateAndRender(
     }
     mCompositor->GetWidget()->PostRender(&widgetContext);
     return RenderedFrameId();
-    ;
   }
 
   wr_renderer_update(mRenderer);
 
-  if (mCompositor->RequestFullRender()) {
+  bool fullRender = mCompositor->RequestFullRender();
+  // When we're rendering to an external target, we want to render everything.
+  if (mCompositor->UsePartialPresent() &&
+      (aReadbackBuffer.isSome() || layers::ProfilerScreenshots::IsEnabled())) {
+    fullRender = true;
+  }
+  if (fullRender) {
     wr_renderer_force_redraw(mRenderer);
   }
 

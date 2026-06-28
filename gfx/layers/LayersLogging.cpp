@@ -221,7 +221,7 @@ void AppendToString(std::stringstream& aStream, const FrameMetrics& m,
     }
     AppendToString(aStream, m.GetZoom(), "] [z=", "] }");
   } else {
-    AppendToString(aStream, m.GetRootCompositionSize(), "] [rcs=");
+    AppendToString(aStream, m.GetBoundingCompositionSize(), "] [rcs=");
     AppendToString(aStream, m.GetLayoutViewport(), "] [v=");
     aStream << nsPrintfCString("] [z=(ld=%.3f r=%.3f",
                                m.GetDevPixelsPerCSSPixel().scale,
@@ -229,7 +229,6 @@ void AppendToString(std::stringstream& aStream, const FrameMetrics& m,
                    .get();
     AppendToString(aStream, m.GetCumulativeResolution(), " cr=");
     AppendToString(aStream, m.GetZoom(), " z=");
-    AppendToString(aStream, m.GetExtraResolution(), " er=");
     aStream << nsPrintfCString(")] [u=(%d %" PRIu32 ")",
                                m.GetVisualScrollUpdateType(),
                                m.GetScrollGeneration())

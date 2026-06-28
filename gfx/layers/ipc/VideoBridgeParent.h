@@ -5,8 +5,8 @@
 #ifndef gfx_layers_ipc_VideoBridgeParent_h_
 #define gfx_layers_ipc_VideoBridgeParent_h_
 
-#include "mozilla/layers/PVideoBridgeParent.h"
 #include "mozilla/layers/ISurfaceAllocator.h"
+#include "mozilla/layers/PVideoBridgeParent.h"
 
 namespace mozilla {
 namespace layers {
@@ -20,7 +20,8 @@ class VideoBridgeParent final : public PVideoBridgeParent,
  public:
   ~VideoBridgeParent();
 
-  static VideoBridgeParent* GetSingleton(Maybe<VideoBridgeSource>& aSource);
+  static VideoBridgeParent* GetSingleton(
+      const Maybe<VideoBridgeSource>& aSource);
 
   static void Open(Endpoint<PVideoBridgeParent>&& aEndpoint,
                    VideoBridgeSource aSource);

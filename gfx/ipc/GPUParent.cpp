@@ -13,6 +13,7 @@
 #include "GPUProcessHost.h"
 #include "GPUProcessManager.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/Components.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
@@ -61,6 +62,8 @@
 #  include "mozilla/WindowsVersion.h"
 #  include <process.h>
 #  include <dwrite.h>
+#else
+#  include <unistd.h>
 #endif
 #ifdef MOZ_WIDGET_GTK
 #  include <gtk/gtk.h>
@@ -211,7 +214,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
   if (gfxVars::UseWebRender()) {
     DeviceManagerDx::Get()->CreateDirectCompositionDevice();
     // Ensure to initialize GfxInfo
-    nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+    nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
     Unused << gfxInfo;
 
     Factory::EnsureDWriteFactory();

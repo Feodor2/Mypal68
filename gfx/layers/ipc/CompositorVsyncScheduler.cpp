@@ -27,7 +27,6 @@
 #include "nsISupportsImpl.h"   // for MOZ_COUNT_CTOR, etc
 #include "nsIWidget.h"         // for nsIWidget
 #include "nsThreadUtils.h"     // for NS_IsMainThread
-#include "mozilla/Telemetry.h"
 #include "mozilla/VsyncDispatcher.h"
 #if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
 #  include "VsyncSource.h"
@@ -263,10 +262,6 @@ void CompositorVsyncScheduler::Composite(VsyncId aId,
 
     mVsyncNotificationsSkipped = 0;
 
-    TimeDuration compositeFrameTotal = TimeStamp::Now() - aVsyncTimestamp;
-    mozilla::Telemetry::Accumulate(
-        mozilla::Telemetry::COMPOSITE_FRAME_ROUNDTRIP_TIME,
-        compositeFrameTotal.ToMilliseconds());
   } else if (mVsyncNotificationsSkipped++ >
              StaticPrefs::gfx_vsync_compositor_unobserve_count_AtStartup()) {
     UnobserveVsync();

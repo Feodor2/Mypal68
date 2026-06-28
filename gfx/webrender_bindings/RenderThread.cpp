@@ -6,7 +6,7 @@
 #include "GeckoProfiler.h"
 #include "RenderThread.h"
 #include "nsThreadUtils.h"
-#include "mtransport/runnable_utils.h"
+#include "transport/runnable_utils.h"
 #include "mozilla/layers/AsyncImagePipelineManager.h"
 #include "mozilla/gfx/GPUParent.h"
 #include "mozilla/layers/CompositorThread.h"
@@ -611,7 +611,6 @@ void RenderThread::UnregisterExternalImage(uint64_t aExternalImageId) {
     return;
   }
   auto it = mRenderTextures.find(aExternalImageId);
-  MOZ_ASSERT(it != mRenderTextures.end());
   if (it == mRenderTextures.end()) {
     return;
   }

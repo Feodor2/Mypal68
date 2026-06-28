@@ -577,6 +577,8 @@ void LayerManagerComposite::EndTransaction(const TimeStamp& aTimeStamp,
 }
 
 void LayerManagerComposite::UpdateAndRender() {
+  mCompositionOpportunityId = mCompositionOpportunityId.Next();
+
   if (gfxEnv::SkipComposition()) {
     mInvalidRegion.SetEmpty();
     return;

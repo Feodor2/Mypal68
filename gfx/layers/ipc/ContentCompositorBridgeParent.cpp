@@ -36,7 +36,6 @@
 #include "nsXULAppAPI.h"       // for XRE_GetIOMessageLoop
 #include "mozilla/Unused.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Telemetry.h"
 #ifdef MOZ_GECKO_PROFILER
 #  include "ProfilerMarkerPayload.h"
 #endif
@@ -408,10 +407,6 @@ void ContentCompositorBridgeParent::ShadowLayersUpdated(
         ContentBuildPayload(aInfo.transactionStart(), endTime));
   }
 #endif
-  Telemetry::Accumulate(
-      Telemetry::CONTENT_FULL_PAINT_TIME,
-      static_cast<uint32_t>(
-          (endTime - aInfo.transactionStart()).ToMilliseconds()));
 
   RegisterPayloads(aLayerTree, aInfo.payload());
 

@@ -26,9 +26,6 @@
 #  include "mozilla/layers/WebRenderBridgeChild.h"
 #endif
 #include "FrameLayerBuilder.h"
-#include "mozilla/DebugOnly.h"
-#include "mozilla/Telemetry.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/ContentChild.h"
@@ -37,6 +34,9 @@
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/layers/SyncObject.h"  // for SyncObjectClient
+#include "mozilla/Unused.h"
+#include "mozilla/DebugOnly.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/mozalloc.h"           // for operator new, etc
 #include "nsDebug.h"                    // for NS_WARNING
 #include "nsISupportsImpl.h"            // for MOZ_COUNT_CTOR, etc
@@ -90,9 +90,7 @@ CompositorBridgeChild::CompositorBridgeChild(CompositorManagerChild* aManager)
       mTotalAsyncPaints(0),
       mOutstandingAsyncPaints(0),
       mOutstandingAsyncEndTransaction(false),
-      mIsDelayingForAsyncPaints(false),
-      mSlowFlushCount(0),
-      mTotalFlushCount(0) {
+      mIsDelayingForAsyncPaints(false) {
   MOZ_ASSERT(NS_IsMainThread());
 }
 
@@ -1093,21 +1091,6 @@ void CompositorBridgeChild::FlushAsyncPaints() {
     // It's now safe to free any TextureClients that were used during painting.
     mTextureClientsForAsyncPaint.Clear();
   }
-
-  if (start) {
-    float ms = (TimeStamp::Now() - start.value()).ToMilliseconds();
-
-    // Anything above 200us gets recorded.
-    if (ms >= 0.2) {
-      mSlowFlushCount++;
-      Telemetry::Accumulate(Telemetry::GFX_OMTP_PAINT_WAIT_TIME, int32_t(ms));
-    }
-    mTotalFlushCount++;
-
-    double ratio = double(mSlowFlushCount) / double(mTotalFlushCount);
-    Telemetry::ScalarSet(Telemetry::ScalarID::GFX_OMTP_PAINT_WAIT_RATIO,
-                         uint32_t(ratio * 100 * 100));
-  }
 }
 
 void CompositorBridgeChild::NotifyBeginAsyncPaint(PaintTask* aTask) {
@@ -1173,15 +1156,6 @@ void CompositorBridgeChild::NotifyFinishedAsyncEndLayerTransaction() {
   }
 
   Monitor2AutoLock lock(mPaintLock);
-
-  if (mTotalAsyncPaints > 0) {
-    float tenthMs =
-        (TimeStamp::Now() - mAsyncTransactionBegin).ToMilliseconds() * 10;
-    Telemetry::Accumulate(Telemetry::GFX_OMTP_PAINT_TASK_COUNT,
-                          int32_t(mTotalAsyncPaints));
-    Telemetry::Accumulate(Telemetry::GFX_OMTP_PAINT_TIME, int32_t(tenthMs));
-    mTotalAsyncPaints = 0;
-  }
 
   // Since this should happen after ALL paints are done and
   // at the end of a transaction, this should always be true.

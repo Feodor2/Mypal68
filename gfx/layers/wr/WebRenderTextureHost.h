@@ -41,6 +41,8 @@ class WebRenderTextureHost : public TextureHost {
 
   virtual void NotifyNotUsed() override;
 
+  virtual bool IsValid() override;
+
   // Return the format used for reading the texture. Some hardware specific
   // textureHosts use their special data representation internally, but we could
   // treat these textureHost as the read-format when we read them.
@@ -62,7 +64,7 @@ class WebRenderTextureHost : public TextureHost {
 
   virtual void PrepareForUse() override;
 
-  wr::ExternalImageId GetExternalImageKey() { return mExternalImageId; }
+  wr::ExternalImageId GetExternalImageKey();
 
   int32_t GetRGBStride();
 
@@ -85,9 +87,6 @@ class WebRenderTextureHost : public TextureHost {
   void MaybeNofityForUse(wr::TransactionBuilder& aTxn);
 
  protected:
-  void CreateRenderTextureHost(const SurfaceDescriptor& aDesc,
-                               TextureHost* aTexture);
-
   RefPtr<TextureHost> mWrappedTextureHost;
   wr::ExternalImageId mExternalImageId;
 };

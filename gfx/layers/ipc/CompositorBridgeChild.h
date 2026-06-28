@@ -21,7 +21,6 @@
 #include "nsHashKeys.h"        // for nsUint64HashKey
 #include "nsISupportsImpl.h"   // for NS_INLINE_DECL_REFCOUNTING
 #include "nsIWeakReferenceUtils.h"
-#include "ThreadSafeRefcountingWithMainThreadDestruction.h"
 
 #include <unordered_map>
 
@@ -400,9 +399,6 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
   // paint thread completes. This is R/W on both the main and paint threads, and
   // must be accessed within the paint lock.
   bool mIsDelayingForAsyncPaints;
-
-  uintptr_t mSlowFlushCount;
-  uintptr_t mTotalFlushCount;
 };
 
 }  // namespace layers

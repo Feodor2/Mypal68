@@ -102,9 +102,9 @@ void WebRenderBridgeChild::UpdateResources(
 }
 
 void WebRenderBridgeChild::EndTransaction(
-    nsTArray<RenderRootDisplayListData>& aRenderRoots,
-    TransactionId aTransactionId, bool aContainsSVGGroup,
-    const mozilla::VsyncId& aVsyncId, const mozilla::TimeStamp& aVsyncStartTime,
+    DisplayListData&& aDisplayListData, TransactionId aTransactionId,
+    bool aContainsSVGGroup, const mozilla::VsyncId& aVsyncId,
+    const mozilla::TimeStamp& aVsyncStartTime,
     const mozilla::TimeStamp& aRefreshStartTime,
     const mozilla::TimeStamp& aTxnStartTime, const nsCString& aTxnURL) {
   MOZ_ASSERT(!mDestroyed);
@@ -112,10 +112,8 @@ void WebRenderBridgeChild::EndTransaction(
 
   TimeStamp fwdTime = TimeStamp::Now();
 
-  for (auto& renderRoot : aRenderRoots) {
-    renderRoot.mCommands = std::move(mParentCommands);
-    renderRoot.mIdNamespace = mIdNamespace;
-  }
+  aDisplayListData.mCommands = std::move(mParentCommands);
+  aDisplayListData.mIdNamespace = mIdNamespace;
 
   nsTArray<CompositionPayload> payloads;
   if (mManager) {
@@ -123,7 +121,7 @@ void WebRenderBridgeChild::EndTransaction(
   }
 
   this->SendSetDisplayList(
-    std::move(aRenderRoots), mDestroyedActors, GetFwdTransactionId(),
+    std::move(aDisplayListData), mDestroyedActors, GetFwdTransactionId(),
     aTransactionId, aContainsSVGGroup, aVsyncId, aVsyncStartTime,
     aRefreshStartTime, aTxnStartTime, aTxnURL, fwdTime, payloads);
 
@@ -136,8 +134,7 @@ void WebRenderBridgeChild::EndTransaction(
 }
 
 void WebRenderBridgeChild::EndEmptyTransaction(
-    const FocusTarget& aFocusTarget,
-    nsTArray<RenderRootUpdates>& aRenderRootUpdates,
+    const FocusTarget& aFocusTarget, Maybe<TransactionData>&& aTransactionData,
     TransactionId aTransactionId, const mozilla::VsyncId& aVsyncId,
     const mozilla::TimeStamp& aVsyncStartTime,
     const mozilla::TimeStamp& aRefreshStartTime,
@@ -147,8 +144,8 @@ void WebRenderBridgeChild::EndEmptyTransaction(
 
   TimeStamp fwdTime = TimeStamp::Now();
 
-  for (auto& update : aRenderRootUpdates) {
-    update.mCommands = std::move(mParentCommands);
+  if (aTransactionData) {
+    aTransactionData->mCommands = std::move(mParentCommands);
   }
 
   nsTArray<CompositionPayload> payloads;
@@ -157,7 +154,7 @@ void WebRenderBridgeChild::EndEmptyTransaction(
   }
 
   this->SendEmptyTransaction(
-      aFocusTarget, std::move(aRenderRootUpdates), mDestroyedActors,
+      aFocusTarget, std::move(aTransactionData), mDestroyedActors,
       GetFwdTransactionId(), aTransactionId, aVsyncId, aVsyncStartTime,
       aRefreshStartTime, aTxnStartTime, aTxnURL, fwdTime, payloads);
 

@@ -42,17 +42,24 @@ void SampledAPZCState::UpdateScrollProperties(const FrameMetrics& aMetrics) {
   mVisualScrollOffset = aMetrics.GetVisualScrollOffset();
 }
 
+void SampledAPZCState::UpdateScrollPropertiesWithRelativeDelta(
+    const FrameMetrics& aMetrics, const CSSPoint& aRelativeDelta) {
+  mVisualScrollOffset += aRelativeDelta;
+  KeepLayoutViewportEnclosingVisualViewport(aMetrics);
+}
+
 void SampledAPZCState::UpdateZoomProperties(const FrameMetrics& aMetrics) {
   mZoom = aMetrics.GetZoom();
 }
 
 void SampledAPZCState::ClampVisualScrollOffset(const FrameMetrics& aMetrics) {
-  mVisualScrollOffset =
-      aMetrics.CalculateScrollRange().ClampPoint(mVisualScrollOffset);
-  FrameMetrics::KeepLayoutViewportEnclosingVisualViewport(
-      CSSRect(mVisualScrollOffset,
-              aMetrics.CalculateCompositedSizeInCssPixels()),
-      aMetrics.GetScrollableRect(), mLayoutViewport);
+  // Make sure that we use the local mZoom to do these calculations, because the
+  // one on aMetrics might be newer.
+  CSSRect scrollRange = FrameMetrics::CalculateScrollRange(
+      aMetrics.GetScrollableRect(), aMetrics.GetCompositionBounds(), mZoom);
+  mVisualScrollOffset = scrollRange.ClampPoint(mVisualScrollOffset);
+
+  KeepLayoutViewportEnclosingVisualViewport(aMetrics);
 }
 
 void SampledAPZCState::ZoomBy(const gfxSize& aScale) {
@@ -82,6 +89,15 @@ void SampledAPZCState::RemoveFractionalAsyncDelta() {
       FuzzyEqualsAdditive(paintedOffset.y, asyncOffset.y, COORDINATE_EPSILON)) {
     mVisualScrollOffset = mLayoutViewport.TopLeft();
   }
+}
+
+void SampledAPZCState::KeepLayoutViewportEnclosingVisualViewport(
+    const FrameMetrics& aMetrics) {
+  FrameMetrics::KeepLayoutViewportEnclosingVisualViewport(
+      CSSRect(mVisualScrollOffset,
+              FrameMetrics::CalculateCompositedSizeInCssPixels(
+                  aMetrics.GetCompositionBounds(), mZoom)),
+      aMetrics.GetScrollableRect(), mLayoutViewport);
 }
 
 }  // namespace layers

@@ -7,6 +7,7 @@
 
 #include <stdint.h>                 // for uint8_t, uint32_t, uint64_t
 #include "Units.h"                  // for CSSRect, CSSPixel, etc
+#include "UnitTransforms.h"         // for ViewAs
 #include "mozilla/DefineEnum.h"     // for MOZ_DEFINE_ENUM
 #include "mozilla/HashFunctions.h"  // for HashGeneric
 #include "mozilla/Maybe.h"
@@ -85,10 +86,10 @@ struct FrameMetrics {
         mDevPixelsPerCSSPixel(1),
         mScrollOffset(0, 0),
         mZoom(),
-        mRootCompositionSize(0, 0),
+        mBoundingCompositionSize(0, 0),
         mPresShellId(-1),
         mLayoutViewport(0, 0, 0, 0),
-        mExtraResolution(),
+        mTransformToAncestorScale(),
         mPaintRequestTime(),
         mVisualDestination(0, 0),
         mVisualScrollUpdateType(eNone),
@@ -111,10 +112,10 @@ struct FrameMetrics {
            mScrollOffset == aOther.mScrollOffset &&
            // don't compare mZoom
            mScrollGeneration == aOther.mScrollGeneration &&
-           mRootCompositionSize == aOther.mRootCompositionSize &&
+           mBoundingCompositionSize == aOther.mBoundingCompositionSize &&
            mPresShellId == aOther.mPresShellId &&
            mLayoutViewport.IsEqualEdges(aOther.mLayoutViewport) &&
-           mExtraResolution == aOther.mExtraResolution &&
+           mTransformToAncestorScale == aOther.mTransformToAncestorScale &&
            mPaintRequestTime == aOther.mPaintRequestTime &&
            mVisualDestination == aOther.mVisualDestination &&
            mVisualScrollUpdateType == aOther.mVisualScrollUpdateType &&
@@ -133,14 +134,19 @@ struct FrameMetrics {
   }
 
   CSSToScreenScale2D DisplayportPixelsPerCSSPixel() const {
-    // Note: use 'mZoom * ParentLayerToLayerScale(1.0f)' as the CSS-to-Layer
-    // scale instead of LayersPixelsPerCSSPixel(), because displayport
-    // calculations are done in the context of a repaint request, where we ask
-    // Layout to repaint at a new resolution that includes any async zoom. Until
-    // this repaint request is processed, LayersPixelsPerCSSPixel() does not yet
-    // include the async zoom, but it will when the displayport is interpreted
-    // for the repaint.
-    return mZoom * ParentLayerToLayerScale(1.0f) / mExtraResolution;
+    // Note: mZoom includes the async zoom. We want to include the async zoom
+    // even though the size of the pixels of our *current* displayport does not
+    // yet reflect it, because this function is used in the context of a repaint
+    // request where we'll be asking for a *new* displayport which does reflect
+    // the async zoom. Note 2: we include the transform to ancestor scale
+    // because this function (as the name implies) is used only in various
+    // displayport calculation related places, and those calculations want the
+    // transform to ancestor scale to be included becaese they want to reason
+    // about pixels which are the same size as screen pixels (so displayport
+    // sizes are e.g. limited to a multiple of the screen size). Whereas mZoom
+    // and mCumulativeResolution do not include it because of expectations of
+    // the code where they are used.
+    return mZoom * mTransformToAncestorScale;
   }
 
   CSSToLayerScale2D LayersPixelsPerCSSPixel() const {
@@ -181,10 +187,7 @@ struct FrameMetrics {
   }
 
   CSSSize CalculateCompositedSizeInCssPixels() const {
-    if (GetZoom() == CSSToParentLayerScale2D(0, 0)) {
-      return CSSSize();  // avoid division by zero
-    }
-    return mCompositionBounds.Size() / GetZoom();
+    return CalculateCompositedSizeInCssPixels(mCompositionBounds, mZoom);
   }
 
   /*
@@ -209,19 +212,13 @@ struct FrameMetrics {
 
   CSSSize CalculateBoundedCompositedSizeInCssPixels() const {
     CSSSize size = CalculateCompositedSizeInCssPixels();
-    size.width = std::min(size.width, mRootCompositionSize.width);
-    size.height = std::min(size.height, mRootCompositionSize.height);
+    size.width = std::min(size.width, mBoundingCompositionSize.width);
+    size.height = std::min(size.height, mBoundingCompositionSize.height);
     return size;
   }
 
   CSSRect CalculateScrollRange() const {
-    CSSSize scrollPortSize = CalculateCompositedSizeInCssPixels();
-    CSSRect scrollRange = mScrollableRect;
-    scrollRange.SetWidth(
-        std::max(scrollRange.Width() - scrollPortSize.width, 0.0f));
-    scrollRange.SetHeight(
-        std::max(scrollRange.Height() - scrollPortSize.height, 0.0f));
-    return scrollRange;
+    return CalculateScrollRange(mScrollableRect, mCompositionBounds, mZoom);
   }
 
   void ScrollBy(const CSSPoint& aPoint) {
@@ -245,7 +242,10 @@ struct FrameMetrics {
            aContentFrameMetrics.GetVisualScrollOffset();
   }
 
-  void ApplyScrollUpdateFrom(const ScrollPositionUpdate& aUpdate);
+  /*
+   * Returns true if the layout scroll offset or visual scroll offset changed.
+   */
+  bool ApplyScrollUpdateFrom(const ScrollPositionUpdate& aUpdate);
 
   /**
    * Applies the relative scroll offset update contained in aOther to the
@@ -313,13 +313,19 @@ struct FrameMetrics {
   bool IsRootContent() const { return mIsRootContent; }
 
   // Set scroll offset, first clamping to the scroll range.
-  void ClampAndSetVisualScrollOffset(const CSSPoint& aScrollOffset) {
+  // Return true if it changed.
+  bool ClampAndSetVisualScrollOffset(const CSSPoint& aScrollOffset) {
+    CSSPoint offsetBefore = GetVisualScrollOffset();
     SetVisualScrollOffset(CalculateScrollRange().ClampPoint(aScrollOffset));
+    return (offsetBefore != GetVisualScrollOffset());
   }
 
   CSSPoint GetLayoutScrollOffset() const { return mLayoutViewport.TopLeft(); }
-  void SetLayoutScrollOffset(const CSSPoint& aLayoutScrollOffset) {
+  // Returns true if it changed.
+  bool SetLayoutScrollOffset(const CSSPoint& aLayoutScrollOffset) {
+    CSSPoint offsetBefore = GetLayoutScrollOffset();
     mLayoutViewport.MoveTo(aLayoutScrollOffset);
+    return (offsetBefore != GetLayoutScrollOffset());
   }
 
   const CSSPoint& GetVisualScrollOffset() const { return mScrollOffset; }
@@ -341,11 +347,13 @@ struct FrameMetrics {
 
   void SetScrollId(ViewID scrollId) { mScrollId = scrollId; }
 
-  void SetRootCompositionSize(const CSSSize& aRootCompositionSize) {
-    mRootCompositionSize = aRootCompositionSize;
+  void SetBoundingCompositionSize(const CSSSize& aBoundingCompositionSize) {
+    mBoundingCompositionSize = aBoundingCompositionSize;
   }
 
-  const CSSSize& GetRootCompositionSize() const { return mRootCompositionSize; }
+  const CSSSize& GetBoundingCompositionSize() const {
+    return mBoundingCompositionSize;
+  }
 
   uint32_t GetPresShellId() const { return mPresShellId; }
 
@@ -362,12 +370,13 @@ struct FrameMetrics {
                    CalculateCompositedSizeInCssPixels());
   }
 
-  void SetExtraResolution(const ScreenToLayerScale2D& aExtraResolution) {
-    mExtraResolution = aExtraResolution;
+  void SetTransformToAncestorScale(
+      const ParentLayerToScreenScale2D& aTransformToAncestorScale) {
+    mTransformToAncestorScale = aTransformToAncestorScale;
   }
 
-  const ScreenToLayerScale2D& GetExtraResolution() const {
-    return mExtraResolution;
+  const ParentLayerToScreenScale2D& GetTransformToAncestorScale() const {
+    return mTransformToAncestorScale;
   }
 
   const CSSRect& GetScrollableRect() const { return mScrollableRect; }
@@ -433,6 +442,15 @@ struct FrameMetrics {
   static void KeepLayoutViewportEnclosingVisualViewport(
       const CSSRect& aVisualViewport, const CSSRect& aScrollableRect,
       CSSRect& aLayoutViewport);
+
+  // Helper functions exposed so we can perform operations on copies outside of
+  // frame metrics object.
+  static CSSRect CalculateScrollRange(const CSSRect& aScrollableRect,
+                                      const ParentLayerRect& aCompositionBounds,
+                                      const CSSToParentLayerScale2D& aZoom);
+  static CSSSize CalculateCompositedSizeInCssPixels(
+      const ParentLayerRect& aCompositionBounds,
+      const CSSToParentLayerScale2D& aZoom);
 
  private:
   // A ID assigned to each scrollable frame, unique within each LayersId..
@@ -534,9 +552,9 @@ struct FrameMetrics {
   // The scroll generation counter used to acknowledge the scroll offset update.
   ScrollGeneration mScrollGeneration;
 
-  // The size of the root scrollable's composition bounds, but in local CSS
-  // pixels.
-  CSSSize mRootCompositionSize;
+  // A bounding size for our composition bounds (no larger than the
+  // cross-process RCD-RSF's composition size), in local CSS pixels.
+  CSSSize mBoundingCompositionSize;
 
   uint32_t mPresShellId;
 
@@ -557,9 +575,8 @@ struct FrameMetrics {
   // invalid.
   CSSRect mLayoutViewport;
 
-  // The extra resolution at which content in this scroll frame is drawn beyond
-  // that necessary to draw one Layer pixel per Screen pixel.
-  ScreenToLayerScale2D mExtraResolution;
+  // The scale on this scroll frame induced by enclosing CSS transforms.
+  ParentLayerToScreenScale2D mTransformToAncestorScale;
 
   // The time at which the APZC last requested a repaint for this scroll frame.
   TimeStamp mPaintRequestTime;

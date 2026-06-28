@@ -83,7 +83,7 @@ class NewRenderer : public RendererEvent {
 #else
             false,
 #endif
-            compositor->gl(), compositor->SurfaceIsYFlipped(),
+            compositor->gl(), compositor->SurfaceOriginIsTopLeft(),
             aRenderThread.GetProgramCache()
                 ? aRenderThread.GetProgramCache()->Raw()
                 : nullptr,
@@ -780,8 +780,7 @@ void DisplayListBuilder::Finalize(wr::LayoutSize& aOutContentSize,
                           &aOutDisplayList.dl.inner);
 }
 
-void DisplayListBuilder::Finalize(
-    layers::RenderRootDisplayListData& aOutTransaction) {
+void DisplayListBuilder::Finalize(layers::DisplayListData& aOutTransaction) {
   wr::VecU8 dl;
   wr_api_finalize_builder(mWrState, &aOutTransaction.mContentSize,
                           &aOutTransaction.mDLDesc, &dl.inner);

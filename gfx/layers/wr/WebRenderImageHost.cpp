@@ -122,6 +122,24 @@ TimeStamp WebRenderImageHost::GetCompositionTime() const {
   return time;
 }
 
+CompositionOpportunityId WebRenderImageHost::GetCompositionOpportunityId()
+    const {
+  CompositionOpportunityId id;
+
+  MOZ_ASSERT(mCurrentAsyncImageManager);
+  if (mCurrentAsyncImageManager) {
+    id = mCurrentAsyncImageManager->GetCompositionOpportunityId();
+  }
+  return id;
+}
+
+void WebRenderImageHost::AppendImageCompositeNotification(
+    const ImageCompositeNotificationInfo& aInfo) const {
+  if (mCurrentAsyncImageManager) {
+    mCurrentAsyncImageManager->AppendImageCompositeNotification(aInfo);
+  }
+}
+
 TextureHost* WebRenderImageHost::GetAsTextureHost(IntRect* aPictureRect) {
   const TimedImage* img = ChooseImage();
   if (img) {
@@ -149,23 +167,12 @@ TextureHost* WebRenderImageHost::GetAsTextureHostForComposite(
   }
 
   const TimedImage* img = GetImage(imageIndex);
-
-  if (mLastFrameID != img->mFrameID || mLastProducerID != img->mProducerID) {
-    if (mAsyncRef) {
-      ImageCompositeNotificationInfo info;
-      info.mImageBridgeProcessId = mAsyncRef.mProcessId;
-      info.mNotification = ImageCompositeNotification(
-          mAsyncRef.mHandle, img->mTimeStamp,
-          mCurrentAsyncImageManager->GetCompositionTime(), img->mFrameID,
-          img->mProducerID);
-      mCurrentAsyncImageManager->AppendImageCompositeNotification(info);
-    }
-    mLastFrameID = img->mFrameID;
-    mLastProducerID = img->mProducerID;
-  }
   SetCurrentTextureHost(img->mTextureHost);
 
-  UpdateBias(imageIndex);
+  if (mCurrentAsyncImageManager->GetCompositionTime()) {
+    // We are in a composition. Send ImageCompositeNotifications.
+    OnFinishRendering(imageIndex, img, mAsyncRef.mProcessId, mAsyncRef.mHandle);
+  }
 
   return mCurrentTextureHost;
 }

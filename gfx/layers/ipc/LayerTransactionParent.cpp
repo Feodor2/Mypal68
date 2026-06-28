@@ -25,7 +25,6 @@
 #include "mozilla/mozalloc.h"  // for operator delete, etc
 #include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/StaticPrefs_layout.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "nsCoord.h"          // for NSAppUnitsToFloatPixels
 #include "nsISupportsImpl.h"  // for Layer::Release, etc
@@ -37,8 +36,6 @@
 #include "GeckoProfiler.h"
 #include "mozilla/layers/TextureHost.h"
 #include "mozilla/layers/AsyncCompositionManager.h"
-
-using mozilla::Telemetry::LABELS_CONTENT_FRAME_TIME_REASON;
 
 namespace mozilla {
 namespace layers {

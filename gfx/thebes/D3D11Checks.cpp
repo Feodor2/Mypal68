@@ -7,6 +7,7 @@
 #include "gfxConfig.h"
 #include "GfxDriverInfo.h"
 #include "gfxWindowsPlatform.h"
+#include "mozilla/Components.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_layers.h"
@@ -207,7 +208,7 @@ static bool DoesTextureSharingWorkInternal(ID3D11Device* device,
   }
 
   if (GetModuleHandleW(L"atidxx32.dll")) {
-    nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+    nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
     if (gfxInfo) {
       nsString vendorID, vendorID2;
       gfxInfo->GetAdapterVendorID(vendorID);
@@ -399,7 +400,7 @@ void D3D11Checks::WarnOnAdapterMismatch(ID3D11Device* device) {
   PodZero(&desc);
   GetDxgiDesc(device, &desc);
 
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
   nsString vendorID;
   gfxInfo->GetAdapterVendorID(vendorID);
   nsresult ec;
@@ -441,7 +442,7 @@ bool D3D11Checks::DoesRemotePresentWork(IDXGIAdapter* adapter) {
     }
 
     nsString version;
-    nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+    nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
     if (gfxInfo) {
       gfxInfo->GetAdapterDriverVersion(version);
     }

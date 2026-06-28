@@ -32,7 +32,7 @@
 #include "mozilla/layers/TextureClient.h"      // for TextureClient
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/mozalloc.h"  // for operator new, etc
-#include "mtransport/runnable_utils.h"
+#include "transport/runnable_utils.h"
 #include "nsContentUtils.h"
 #include "nsISupportsImpl.h"         // for ImageContainer::AddRef, etc
 #include "nsTArray.h"                // for AutoTArray, nsTArray, etc

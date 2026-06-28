@@ -40,8 +40,7 @@
 #  undef PostMessage
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 void UniqueMessagePortId::ForceClose() {
   if (!mIdentifier.neutered()) {
@@ -155,8 +154,8 @@ class PostMessageRunnable final : public CancelableRunnable {
     }
 
     event->InitMessageEvent(nullptr, u"message"_ns, CanBubble::eNo,
-                            Cancelable::eNo, value, EmptyString(),
-                            EmptyString(), nullptr, ports);
+                            Cancelable::eNo, value, u""_ns, u""_ns, nullptr,
+                            ports);
     event->SetTrusted(true);
 
     mPort->DispatchEvent(*event);
@@ -208,7 +207,7 @@ MessagePort::MessagePort(nsIGlobalObject* aGlobal, State aState)
       mHasBeenTransferredOrClosed(false) {
   MOZ_ASSERT(aGlobal);
 
-  mIdentifier = new MessagePortIdentifier();
+  mIdentifier = MakeUnique<MessagePortIdentifier>();
   mIdentifier->neutered() = true;
   mIdentifier->sequenceId() = 0;
 }
@@ -879,5 +878,4 @@ void MessagePort::DispatchError() {
   DispatchEvent(*event);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

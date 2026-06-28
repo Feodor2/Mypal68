@@ -12,8 +12,7 @@
 
 using WebCore::DynamicsCompressor;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(DynamicsCompressorNode, AudioNode,
                                    mThreshold, mKnee, mRatio, mAttack, mRelease)
@@ -190,11 +189,11 @@ already_AddRefed<DynamicsCompressorNode> DynamicsCompressorNode::Create(
     return nullptr;
   }
 
-  audioNode->Attack()->SetValue(aOptions.mAttack);
-  audioNode->Knee()->SetValue(aOptions.mKnee);
-  audioNode->Ratio()->SetValue(aOptions.mRatio);
-  audioNode->GetRelease()->SetValue(aOptions.mRelease);
-  audioNode->Threshold()->SetValue(aOptions.mThreshold);
+  audioNode->Attack()->SetInitialValue(aOptions.mAttack);
+  audioNode->Knee()->SetInitialValue(aOptions.mKnee);
+  audioNode->Ratio()->SetInitialValue(aOptions.mRatio);
+  audioNode->GetRelease()->SetInitialValue(aOptions.mRelease);
+  audioNode->Threshold()->SetInitialValue(aOptions.mThreshold);
 
   return audioNode.forget();
 }
@@ -220,5 +219,4 @@ JSObject* DynamicsCompressorNode::WrapObject(
   return DynamicsCompressorNode_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

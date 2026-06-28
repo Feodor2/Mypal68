@@ -24,16 +24,16 @@ class TextEditor;
  * This abstract class is used for the text control frame to get the editor and
  * selection controller objects, and some helper properties.
  */
-class TextControlElement : public nsGenericHTMLFormElementWithState {
+class TextControlElement : public nsGenericHTMLFormControlElementWithState {
  public:
   TextControlElement(already_AddRefed<dom::NodeInfo>&& aNodeInfo,
                      dom::FromParser aFromParser, FormControlType aType)
-      : nsGenericHTMLFormElementWithState(std::move(aNodeInfo), aFromParser,
-                                          aType){};
+      : nsGenericHTMLFormControlElementWithState(std::move(aNodeInfo),
+                                                 aFromParser, aType){};
 
   NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(TextControlElement,
-                                           nsGenericHTMLFormElementWithState)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(
+      TextControlElement, nsGenericHTMLFormControlElementWithState)
 
   bool IsTextControlElement() const final { return true; }
 
@@ -215,6 +215,14 @@ class TextControlElement : public nsGenericHTMLFormElementWithState {
 
  protected:
   virtual ~TextControlElement() = default;
+
+  // The focusability state of this form control.  eUnfocusable means that it
+  // shouldn't be focused at all, eInactiveWindow means it's in an inactive
+  // window, eActiveWindow means it's in an active window.
+  enum class FocusTristate { eUnfocusable, eInactiveWindow, eActiveWindow };
+
+  // Get our focus state.
+  FocusTristate FocusState();
 };
 
 }  // namespace mozilla

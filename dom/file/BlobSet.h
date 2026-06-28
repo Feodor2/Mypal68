@@ -10,8 +10,7 @@
 #include "nsString.h"
 #include "nsTArray.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class BlobImpl;
 
@@ -29,7 +28,6 @@ class BlobSet final {
   FallibleTArray<RefPtr<BlobImpl>> mBlobImpls;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_BlobSet_h

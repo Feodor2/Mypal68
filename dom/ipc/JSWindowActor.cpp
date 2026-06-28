@@ -7,6 +7,7 @@
 #include "mozilla/dom/JSWindowActorBinding.h"
 #include "mozilla/dom/MessageManagerBinding.h"
 #include "mozilla/dom/PWindowGlobal.h"
+#include "mozilla/dom/RootedDictionary.h"  //MY
 
 namespace mozilla {
 namespace dom {

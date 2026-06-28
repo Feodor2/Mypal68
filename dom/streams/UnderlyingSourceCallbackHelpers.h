@@ -46,8 +46,18 @@ class UnderlyingSourceAlgorithmsBase : public nsISupports {
       JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
       ErrorResult& aRv) = 0;
 
-  // (Not in the spec) Callback called when erroring a stream.
-  virtual void ErrorCallback() = 0;
+  // Implement this when you need to release underlying resources immediately
+  // from closed(canceled)/errored streams, without waiting for GC.
+  virtual void ReleaseObjects() {}
+
+  // Fetch wants to special-case BodyStream-based streams
+  virtual BodyStreamHolder* GetBodyStreamHolder() { return nullptr; }
+
+  // https://streams.spec.whatwg.org/#other-specs-rs-create
+  // By "native" we mean "instances initialized via the above set up or set up
+  // with byte reading support algorithms (not, e.g., on web-developer-created
+  // instances)"
+  virtual bool IsNative() { return true; }
 
  protected:
   virtual ~UnderlyingSourceAlgorithmsBase() = default;
@@ -94,7 +104,7 @@ class UnderlyingSourceAlgorithms final : public UnderlyingSourceAlgorithmsBase {
       JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
       ErrorResult& aRv) override;
 
-  void ErrorCallback() override {}
+  bool IsNative() override { return false; }
 
  protected:
   ~UnderlyingSourceAlgorithms() override { mozilla::DropJSObjects(this); };
@@ -106,6 +116,41 @@ class UnderlyingSourceAlgorithms final : public UnderlyingSourceAlgorithmsBase {
   MOZ_KNOWN_LIVE RefPtr<UnderlyingSourceStartCallback> mStartCallback;
   MOZ_KNOWN_LIVE RefPtr<UnderlyingSourcePullCallback> mPullCallback;
   MOZ_KNOWN_LIVE RefPtr<UnderlyingSourceCancelCallback> mCancelCallback;
+};
+
+// https://streams.spec.whatwg.org/#readablestream-set-up
+// https://streams.spec.whatwg.org/#readablestream-set-up-with-byte-reading-support
+// Wrappers defined by the "Set up" methods in the spec. This helps you just
+// return nullptr when an error occurred as this wrapper converts it to a
+// rejected promise.
+// Note that StartCallback is only for JS consumers to access
+// the controller, and thus is no-op here since native consumers can call
+// `EnqueueNative()` etc. without direct controller access.
+class UnderlyingSourceAlgorithmsWrapper
+    : public UnderlyingSourceAlgorithmsBase {
+  void StartCallback(JSContext*, ReadableStreamController&,
+                     JS::MutableHandle<JS::Value> aRetVal, ErrorResult&) final;
+
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> PullCallback(
+      JSContext* aCx, ReadableStreamController& aController,
+      ErrorResult& aRv) final;
+
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> CancelCallback(
+      JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
+      ErrorResult& aRv) final;
+
+  virtual already_AddRefed<Promise> PullCallbackImpl(
+      JSContext* aCx, ReadableStreamController& aController, ErrorResult& aRv) {
+    // pullAlgorithm is optional, return null by default
+    return nullptr;
+  }
+
+  virtual already_AddRefed<Promise> CancelCallbackImpl(
+      JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
+      ErrorResult& aRv) {
+    // cancelAlgorithm is optional, return null by default
+    return nullptr;
+  }
 };
 
 }  // namespace mozilla::dom

@@ -34,6 +34,7 @@
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/dom/PushEventBinding.h"
 #include "mozilla/dom/RequestBinding.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/WorkerDebugger.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
@@ -1703,7 +1704,7 @@ nsresult ServiceWorkerPrivate::SpawnWorkerIfNeeded(WakeUpReason aWhy,
   NS_ConvertUTF8toUTF16 scriptSpec(mInfo->ScriptSpec());
 
   mWorkerPrivate = WorkerPrivate::Constructor(jsapi.cx(), scriptSpec, false,
-                                              WorkerTypeService, VoidString(),
+                                              WorkerKindService, VoidString(),
                                               ""_ns, &info, error);
   if (NS_WARN_IF(error.Failed())) {
     return error.StealNSResult();

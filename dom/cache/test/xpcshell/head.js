@@ -15,9 +15,16 @@ const NS_APP_USER_PROFILE_50_DIR = "ProfD";
 const osWindowsName = "WINNT";
 const pathDelimiter = "/";
 
+const persistentPersistence = "persistent";
+const defaultPersistence = "default";
+
 const storageDirName = "storage";
+const persistentPersistenceDirName = "permanent";
 const defaultPersistenceDirName = "default";
-const cacheClientDirName = "cache";
+
+function cacheClientDirName() {
+  return "cache";
+}
 
 // services required be initialized in order to run CacheStorage
 var ss = Cc["@mozilla.org/storage/service;1"].createInstance(
@@ -68,11 +75,13 @@ function runTest() {
 }
 
 function enableTesting() {
+  Services.prefs.setBoolPref("dom.simpleDB.enabled", true);
   Services.prefs.setBoolPref("dom.quotaManager.testing", true);
 }
 
 function resetTesting() {
   Services.prefs.clearUserPref("dom.quotaManager.testing");
+  Services.prefs.clearUserPref("dom.simpleDB.enabled");
 }
 
 function initStorage() {
@@ -83,12 +92,16 @@ function initTemporaryStorage() {
   return Services.qms.initTemporaryStorage();
 }
 
+function initPersistentOrigin(principal) {
+  return Services.qms.initializePersistentOrigin(principal);
+}
+
 function initTemporaryOrigin(principal) {
   return Services.qms.initializeTemporaryOrigin("default", principal);
 }
 
-function clearOrigin(principal) {
-  let request = Services.qms.clearStoragesForPrincipal(principal, "default");
+function clearOrigin(principal, persistence) {
+  let request = Services.qms.clearStoragesForPrincipal(principal, persistence);
 
   return request;
 }
@@ -164,7 +177,7 @@ function create_test_profile(zipFileName) {
 
 function getCacheDir() {
   return getRelativeFile(
-    `${storageDirName}/${defaultPersistenceDirName}/chrome/${cacheClientDirName}`
+    `${storageDirName}/${defaultPersistenceDirName}/chrome/${cacheClientDirName()}`
   );
 }
 
@@ -174,6 +187,10 @@ function getPrincipal(url, attrs) {
     attrs = {};
   }
   return Services.scriptSecurityManager.createContentPrincipal(uri, attrs);
+}
+
+function getDefaultPrincipal() {
+  return getPrincipal("http://example.com");
 }
 
 function getRelativeFile(relativePath) {
@@ -195,4 +212,18 @@ function getRelativeFile(relativePath) {
   });
 
   return file;
+}
+
+function getSimpleDatabase(principal, persistence) {
+  let connection = Cc["@mozilla.org/dom/sdb-connection;1"].createInstance(
+    Ci.nsISDBConnection
+  );
+
+  if (!principal) {
+    principal = getDefaultPrincipal();
+  }
+
+  connection.init(principal, persistence);
+
+  return connection;
 }

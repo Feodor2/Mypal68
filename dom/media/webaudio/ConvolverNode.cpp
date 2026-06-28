@@ -10,8 +10,7 @@
 #include "blink/Reverb.h"
 #include "PlayingRefChangeHandler.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(ConvolverNode, AudioNode, mBuffer)
 
@@ -419,8 +418,11 @@ void ConvolverNode::SetBuffer(JSContext* aCx, AudioBuffer* aBuffer,
       // There is currently no value in providing 16/32-byte aligned data
       // because PadAndMakeScaledDFT() will copy the data (without SIMD
       // instructions) to aligned arrays for the FFT.
-      RefPtr<SharedBuffer> floatBuffer = SharedBuffer::Create(
-          sizeof(float) * data.mDuration * data.ChannelCount());
+      CheckedInt<size_t> bufferSize(sizeof(float));
+      bufferSize *= data.mDuration;
+      bufferSize *= data.ChannelCount();
+      RefPtr<SharedBuffer> floatBuffer =
+          SharedBuffer::Create(bufferSize, fallible);
       if (!floatBuffer) {
         aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
         return;
@@ -470,5 +472,4 @@ void ConvolverNode::SetBuffer(JSContext* aCx, AudioBuffer* aBuffer,
 
 void ConvolverNode::SetNormalize(bool aNormalize) { mNormalize = aNormalize; }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

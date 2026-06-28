@@ -4,6 +4,7 @@
 
 #include "Clients.h"
 
+#include "Client.h"
 #include "ClientDOMUtil.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ClientManager.h"
@@ -11,15 +12,14 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
-#include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/dom/WorkerScope.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/SystemGroup.h"
 #include "nsIGlobalObject.h"
 #include "nsString.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using mozilla::ipc::CSPInfo;
 using mozilla::ipc::PrincipalInfo;
@@ -282,5 +282,4 @@ already_AddRefed<Promise> Clients::Claim(ErrorResult& aRv) {
   return outerPromise.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

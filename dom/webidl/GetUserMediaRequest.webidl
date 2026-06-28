@@ -5,22 +5,37 @@
  * This is an internal IDL file
  */
 
-// for gUM request start (getUserMedia:request) notification,
-// rawID and mediaSource won't be set.
-// for gUM request stop (recording-device-stopped) notification due to page reload,
-// only windowID will be set.
-// for gUM request stop (recording-device-stopped) notification due to track stop,
-// only windowID, rawID and mediaSource will be set
+interface nsIMediaDevice;
+
+// For gUM request start (getUserMedia:request) notification,
+// rawID, mediaSource and audioOutputOptions won't be set.
+// For selectAudioOutput request start (getUserMedia:request) notification,
+// rawID, mediaSource and constraints won't be set.
+// For gUM request stop (recording-device-stopped) notification due to page
+// reload, only windowID will be set.
+// For gUM request stop (recording-device-stopped) notification due to track
+// stop, only type, windowID, rawID and mediaSource will be set
+
+enum GetUserMediaRequestType {
+    "getusermedia",
+    "selectaudiooutput",
+    "recording-device-stopped"
+};
 
 [LegacyNoInterfaceObject,
  Exposed=Window]
 interface GetUserMediaRequest {
+  readonly attribute GetUserMediaRequestType type;
   readonly attribute unsigned long long windowID;
   readonly attribute unsigned long long innerWindowID;
   readonly attribute DOMString callID;
   readonly attribute DOMString rawID;
   readonly attribute DOMString mediaSource;
+  // The set of devices to consider
+  [Constant, Cached, Frozen]
+  readonly attribute sequence<nsIMediaDevice> devices;
   MediaStreamConstraints getConstraints();
+  AudioOutputOptions getAudioOutputOptions();
   readonly attribute boolean isSecure;
   readonly attribute boolean isHandlingUserInput;
 };

@@ -60,7 +60,8 @@ class FetchDriverObserver {
     eByNetworking,
   };
 
-  virtual void OnResponseEnd(EndReason aReason){};
+  virtual void OnResponseEnd(EndReason aReason,
+                             JS::Handle<JS::Value> aReasonDetails){};
 
   nsIConsoleReportCollector* GetReporter() const { return mReporter; }
 
@@ -128,6 +129,7 @@ class FetchDriver final : public nsIStreamListener,
 
   // AbortFollower
   void RunAbortAlgorithm() override;
+  void FetchDriverAbortActions(AbortSignalImpl* aSignalImpl);
 
  private:
   nsCOMPtr<nsIPrincipal> mPrincipal;

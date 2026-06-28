@@ -743,9 +743,6 @@ BrowserChild::GetDimensions(uint32_t aFlags, int32_t* aX, int32_t* aY,
 }
 
 NS_IMETHODIMP
-BrowserChild::SetFocus() { return NS_ERROR_NOT_IMPLEMENTED; }
-
-NS_IMETHODIMP
 BrowserChild::GetVisibility(bool* aVisibility) {
   *aVisibility = true;
   return NS_OK;
@@ -807,17 +804,17 @@ BrowserChild::GetInterface(const nsIID& aIID, void** aSink) {
 
 NS_IMETHODIMP
 BrowserChild::ProvideWindow(mozIDOMWindowProxy* aParent, uint32_t aChromeFlags,
-                            bool aCalledFromJS, bool aPositionSpecified,
-                            bool aSizeSpecified, nsIURI* aURI,
-                            const nsAString& aName, const nsACString& aFeatures,
-                            bool aForceNoOpener, bool aForceNoReferrer,
+                            bool aCalledFromJS, bool aWidthSpecified,
+                            nsIURI* aURI, const nsAString& aName,
+                            const nsACString& aFeatures, bool aForceNoOpener,
+                            bool aForceNoReferrer,
                             nsDocShellLoadState* aLoadState, bool* aWindowIsNew,
                             mozIDOMWindowProxy** aReturn) {
   *aReturn = nullptr;
 
   int32_t openLocation = nsWindowWatcher::GetWindowOpenLocation(
       nsPIDOMWindowOuter::From(aParent), aChromeFlags, aCalledFromJS,
-      aPositionSpecified, aSizeSpecified);
+      aWidthSpecified);
 
   // If it turns out we're opening in the current browser, just hand over the
   // current browser's docshell.
@@ -831,10 +828,10 @@ BrowserChild::ProvideWindow(mozIDOMWindowProxy* aParent, uint32_t aChromeFlags,
   // open window call was canceled.  It's important that we pass this error
   // code back to our caller.
   ContentChild* cc = ContentChild::GetSingleton();
-  return cc->ProvideWindowCommon(
-      this, aParent, false, aChromeFlags, aCalledFromJS, aPositionSpecified,
-      aSizeSpecified, aURI, aName, aFeatures, aForceNoOpener, aForceNoReferrer,
-      aLoadState, aWindowIsNew, aReturn);
+  return cc->ProvideWindowCommon(this, aParent, false, aChromeFlags,
+                                 aCalledFromJS, aWidthSpecified, aURI, aName,
+                                 aFeatures, aForceNoOpener, aForceNoReferrer,
+                                 aLoadState, aWindowIsNew, aReturn);
 }
 
 void BrowserChild::DestroyWindow() {
@@ -3401,6 +3398,8 @@ NS_IMETHODIMP BrowserChild::OnStateChange(nsIWebProgress* aWebProgress,
     stateChangeData->isNavigating() = docShell->GetIsNavigating();
     stateChangeData->mayEnableCharacterEncodingMenu() =
         docShell->GetMayEnableCharacterEncodingMenu();
+    stateChangeData->charsetAutodetected() =
+        docShell->GetCharsetAutodetected();
 
     if (document && aStateFlags & nsIWebProgressListener::STATE_STOP) {
       document->GetContentType(stateChangeData->contentType());
@@ -3492,9 +3491,8 @@ NS_IMETHODIMP BrowserChild::OnLocationChange(nsIWebProgress* aWebProgress,
 
     locationChangeData->mayEnableCharacterEncodingMenu() =
         docShell->GetMayEnableCharacterEncodingMenu();
-    // 1543077
-    //locationChangeData->charsetAutodetected() =
-    //    docShell->GetCharsetAutodetected();
+    locationChangeData->charsetAutodetected() =
+        docShell->GetCharsetAutodetected();
 
     locationChangeData->contentPrincipal() = document->NodePrincipal();
     locationChangeData->contentStoragePrincipal() =

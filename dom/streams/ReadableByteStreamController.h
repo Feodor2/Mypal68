@@ -93,9 +93,6 @@ class ReadableByteStreamController final : public ReadableStreamController,
   }
   void ClearPendingPullIntos();
 
-  ReadableStream* Stream() const { return mStream; }
-  void SetStream(ReadableStream* aStream) { mStream = aStream; }
-
   double QueueTotalSize() const { return mQueueTotalSize; }
   void SetQueueTotalSize(double aQueueTotalSize) {
     mQueueTotalSize = aQueueTotalSize;
@@ -108,11 +105,6 @@ class ReadableByteStreamController final : public ReadableStreamController,
   bool CloseRequested() const { return mCloseRequested; }
   void SetCloseRequested(bool aCloseRequested) {
     mCloseRequested = aCloseRequested;
-  }
-
-  UnderlyingSourceAlgorithmsBase* GetAlgorithms() { return mAlgorithms; }
-  void SetAlgorithms(UnderlyingSourceAlgorithmsBase* aAlgorithms) {
-    mAlgorithms = aAlgorithms;
   }
 
   LinkedList<RefPtr<ReadableByteStreamQueueEntry>>& Queue() { return mQueue; }
@@ -156,9 +148,6 @@ class ReadableByteStreamController final : public ReadableStreamController,
   // request, or null if there are no pending requests
   RefPtr<ReadableStreamBYOBRequest> mByobRequest;
 
-  // The algorithms for the underlying byte source
-  RefPtr<UnderlyingSourceAlgorithmsBase> mAlgorithms;
-
   // A list of pull-into descriptors
   LinkedList<RefPtr<PullIntoDescriptor>> mPendingPullIntos;
 
@@ -178,8 +167,6 @@ class ReadableByteStreamController final : public ReadableStreamController,
   // strategy, indicating the point at which the stream will apply backpressure
   // to its underlying byte source
   double mStrategyHWM = 0.0;
-
-  RefPtr<ReadableStream> mStream;
 };
 
 // https://streams.spec.whatwg.org/#readable-byte-stream-queue-entry
@@ -322,6 +309,8 @@ struct PullIntoDescriptor final
   ~PullIntoDescriptor() = default;
 };
 
+namespace streams_abstract {
+
 MOZ_CAN_RUN_SCRIPT void ReadableByteStreamControllerRespond(
     JSContext* aCx, ReadableByteStreamController* aController,
     uint64_t aBytesWritten, ErrorResult& aRv);
@@ -372,8 +361,7 @@ MOZ_CAN_RUN_SCRIPT void SetUpReadableByteStreamControllerFromUnderlyingSource(
     UnderlyingSource& aUnderlyingSourceDict, double aHighWaterMark,
     ErrorResult& aRv);
 
-void ReadableByteStreamControllerClearAlgorithms(
-    ReadableByteStreamController* aController);
+}  // namespace streams_abstract
 
 }  // namespace mozilla::dom
 

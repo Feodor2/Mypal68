@@ -47,13 +47,13 @@ interface Element : Node {
   [CEReactions, NeedsSubjectPrincipal=NonSystem, Throws]
   boolean toggleAttribute(DOMString name, optional boolean force);
   [CEReactions, NeedsSubjectPrincipal=NonSystem, Throws]
-  void setAttribute(DOMString name, DOMString value);
+  undefined setAttribute(DOMString name, DOMString value);
   [CEReactions, NeedsSubjectPrincipal=NonSystem, Throws]
-  void setAttributeNS(DOMString? namespace, DOMString name, DOMString value);
+  undefined setAttributeNS(DOMString? namespace, DOMString name, DOMString value);
   [CEReactions, Throws]
-  void removeAttribute(DOMString name);
+  undefined removeAttribute(DOMString name);
   [CEReactions, Throws]
-  void removeAttributeNS(DOMString? namespace, DOMString localName);
+  undefined removeAttributeNS(DOMString? namespace, DOMString localName);
   [Pure]
   boolean hasAttribute(DOMString name);
   [Pure]
@@ -80,7 +80,7 @@ interface Element : Node {
   Element? insertAdjacentElement(DOMString where, Element element); // historical
 
   [Throws]
-  void insertAdjacentText(DOMString where, DOMString data); // historical
+  undefined insertAdjacentText(DOMString where, DOMString data); // historical
 
   /**
    * The ratio of font-size-inflated text font size to computed font
@@ -115,9 +115,9 @@ interface Element : Node {
 
   // Pointer events methods.
   [Throws]
-  void setPointerCapture(long pointerId);
+  undefined setPointerCapture(long pointerId);
   [Throws]
-  void releasePointerCapture(long pointerId);
+  undefined releasePointerCapture(long pointerId);
   boolean hasPointerCapture(long pointerId);
 
   // Proprietary extensions
@@ -129,19 +129,21 @@ interface Element : Node {
    * element.
    *
    */
-  void setCapture(optional boolean retargetToElement = false);
+  [Deprecated=ElementSetCapture, Pref="dom.mouse_capture.enabled"]
+  undefined setCapture(optional boolean retargetToElement = false);
 
   /**
    * If this element has captured the mouse, release the capture. If another
    * element has captured the mouse, this method has no effect.
    */
-  void releaseCapture();
+  [Deprecated=ElementReleaseCapture, Pref="dom.mouse_capture.enabled"]
+  undefined releaseCapture();
 
   /*
    * Chrome-only version of setCapture that works outside of a mousedown event.
    */
   [ChromeOnly]
-  void setCaptureAlways(optional boolean retargetToElement = false);
+  undefined setCaptureAlways(optional boolean retargetToElement = false);
 
   // Mozilla extensions
 
@@ -179,8 +181,8 @@ interface mixin HTMLOrForeignElement {
   // See bug 1575154
   // [CEReactions] attribute boolean autofocus;
   [CEReactions, SetterThrows, Pure] attribute long tabIndex;
-  [Throws] void focus(optional FocusOptions options = {});
-  [Throws] void blur();
+  [Throws] undefined focus(optional FocusOptions options = {});
+  [Throws] undefined blur();
 };
 
 // https://drafts.csswg.org/cssom/#the-elementcssinlinestyle-mixin
@@ -196,30 +198,38 @@ dictionary ScrollIntoViewOptions : ScrollOptions {
   ScrollLogicalPosition inline = "nearest";
 };
 
+dictionary CheckVisibilityOptions {
+  boolean checkOpacity = false;
+  boolean checkVisibilityCSS = false;
+  [ChromeOnly] boolean flush = true;
+};
+
 // http://dev.w3.org/csswg/cssom-view/#extensions-to-the-element-interface
 partial interface Element {
   DOMRectList getClientRects();
   DOMRect getBoundingClientRect();
 
+  boolean checkVisibility(optional CheckVisibilityOptions options = {});
+
   // scrolling
-  void scrollIntoView(optional (boolean or ScrollIntoViewOptions) arg = {});
+  undefined scrollIntoView(optional (boolean or ScrollIntoViewOptions) arg = {});
   // None of the CSSOM attributes are [Pure], because they flush
            attribute long scrollTop;   // scroll on setting
            attribute long scrollLeft;  // scroll on setting
   readonly attribute long scrollWidth;
   readonly attribute long scrollHeight;
 
-  void scroll(unrestricted double x, unrestricted double y);
-  void scroll(optional ScrollToOptions options = {});
-  void scrollTo(unrestricted double x, unrestricted double y);
-  void scrollTo(optional ScrollToOptions options = {});
-  void scrollBy(unrestricted double x, unrestricted double y);
-  void scrollBy(optional ScrollToOptions options = {});
+  undefined scroll(unrestricted double x, unrestricted double y);
+  undefined scroll(optional ScrollToOptions options = {});
+  undefined scrollTo(unrestricted double x, unrestricted double y);
+  undefined scrollTo(optional ScrollToOptions options = {});
+  undefined scrollBy(unrestricted double x, unrestricted double y);
+  undefined scrollBy(optional ScrollToOptions options = {});
   // mozScrollSnap is used by chrome to perform scroll snapping after the
   // user performs actions that may affect scroll position
   // mozScrollSnap is deprecated, to be replaced by a web accessible API, such
   // as an extension to the ScrollOptions dictionary.  See bug 1137937.
-  [ChromeOnly] void mozScrollSnap();
+  [ChromeOnly] undefined mozScrollSnap();
 
   readonly attribute long clientTop;
   readonly attribute long clientLeft;
@@ -243,7 +253,7 @@ partial interface Element {
   [CEReactions, Pure, SetterThrows]
   attribute [LegacyNullToEmptyString] DOMString outerHTML;
   [CEReactions, Throws]
-  void insertAdjacentHTML(DOMString position, DOMString text);
+  undefined insertAdjacentHTML(DOMString position, DOMString text);
 };
 
 // http://www.w3.org/TR/selectors-api/#interface-definitions
@@ -257,6 +267,8 @@ partial interface Element {
 // https://dom.spec.whatwg.org/#dictdef-shadowrootinit
 dictionary ShadowRootInit {
   required ShadowRootMode mode;
+  [Pref="dom.shadowdom.delegatesFocus.enabled"]
+  boolean delegatesFocus = false;
   [Pref="dom.shadowdom.slot.assign.enabled"]
   SlotAssignmentMode slotAssignment = "named";
 };
@@ -290,10 +302,10 @@ Element includes GeometryUtils;
 
 // https://fullscreen.spec.whatwg.org/#api
 partial interface Element {
-  [Throws, NeedsCallerType]
-  Promise<void> requestFullscreen();
-  [Throws, BinaryName="requestFullscreen", NeedsCallerType, Deprecated="MozRequestFullScreenDeprecatedPrefix"]
-  Promise<void> mozRequestFullScreen();
+  [NewObject, NeedsCallerType]
+  Promise<undefined> requestFullscreen();
+  [NewObject, BinaryName="requestFullscreen", NeedsCallerType, Deprecated="MozRequestFullScreenDeprecatedPrefix"]
+  Promise<undefined> mozRequestFullScreen();
 
   // Events handlers
   attribute EventHandler onfullscreenchange;
@@ -303,7 +315,7 @@ partial interface Element {
 // https://w3c.github.io/pointerlock/#extensions-to-the-element-interface
 partial interface Element {
   [NeedsCallerType, Pref="dom.pointer-lock.enabled"]
-  void requestPointerLock();
+  undefined requestPointerLock();
 };
 
 // Mozilla-specific additions to support devtools
@@ -334,6 +346,16 @@ partial interface Element {
    */
   [ChromeOnly, Pure]
   sequence<Element> getElementsWithGrid();
+
+  /**
+   * Set attribute on the Element with a customized Content-Security-Policy
+   * appropriate to devtools, which includes:
+   * style-src 'unsafe-inline'
+   */
+  [ChromeOnly, CEReactions, Throws]
+  undefined setAttributeDevtools(DOMString name, DOMString value);
+  [ChromeOnly, CEReactions, Throws]
+  undefined setAttributeDevtoolsNS(DOMString? namespace, DOMString name, DOMString value);
 };
 
 // These variables are used in vtt.js, they are used for positioning vtt cues.

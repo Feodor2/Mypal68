@@ -39,6 +39,7 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/OSFileSystem.h"
 #include "mozilla/dom/Promise.h"
+#include "nsComponentManagerUtils.h"
 #include "nsNetUtil.h"
 #include "nsReadableUtils.h"
 
@@ -436,7 +437,7 @@ already_AddRefed<nsINode> DataTransfer::GetMozSourceNode() {
 }
 
 already_AddRefed<DOMStringList> DataTransfer::MozTypesAt(
-    uint32_t aIndex, CallerType aCallerType, ErrorResult& aRv) const {
+    uint32_t aIndex, ErrorResult& aRv) const {
   // Only the first item is valid for clipboard events
   if (aIndex > 0 && (mEventMessage == eCut || mEventMessage == eCopy ||
                      mEventMessage == ePaste)) {
@@ -452,10 +453,6 @@ already_AddRefed<DOMStringList> DataTransfer::MozTypesAt(
 
     bool addFile = false;
     for (uint32_t i = 0; i < items.Length(); i++) {
-      if (items[i]->ChromeOnly() && aCallerType != CallerType::System) {
-        continue;
-      }
-
       // NOTE: The reason why we get the internal type here is because we want
       // kFileMime to appear in the types list for backwards compatibility
       // reasons.
@@ -537,10 +534,9 @@ nsresult DataTransfer::GetDataAtInternal(const nsAString& aFormat,
 void DataTransfer::MozGetDataAt(JSContext* aCx, const nsAString& aFormat,
                                 uint32_t aIndex,
                                 JS::MutableHandle<JS::Value> aRetval,
-                                nsIPrincipal& aSubjectPrincipal,
                                 mozilla::ErrorResult& aRv) {
   nsCOMPtr<nsIVariant> data;
-  aRv = GetDataAtInternal(aFormat, aIndex, &aSubjectPrincipal,
+  aRv = GetDataAtInternal(aFormat, aIndex, nsContentUtils::GetSystemPrincipal(),
                           getter_AddRefs(data));
   if (aRv.Failed()) {
     return;
@@ -732,18 +728,17 @@ nsresult DataTransfer::SetDataAtInternal(const nsAString& aFormat,
 
 void DataTransfer::MozSetDataAt(JSContext* aCx, const nsAString& aFormat,
                                 JS::Handle<JS::Value> aData, uint32_t aIndex,
-                                nsIPrincipal& aSubjectPrincipal,
                                 ErrorResult& aRv) {
   nsCOMPtr<nsIVariant> data;
   aRv = nsContentUtils::XPConnect()->JSValToVariant(aCx, aData,
                                                     getter_AddRefs(data));
   if (!aRv.Failed()) {
-    aRv = SetDataAtInternal(aFormat, data, aIndex, &aSubjectPrincipal);
+    aRv = SetDataAtInternal(aFormat, data, aIndex,
+                            nsContentUtils::GetSystemPrincipal());
   }
 }
 
 void DataTransfer::MozClearDataAt(const nsAString& aFormat, uint32_t aIndex,
-                                  nsIPrincipal& aSubjectPrincipal,
                                   ErrorResult& aRv) {
   if (IsReadOnly()) {
     aRv.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
@@ -762,7 +757,8 @@ void DataTransfer::MozClearDataAt(const nsAString& aFormat, uint32_t aIndex,
     return;
   }
 
-  MozClearDataAtHelper(aFormat, aIndex, aSubjectPrincipal, aRv);
+  MozClearDataAtHelper(aFormat, aIndex, *nsContentUtils::GetSystemPrincipal(),
+                       aRv);
 
   // If we just cleared the 0-th index, and there are still more than 1 indexes
   // remaining, MozClearDataAt should cause the 1st index to become the 0th
@@ -809,48 +805,6 @@ void DataTransfer::UpdateDragImage(Element& aImage, int32_t aX, int32_t aY) {
   if (dragSession) {
     dragSession->UpdateDragImage(&aImage, aX, aY);
   }
-}
-
-already_AddRefed<Promise> DataTransfer::GetFilesAndDirectories(
-    nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
-  nsCOMPtr<nsINode> parentNode = do_QueryInterface(mParent);
-  if (!parentNode) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return nullptr;
-  }
-
-  nsCOMPtr<nsIGlobalObject> global = parentNode->OwnerDoc()->GetScopeObject();
-  MOZ_ASSERT(global);
-  if (!global) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return nullptr;
-  }
-
-  RefPtr<Promise> p = Promise::Create(global, aRv);
-  if (NS_WARN_IF(aRv.Failed())) {
-    return nullptr;
-  }
-
-  RefPtr<FileList> files = mItems->Files(&aSubjectPrincipal);
-  if (NS_WARN_IF(!files)) {
-    return nullptr;
-  }
-
-  Sequence<RefPtr<File>> filesSeq;
-  files->ToSequence(filesSeq, aRv);
-  if (NS_WARN_IF(aRv.Failed())) {
-    return nullptr;
-  }
-
-  p->MaybeResolve(filesSeq);
-
-  return p.forget();
-}
-
-already_AddRefed<Promise> DataTransfer::GetFiles(
-    bool aRecursiveFlag, nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
-  // Currently we don't support directories.
-  return GetFilesAndDirectories(aSubjectPrincipal, aRv);
 }
 
 void DataTransfer::AddElement(Element& aElement, ErrorResult& aRv) {
@@ -1538,13 +1492,6 @@ void DataTransfer::SetMode(DataTransfer::Mode aMode) {
   } else {
     mMode = aMode;
   }
-}
-
-/* static */
-bool DataTransfer::MozAtAPIsEnabled(JSContext* aCx, JSObject* aObj /*unused*/) {
-  // We can expose moz* APIs if we are chrome code or if pref is enabled
-  return nsContentUtils::IsSystemCaller(aCx) ||
-         StaticPrefs::dom_datatransfer_mozAtAPIs_DoNotUseDirectly();
 }
 
 }  // namespace mozilla::dom

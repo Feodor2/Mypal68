@@ -4,7 +4,6 @@
 
 #include "WorkerRunnable.h"
 
-#include "WorkerPrivate.h"
 #include "WorkerScope.h"
 #include "js/RootingAPI.h"
 #include "jsapi.h"

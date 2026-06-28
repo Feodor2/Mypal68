@@ -29,8 +29,8 @@ interface Event {
   [Pure]
   readonly attribute unsigned short eventPhase;
 
-  void stopPropagation();
-  void stopImmediatePropagation();
+  undefined stopPropagation();
+  undefined stopImmediatePropagation();
 
   [Pure]
   readonly attribute boolean bubbles;
@@ -39,7 +39,7 @@ interface Event {
   [NeedsCallerType]
   attribute boolean returnValue;
   [NeedsCallerType]
-  void preventDefault();
+  undefined preventDefault();
   [Pure, NeedsCallerType]
   readonly attribute boolean defaultPrevented;
   [ChromeOnly, Pure]
@@ -54,9 +54,9 @@ interface Event {
   [Pure]
   readonly attribute DOMHighResTimeStamp timeStamp;
 
-  void initEvent(DOMString type,
-                 optional boolean bubbles = false,
-                 optional boolean cancelable = false);
+  undefined initEvent(DOMString type,
+                      optional boolean bubbles = false,
+                      optional boolean cancelable = false);
   attribute boolean cancelBubble;
 };
 
@@ -81,7 +81,7 @@ partial interface Event {
    */
   readonly attribute EventTarget? explicitOriginalTarget;
   [ChromeOnly] readonly attribute EventTarget? composedTarget;
-  [ChromeOnly] void preventMultipleActions();
+  [ChromeOnly] undefined preventMultipleActions();
   [ChromeOnly] readonly attribute boolean multipleActionsPrevented;
   [ChromeOnly] readonly attribute boolean isSynthesized;
 };

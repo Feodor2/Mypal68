@@ -226,14 +226,14 @@ nsresult MediaEngineTabVideoSource::Deallocate() {
 }
 
 void MediaEngineTabVideoSource::SetTrack(
-    const RefPtr<SourceMediaTrack>& aTrack,
+    const RefPtr<MediaTrack>& aTrack,
     const mozilla::PrincipalHandle& aPrincipal) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mState == kAllocated);
 
   MOZ_ASSERT(!mTrack);
   MOZ_ASSERT(aTrack);
-  mTrack = aTrack;
+  mTrack = aTrack->AsSourceTrack();
   mPrincipalHandle = aPrincipal;
 }
 

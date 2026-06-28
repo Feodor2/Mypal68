@@ -45,10 +45,8 @@ class OpusDataDecoder : public MediaDataDecoder,
  private:
   nsresult DecodeHeader(const unsigned char* aData, size_t aLength);
 
-  RefPtr<DecodePromise> ProcessDecode(MediaRawData* aSample);
-
   const AudioInfo& mInfo;
-  const RefPtr<TaskQueue> mTaskQueue;
+  nsCOMPtr<nsISerialEventTarget> mThread;
 
   // Opus decoder state
   UniquePtr<OpusParser> mOpusParser;
@@ -65,6 +63,7 @@ class OpusDataDecoder : public MediaDataDecoder,
   Maybe<int64_t> mLastFrameTime;
   AutoTArray<uint8_t, 8> mMappingTable;
   AudioConfig::ChannelLayout::ChannelMap mChannelMap;
+  bool mDefaultPlaybackDeviceMono;
 };
 
 }  // namespace mozilla

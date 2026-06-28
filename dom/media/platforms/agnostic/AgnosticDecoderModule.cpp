@@ -21,12 +21,32 @@ namespace mozilla {
 bool AgnosticDecoderModule::SupportsMimeType(
     const nsACString& aMimeType, DecoderDoctorDiagnostics* aDiagnostics) const {
   bool supports =
-      VPXDecoder::IsVPX(aMimeType) || OpusDataDecoder::IsOpus(aMimeType) ||
-      WaveDataDecoder::IsWave(aMimeType) || TheoraDecoder::IsTheora(aMimeType);
+      VPXDecoder::IsVPX(aMimeType) || TheoraDecoder::IsTheora(aMimeType);
+#if defined(__MINGW32__)
+  // If this is a MinGW build we need to force AgnosticDecoderModule to
+  // handle the decision to support Vorbis decoding (instead of
+  // RDD/RemoteDecoderModule) because of Bug 1597408 (Vorbis decoding on
+  // RDD causing sandboxing failure on MinGW-clang).  Typically this
+  // would be dealt with using defines in StaticPrefList.yaml, but we
+  // must handle it here because of Bug 1598426 (the __MINGW32__ define
+  // isn't supported in StaticPrefList.yaml).
+  supports |= VorbisDataDecoder::IsVorbis(aMimeType);
+#else
   if (!StaticPrefs::media_rdd_vorbis_enabled() ||
       !StaticPrefs::media_rdd_process_enabled() ||
       !BrowserTabsRemoteAutostart()) {
     supports |= VorbisDataDecoder::IsVorbis(aMimeType);
+  }
+#endif
+  if (!StaticPrefs::media_rdd_wav_enabled() ||
+      !StaticPrefs::media_rdd_process_enabled() ||
+      !BrowserTabsRemoteAutostart()) {
+    supports |= WaveDataDecoder::IsWave(aMimeType);
+  }
+  if (!StaticPrefs::media_rdd_opus_enabled() ||
+      !StaticPrefs::media_rdd_process_enabled() ||
+      !BrowserTabsRemoteAutostart()) {
+    supports |= OpusDataDecoder::IsOpus(aMimeType);
   }
 #ifdef MOZ_AV1
   // We remove support for decoding AV1 here if RDD is enabled so that
@@ -77,7 +97,14 @@ already_AddRefed<MediaDataDecoder> AgnosticDecoderModule::CreateAudioDecoder(
   if (VorbisDataDecoder::IsVorbis(config.mMimeType)) {
     m = new VorbisDataDecoder(aParams);
   } else if (OpusDataDecoder::IsOpus(config.mMimeType)) {
-    m = new OpusDataDecoder(aParams);
+    CreateDecoderParams params(aParams);
+    // Check IsDefaultPlaybackDeviceMono here and set the option in
+    // mOptions so OpusDataDecoder doesn't have to do it later (in case
+    // it is running on RDD).
+    if (IsDefaultPlaybackDeviceMono()) {
+      params.mOptions += CreateDecoderParams::Option::DefaultPlaybackDeviceMono;
+    }
+    m = new OpusDataDecoder(params);
   } else if (WaveDataDecoder::IsWave(config.mMimeType)) {
     m = new WaveDataDecoder(aParams);
   }

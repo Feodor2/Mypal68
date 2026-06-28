@@ -23,8 +23,7 @@
 #define LOG_MAINCONTROLLER(msg, ...) \
   MOZ_LOG(gMediaControlLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 StaticRefPtr<MediaControlService> gMediaControlService;
 static bool sIsXPCOMShutdown = false;
@@ -209,5 +208,4 @@ uint64_t MediaControlService::ControllerManager::GetControllersNum() const {
   return mControllers.length();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

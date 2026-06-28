@@ -5,25 +5,23 @@
 #ifndef GMPService_h_
 #define GMPService_h_
 
-#include "nsString.h"
-#include "mozIGeckoMediaPluginService.h"
-#include "nsIObserver.h"
-#include "nsTArray.h"
-#include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/Monitor2.h"
-#include "nsString.h"
-#include "nsCOMPtr.h"
-#include "nsIThread.h"
-#include "nsThreadUtils.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/AbstractThread.h"
-#include "nsClassHashtable.h"
-#include "nsISupportsImpl.h"
-#include "mozilla/MozPromise.h"
 #include "GMPContentParent.h"
 #include "GMPCrashHelper.h"
 #include "MediaResult.h"
+#include "mozIGeckoMediaPluginService.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/Monitor2.h"
+#include "mozilla/MozPromise.h"
+#include "mozilla/dom/Document.h"
+#include "nsCOMPtr.h"
+#include "nsClassHashtable.h"
+#include "nsIAsyncShutdown.h"
+#include "nsISupportsImpl.h"
+#include "nsIThread.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsThreadUtils.h"
 
 template <class>
 struct already_AddRefed;
@@ -86,7 +84,7 @@ class GeckoMediaPluginService : public mozIGeckoMediaPluginService,
   MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHOD RunPluginCrashCallbacks(
       uint32_t aPluginId, const nsACString& aPluginName) override;
 
-  RefPtr<AbstractThread> GetAbstractGMPThread();
+  already_AddRefed<nsISerialEventTarget> GetGMPThread();
 
   void ConnectCrashHelper(uint32_t aPluginId, GMPCrashHelper* aHelper);
   void DisconnectCrashHelper(GMPCrashHelper* aHelper);
@@ -97,7 +95,7 @@ class GeckoMediaPluginService : public mozIGeckoMediaPluginService,
   GeckoMediaPluginService();
   virtual ~GeckoMediaPluginService();
 
-  virtual void InitializePlugins(AbstractThread* aAbstractGMPThread) = 0;
+  virtual void InitializePlugins(nsISerialEventTarget* aGMPThread) = 0;
 
   virtual RefPtr<GetGMPContentParentPromise> GetContentParent(
       GMPCrashHelper* aHelper, const nsACString& aNodeIdString,
@@ -112,11 +110,14 @@ class GeckoMediaPluginService : public mozIGeckoMediaPluginService,
                        uint32_t flags = NS_DISPATCH_NORMAL);
   void ShutdownGMPThread();
 
-  Mutex
-      mMutex;  // Protects mGMPThread, mAbstractGMPThread, mPluginCrashHelpers,
-               // mGMPThreadShutdown and some members in derived classes.
+  static nsCOMPtr<nsIAsyncShutdownClient> GetShutdownBarrier();
+
+  Mutex mMutex;  // Protects mGMPThread, mPluginCrashHelpers,
+                 // mGMPThreadShutdown and some members in derived classes.
+
+  const nsCOMPtr<nsISerialEventTarget> mMainThread;
+
   nsCOMPtr<nsIThread> mGMPThread;
-  RefPtr<AbstractThread> mAbstractGMPThread;
   bool mGMPThreadShutdown;
   bool mShuttingDownOnGMPThread;
   Atomic<bool> mXPCOMWillShutdown;

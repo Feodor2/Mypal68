@@ -28,13 +28,13 @@ class mozIStorageConnection;
 class mozIStorageStatement;
 class mozIStorageValueArray;
 
-namespace mozilla {
-namespace dom {
-namespace indexedDB {
+namespace mozilla::dom::indexedDB {
 
-class FileManager;
+class DatabaseFileManager;
 struct StructuredCloneFileParent;
 struct StructuredCloneReadInfoParent;
+
+extern const nsLiteralString kJournalDirectoryName;
 
 using IndexOrObjectStoreId = int64_t;
 
@@ -90,26 +90,23 @@ Result<std::pair<uint64_t, mozilla::Span<const uint8_t>>, nsresult>
 ReadCompressedNumber(Span<const uint8_t> aSpan);
 
 Result<StructuredCloneReadInfoParent, nsresult>
-GetStructuredCloneReadInfoFromValueArray(mozIStorageValueArray* aValues,
-                                         uint32_t aDataIndex,
-                                         uint32_t aFileIdsIndex,
-                                         const FileManager& aFileManager);
+GetStructuredCloneReadInfoFromValueArray(
+    mozIStorageValueArray* aValues, uint32_t aDataIndex, uint32_t aFileIdsIndex,
+    const DatabaseFileManager& aFileManager);
 
 Result<StructuredCloneReadInfoParent, nsresult>
 GetStructuredCloneReadInfoFromStatement(mozIStorageStatement* aStatement,
                                         uint32_t aDataIndex,
                                         uint32_t aFileIdsIndex,
-                                        const FileManager& aFileManager);
+                                        const DatabaseFileManager& aFileManage);
 
 Result<nsTArray<StructuredCloneFileParent>, nsresult>
-DeserializeStructuredCloneFiles(const FileManager& aFileManager,
+DeserializeStructuredCloneFiles(const DatabaseFileManager& aFileManager,
                                 const nsAString& aText);
 
 nsresult ExecuteSimpleSQLSequence(mozIStorageConnection& aConnection,
                                   Span<const nsLiteralCString> aSQLCommands);
 
-}  // namespace indexedDB
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::indexedDB
 
 #endif  // mozilla_dom_indexeddb_actorsparent_h__

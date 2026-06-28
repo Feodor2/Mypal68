@@ -20,6 +20,7 @@
 #include "txTextHandler.h"
 #include "txXSLTNumber.h"
 
+using mozilla::MakeUnique;
 using mozilla::UniquePtr;
 
 nsresult txApplyDefaultElementTemplate::execute(txExecutionState& aEs) {
@@ -290,8 +291,7 @@ nsresult txCopy::execute(txExecutionState& aEs) {
       rv = aEs.mResultHandler->characters(u""_ns, false);
       NS_ENSURE_SUCCESS(rv, rv);
 
-      rv = aEs.pushBool(false);
-      NS_ENSURE_SUCCESS(rv, rv);
+      aEs.pushBool(false);
 
       break;
     }
@@ -304,8 +304,7 @@ nsresult txCopy::execute(txExecutionState& aEs) {
 
       // XXX copy namespace nodes once we have them
 
-      rv = aEs.pushBool(true);
-      NS_ENSURE_SUCCESS(rv, rv);
+      aEs.pushBool(true);
 
       break;
     }
@@ -546,35 +545,26 @@ nsresult txPushNewContext::execute(txExecutionState& aEs) {
   rv = sorter.sortNodeSet(nodes, &aEs, getter_AddRefs(sortedNodes));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  txNodeSetContext* context = new txNodeSetContext(sortedNodes, &aEs);
-  NS_ENSURE_TRUE(context, NS_ERROR_OUT_OF_MEMORY);
-
+  auto context = MakeUnique<txNodeSetContext>(sortedNodes, &aEs);
   context->next();
 
-  rv = aEs.pushEvalContext(context);
-  if (NS_FAILED(rv)) {
-    delete context;
-    return rv;
-  }
+  aEs.pushEvalContext(context.release());
 
   return NS_OK;
 }
 
-nsresult txPushNewContext::addSort(UniquePtr<Expr>&& aSelectExpr,
-                                   UniquePtr<Expr>&& aLangExpr,
-                                   UniquePtr<Expr>&& aDataTypeExpr,
-                                   UniquePtr<Expr>&& aOrderExpr,
-                                   UniquePtr<Expr>&& aCaseOrderExpr) {
-  if (SortKey* key = mSortKeys.AppendElement()) {
-    // workaround for not triggering the Copy Constructor
-    key->mSelectExpr = std::move(aSelectExpr);
-    key->mLangExpr = std::move(aLangExpr);
-    key->mDataTypeExpr = std::move(aDataTypeExpr);
-    key->mOrderExpr = std::move(aOrderExpr);
-    key->mCaseOrderExpr = std::move(aCaseOrderExpr);
-    return NS_OK;
-  }
-  return NS_ERROR_OUT_OF_MEMORY;
+void txPushNewContext::addSort(UniquePtr<Expr>&& aSelectExpr,
+                               UniquePtr<Expr>&& aLangExpr,
+                               UniquePtr<Expr>&& aDataTypeExpr,
+                               UniquePtr<Expr>&& aOrderExpr,
+                               UniquePtr<Expr>&& aCaseOrderExpr) {
+  SortKey* key = mSortKeys.AppendElement();
+  // workaround for not triggering the Copy Constructor
+  key->mSelectExpr = std::move(aSelectExpr);
+  key->mLangExpr = std::move(aLangExpr);
+  key->mDataTypeExpr = std::move(aDataTypeExpr);
+  key->mOrderExpr = std::move(aOrderExpr);
+  key->mCaseOrderExpr = std::move(aCaseOrderExpr);
 }
 
 nsresult txPushNullTemplateRule::execute(txExecutionState& aEs) {
@@ -588,12 +578,7 @@ nsresult txPushParams::execute(txExecutionState& aEs) {
 }
 
 nsresult txPushRTFHandler::execute(txExecutionState& aEs) {
-  txAXMLEventHandler* handler = new txRtfHandler;
-  nsresult rv = aEs.pushResultHandler(handler);
-  if (NS_FAILED(rv)) {
-    delete handler;
-    return rv;
-  }
+  aEs.pushResultHandler(new txRtfHandler);
 
   return NS_OK;
 }
@@ -602,12 +587,7 @@ txPushStringHandler::txPushStringHandler(bool aOnlyText)
     : mOnlyText(aOnlyText) {}
 
 nsresult txPushStringHandler::execute(txExecutionState& aEs) {
-  txAXMLEventHandler* handler = new txTextHandler(mOnlyText);
-  nsresult rv = aEs.pushResultHandler(handler);
-  if (NS_FAILED(rv)) {
-    delete handler;
-    return rv;
-  }
+  aEs.pushResultHandler(new txTextHandler(mOnlyText));
 
   return NS_OK;
 }
@@ -729,8 +709,7 @@ nsresult txStartElement::execute(txExecutionState& aEs) {
   }
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = aEs.pushBool(success);
-  NS_ENSURE_SUCCESS(rv, rv);
+  aEs.pushBool(success);
 
   return NS_OK;
 }
@@ -748,8 +727,7 @@ nsresult txStartLREElement::execute(txExecutionState& aEs) {
       mPrefix, mLocalName, mLowercaseLocalName, mNamespaceID);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = aEs.pushBool(true);
-  NS_ENSURE_SUCCESS(rv, rv);
+  aEs.pushBool(true);
 
   return NS_OK;
 }

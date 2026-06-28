@@ -22,7 +22,7 @@ using media::TimeIntervals;
 using media::TimeUnit;
 
 MediaSourceDemuxer::MediaSourceDemuxer(AbstractThread* aAbstractMainThread)
-    : mTaskQueue(new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK),
+    : mTaskQueue(new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER),
                                "MediaSourceDemuxer::mTaskQueue")),
       mMonitor("MediaSourceDemuxer") {
   MOZ_ASSERT(NS_IsMainThread());
@@ -102,9 +102,6 @@ bool MediaSourceDemuxer::ScanSourceBuffersForContent() {
       mInfo.mVideo = info.mVideo;
       mVideoTrack = sourceBuffer;
     }
-    if (info.IsEncrypted() && !mInfo.IsEncrypted()) {
-      mInfo.mCrypto = info.mCrypto;
-    }
   }
   if (mInfo.HasAudio() && mInfo.HasVideo()) {
     // We have both audio and video. We can ignore non-ready source buffer.
@@ -140,13 +137,6 @@ already_AddRefed<MediaTrackDemuxer> MediaSourceDemuxer::GetTrackDemuxer(
 }
 
 bool MediaSourceDemuxer::IsSeekable() const { return true; }
-
-UniquePtr<EncryptionInfo> MediaSourceDemuxer::GetCrypto() {
-  Monitor2AutoLock mon(mMonitor);
-  auto crypto = MakeUnique<EncryptionInfo>();
-  *crypto = mInfo.mCrypto;
-  return crypto;
-}
 
 void MediaSourceDemuxer::AttachSourceBuffer(
     RefPtr<TrackBuffersManager>& aSourceBuffer) {

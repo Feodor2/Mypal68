@@ -7,20 +7,22 @@
  */
 
 typedef object JSON;
-typedef (Blob or BufferSource or FormData or URLSearchParams or USVString) BodyInit;
+typedef (Blob or BufferSource or FormData or URLSearchParams or USVString) XMLHttpRequestBodyInit;
+/* no support for request body streams yet */
+typedef XMLHttpRequestBodyInit BodyInit;
 
 interface mixin Body {
   [Throws]
   readonly attribute boolean bodyUsed;
-  [Throws]
+  [NewObject]
   Promise<ArrayBuffer> arrayBuffer();
-  [Throws]
+  [NewObject]
   Promise<Blob> blob();
-  [Throws]
+  [NewObject]
   Promise<FormData> formData();
-  [Throws]
+  [NewObject]
   Promise<JSON> json();
-  [Throws]
+  [NewObject]
   Promise<USVString> text();
 };
 

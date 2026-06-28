@@ -9,9 +9,8 @@
 #include "mozilla/dom/Document.h"
 #include "nsINode.h"
 #include "nsNameSpaceManager.h"
-#include "nsContentUtils.h"  // For NameSpaceManager().
 
-typedef nsINode txXPathNodeType;
+using txXPathNodeType = nsINode;
 
 class txXPathNode {
  public:
@@ -79,15 +78,15 @@ class txNamespaceManager {
 inline int32_t txNamespaceManager::getNamespaceID(
     const nsAString& aNamespaceURI) {
   int32_t namespaceID = kNameSpaceID_Unknown;
-  nsContentUtils::NameSpaceManager()->RegisterNameSpace(aNamespaceURI,
-                                                        namespaceID);
+  nsNameSpaceManager::GetInstance()->RegisterNameSpace(aNamespaceURI,
+                                                       namespaceID);
   return namespaceID;
 }
 
 /* static */
 inline nsresult txNamespaceManager::getNamespaceURI(const int32_t aID,
                                                     nsAString& aResult) {
-  return nsContentUtils::NameSpaceManager()->GetNameSpaceURI(aID, aResult);
+  return nsNameSpaceManager::GetInstance()->GetNameSpaceURI(aID, aResult);
 }
 
 inline bool txXPathNode::operator==(const txXPathNode& aNode) const {

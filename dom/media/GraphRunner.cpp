@@ -7,8 +7,8 @@
 #include "GraphDriver.h"
 #include "MediaTrackGraph.h"
 #include "MediaTrackGraphImpl.h"
-#include "mozilla/dom/WorkletThread.h"
 #include "nsISupportsImpl.h"
+#include "nsISupportsPriority.h"
 #include "prthread.h"
 #include "Tracing.h"
 
@@ -55,7 +55,7 @@ void GraphRunner::Shutdown() {
 
 auto GraphRunner::OneIteration(GraphTime aStateEnd, GraphTime aIterationEnd,
                                AudioMixer* aMixer) -> IterationResult {
-  TRACE_AUDIO_CALLBACK();
+  TRACE();
 
   Monitor2AutoLock lock(mMonitor);
   MOZ_ASSERT(mThreadState == ThreadState::Wait);
@@ -112,8 +112,6 @@ NS_IMETHODIMP GraphRunner::Run() {
     mThreadState = ThreadState::Wait;
     mMonitor.Signal();
   }
-
-  dom::WorkletThread::DeleteCycleCollectedJSContext();
 
   return NS_OK;
 }

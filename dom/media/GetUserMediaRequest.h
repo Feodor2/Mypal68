@@ -14,19 +14,42 @@
 #include "nsString.h"
 #include "nsWrapperCache.h"
 
+class nsIMediaDevice;
 class nsPIDOMWindowInner;
 
 namespace mozilla {
+
+class MediaDevice;
+
+namespace media {
+template <typename T>
+class Refcountable;
+}
+
 namespace dom {
 
+struct AudioOutputOptions;
 struct MediaStreamConstraints;
+enum class GetUserMediaRequestType : uint8_t;
 
 class GetUserMediaRequest : public nsISupports, public nsWrapperCache {
  public:
+  using MediaDeviceSetRefCnt =
+      media::Refcountable<nsTArray<RefPtr<MediaDevice>>>;
+
+  // For getUserMedia "getUserMedia:request"
   GetUserMediaRequest(nsPIDOMWindowInner* aInnerWindow,
                       const nsAString& aCallID,
+                      RefPtr<MediaDeviceSetRefCnt> aMediaDeviceSet,
                       const MediaStreamConstraints& aConstraints,
                       bool aIsSecure, bool aIsHandlingUserInput);
+  // For selectAudioOutput "getUserMedia:request"
+  GetUserMediaRequest(nsPIDOMWindowInner* aInnerWindow,
+                      const nsAString& aCallID,
+                      RefPtr<MediaDeviceSetRefCnt> aMediaDeviceSet,
+                      const AudioOutputOptions& aAudioOutputOptions,
+                      bool aIsSecure, bool aIsHandlingUserInput);
+  // For "recording-device-stopped"
   GetUserMediaRequest(nsPIDOMWindowInner* aInnerWindow, const nsAString& aRawId,
                       const nsAString& aMediaSource, bool aIsHandlingUserInput);
 
@@ -37,6 +60,7 @@ class GetUserMediaRequest : public nsISupports, public nsWrapperCache {
                        JS::Handle<JSObject*> aGivenProto) override;
   nsISupports* GetParentObject();
 
+  GetUserMediaRequestType Type();
   uint64_t WindowID();
   uint64_t InnerWindowID();
   bool IsSecure();
@@ -44,16 +68,21 @@ class GetUserMediaRequest : public nsISupports, public nsWrapperCache {
   void GetCallID(nsString& retval);
   void GetRawID(nsString& retval);
   void GetMediaSource(nsString& retval);
+  void GetDevices(nsTArray<RefPtr<nsIMediaDevice>>& retval) const;
   void GetConstraints(MediaStreamConstraints& result);
+  void GetAudioOutputOptions(AudioOutputOptions& result);
 
  private:
-  virtual ~GetUserMediaRequest() = default;
+  virtual ~GetUserMediaRequest();
 
   uint64_t mInnerWindowID, mOuterWindowID;
   const nsString mCallID;
   const nsString mRawID;
   const nsString mMediaSource;
+  const RefPtr<MediaDeviceSetRefCnt> mMediaDeviceSet;
   UniquePtr<MediaStreamConstraints> mConstraints;
+  UniquePtr<AudioOutputOptions> mAudioOutputOptions;
+  GetUserMediaRequestType mType;
   bool mIsSecure;
   bool mIsHandlingUserInput;
 };

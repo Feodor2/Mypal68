@@ -28,10 +28,9 @@ interface ServiceWorkerContainer : EventTarget {
   [NewObject]
   Promise<sequence<ServiceWorkerRegistration>> getRegistrations();
 
-  void startMessages();
+  undefined startMessages();
 
   attribute EventHandler oncontrollerchange;
-  attribute EventHandler onerror;
   attribute EventHandler onmessage;
   attribute EventHandler onmessageerror;
 };

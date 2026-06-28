@@ -23,13 +23,12 @@ static bool IsOnGMPThread() {
   nsCOMPtr<nsIThread> gmpThread;
   nsresult rv = mps->GetThread(getter_AddRefs(gmpThread));
   MOZ_ASSERT(NS_SUCCEEDED(rv) && gmpThread);
-  return gmpThread->EventTarget()->IsOnCurrentThread();
+  return gmpThread->IsOnCurrentThread();
 }
 #endif
 
 GMPVideoDecoderParams::GMPVideoDecoderParams(const CreateDecoderParams& aParams)
     : mConfig(aParams.VideoConfig()),
-      mTaskQueue(aParams.mTaskQueue),
       mImageContainer(aParams.mImageContainer),
       mLayersBackend(aParams.GetLayersBackend()),
       mCrashHelper(aParams.mCrashHelper) {}

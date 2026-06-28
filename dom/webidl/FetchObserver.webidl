@@ -5,7 +5,7 @@
 
 [Exposed=Window]
 callback interface ObserverCallback {
-  void handleEvent(FetchObserver observer);
+  undefined handleEvent(FetchObserver observer);
 };
 
 enum FetchState {

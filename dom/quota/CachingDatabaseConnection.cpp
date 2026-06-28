@@ -42,9 +42,9 @@ CachingDatabaseConnection::GetCachedStatement(const nsACString& aQuery) {
                 ScopedLogExtraInfo{ScopedLogExtraInfo::kTagQuery, aQuery};
 
             QM_TRY_RETURN(
-                MOZ_TO_RESULT_INVOKE_TYPED(nsCOMPtr<mozIStorageStatement>,
-                                           **mStorageConnection,
-                                           CreateStatement, aQuery),
+                MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
+                    nsCOMPtr<mozIStorageStatement>, **mStorageConnection,
+                    CreateStatement, aQuery),
                 QM_PROPAGATE,
                 ([&aQuery,
                   &storageConnection = **mStorageConnection](const auto&) {
@@ -77,7 +77,8 @@ CachingDatabaseConnection::BorrowCachedStatement(const nsACString& aQuery) {
 
 nsresult CachingDatabaseConnection::ExecuteCachedStatement(
     const nsACString& aQuery) {
-  return ExecuteCachedStatement(aQuery, [](auto&) { return NS_OK; });
+  return ExecuteCachedStatement(
+      aQuery, [](auto&) -> Result<Ok, nsresult> { return Ok{}; });
 }
 
 void CachingDatabaseConnection::Close() {
@@ -132,7 +133,7 @@ CachingDatabaseConnection::BorrowedStatement
 CachingDatabaseConnection::CachedStatement::Borrow() const {
   AssertIsOnConnectionThread();
 
-#if defined(EARLY_BETA_OR_EARLIER) || defined(DEBUG)
+#ifdef QM_SCOPED_LOG_EXTRA_INFO_ENABLED
   return BorrowedStatement{WrapNotNull(mStatement), mQuery};
 #else
   return BorrowedStatement{WrapNotNull(mStatement)};
@@ -143,7 +144,7 @@ CachingDatabaseConnection::CachedStatement::CachedStatement(
     CachingDatabaseConnection* aConnection,
     nsCOMPtr<mozIStorageStatement> aStatement, const nsACString& aQuery)
     : mStatement(std::move(aStatement))
-#if defined(EARLY_BETA_OR_EARLIER) || defined(DEBUG)
+#ifdef QM_SCOPED_LOG_EXTRA_INFO_ENABLED
       ,
       mQuery(aQuery)
 #endif

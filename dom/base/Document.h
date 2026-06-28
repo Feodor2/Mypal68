@@ -1034,7 +1034,7 @@ class Document : public nsINode,
     mIsInitialDocumentInWindow = aIsInitialDocument;
   }
 
-  void SetLoadedAsData(bool aLoadedAsData) { mLoadedAsData = aLoadedAsData; }
+  void SetLoadedAsData(bool aLoadedAsData, bool aConsiderForMemoryReporting);
 
   /**
    * Normally we assert if a runnable labeled with one DocGroup touches data
@@ -2318,6 +2318,7 @@ class Document : public nsINode,
     mIsContentDocument = aIsContentDocument;
   }
 
+  void ProcessMETATag(HTMLMetaElement* aMetaElement);
   /**
    * Create an element with the specified name, prefix and namespace ID.
    * Returns null if element name parsing failed.
@@ -2590,6 +2591,12 @@ class Document : public nsINode,
   }
 
   bool IsLoadedAsData() { return mLoadedAsData; }
+
+  void SetAddedToMemoryReportAsDataDocument() {
+    mAddedToMemoryReportingAsDataDocument = true;
+  }
+
+  void UnregisterFromMemoryReportingForDataDocument();
 
   bool MayStartLayout() { return mMayStartLayout; }
 
@@ -3705,6 +3712,13 @@ class Document : public nsINode,
   void ScheduleIntersectionObserverNotification();
   MOZ_CAN_RUN_SCRIPT void NotifyIntersectionObservers();
 
+  ResizeObserver* GetLastRememberedSizeObserver() {
+    return mLastRememberedSizeObserver;
+  }
+  ResizeObserver& EnsureLastRememberedSizeObserver();
+  void ObserveForLastRememberedSize(Element&);
+  void UnobserveForLastRememberedSize(Element&);
+
   // Dispatch a runnable related to the document.
   nsresult Dispatch(TaskCategory aCategory,
                     already_AddRefed<nsIRunnable>&& aRunnable) final;
@@ -4268,10 +4282,6 @@ class Document : public nsINode,
   MOZ_MUST_USE RefPtr<AutomaticStorageAccessGrantPromise>
   AutomaticStorageAccessCanBeGranted();
 
-  // This should *ONLY* be used in GetCookie/SetCookie.
-  already_AddRefed<nsIChannel> CreateDummyChannelForCookies(
-      nsIURI* aCodebaseURI);
-
   static void AddToplevelLoadingDocument(Document* aDoc);
   static void RemoveToplevelLoadingDocument(Document* aDoc);
   static AutoTArray<Document*, 8>* sLoadingForegroundTopLevelContentDocument;
@@ -4419,6 +4429,10 @@ class Document : public nsINode,
   // True if we're loaded as data and therefor has any dangerous stuff, such
   // as scripts and plugins, disabled.
   bool mLoadedAsData : 1;
+
+  // True if the document is considered for memory reporting as a
+  // data document
+  bool mAddedToMemoryReportingAsDataDocument : 1;
 
   // If true, whoever is creating the document has gotten it to the
   // point where it's safe to start layout on it.
@@ -4954,6 +4968,10 @@ class Document : public nsINode,
 
   // Array of intersection observers
   nsTHashSet<DOMIntersectionObserver*> mIntersectionObservers;
+
+  // ResizeObserver for storing and removing the last remembered size.
+  // @see {@link https://drafts.csswg.org/css-sizing-4/#last-remembered}
+  RefPtr<ResizeObserver> mLastRememberedSizeObserver;
 
   // Stack of top layer elements.
   nsTArray<nsWeakPtr> mTopLayer;

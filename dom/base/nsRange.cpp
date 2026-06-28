@@ -92,7 +92,7 @@ DocGroup* nsRange::GetDocGroup() const {
 }
 
 /******************************************************
- * stack based utilty class for managing monitor
+ * stack based utility class for managing monitor
  ******************************************************/
 
 static void InvalidateAllFrames(nsINode* aNode) {
@@ -2777,7 +2777,7 @@ void nsRange::CollectClientRectsAndText(
 
 already_AddRefed<DOMRect> nsRange::GetBoundingClientRect(bool aClampToEdge,
                                                          bool aFlushLayout) {
-  RefPtr<DOMRect> rect = new DOMRect(ToSupports(this));
+  RefPtr<DOMRect> rect = new DOMRect(ToSupports(mOwner));
   if (!mIsPositioned) {
     return rect.forget();
   }
@@ -2802,8 +2802,7 @@ already_AddRefed<DOMRectList> nsRange::GetClientRects(bool aClampToEdge,
     return nullptr;
   }
 
-  RefPtr<DOMRectList> rectList =
-      new DOMRectList(static_cast<AbstractRange*>(this));
+  RefPtr<DOMRectList> rectList = new DOMRectList(ToSupports(mOwner));
 
   nsLayoutUtils::RectListBuilder builder(rectList);
 
@@ -2822,7 +2821,7 @@ void nsRange::GetClientRectsAndTexts(mozilla::dom::ClientRectsAndTexts& aResult,
     return;
   }
 
-  aResult.mRectList = new DOMRectList(static_cast<AbstractRange*>(this));
+  aResult.mRectList = new DOMRectList(ToSupports(mOwner));
 
   nsLayoutUtils::RectListBuilder builder(aResult.mRectList);
 

@@ -4,6 +4,8 @@
 
 #include "DAV1DDecoder.h"
 
+#include "mozilla/TaskQueue.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "nsThreadUtils.h"
 
 #undef LOG
@@ -15,7 +17,9 @@ namespace mozilla {
 
 DAV1DDecoder::DAV1DDecoder(const CreateDecoderParams& aParams)
     : mInfo(aParams.VideoConfig()),
-      mTaskQueue(aParams.mTaskQueue),
+      mTaskQueue(
+          new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
+                        "Dav1dDecoder")),
       mImageContainer(aParams.mImageContainer) {}
 
 RefPtr<MediaDataDecoder::InitPromise> DAV1DDecoder::Init() {
@@ -159,6 +163,13 @@ int DAV1DDecoder::GetPicture(DecodedData& aData, MediaResult& aResult) {
     return 0;
   }
 
+#ifdef ANDROID
+  if (!gfxVars::UseWebRender() && (*picture).p.bpc != 8) {
+    aResult = MediaResult(NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR, __func__);
+    return -1;
+  }
+#endif
+
   RefPtr<VideoData> v = ConstructImage(*picture);
   if (!v) {
     LOG("Image allocation error: %ux%u"
@@ -274,7 +285,7 @@ RefPtr<ShutdownPromise> DAV1DDecoder::Shutdown() {
   RefPtr<DAV1DDecoder> self = this;
   return InvokeAsync(mTaskQueue, __func__, [self]() {
     dav1d_close(&self->mContext);
-    return ShutdownPromise::CreateAndResolve(true, __func__);
+    return self->mTaskQueue->BeginShutdown();
   });
 }
 

@@ -117,7 +117,7 @@ nsresult NS_NewDOMDocument(Document** aInstancePtrResult,
     d->SetCompatibilityMode(eCompatibility_FullStandards);
     d->AsHTMLDocument()->SetIsXHTML(isXHTML);
   }
-  d->SetLoadedAsData(aLoadedAsData);
+  d->SetLoadedAsData(aLoadedAsData, /* aConsiderForMemoryReporting */ true);
   d->SetDocumentURI(aDocumentURI);
   // Must set the principal first, since SetBaseURI checks it.
   d->SetPrincipals(aPrincipal, aPrincipal);
@@ -184,7 +184,7 @@ nsresult NS_NewXMLDocument(Document** aInstancePtrResult, bool aLoadedAsData,
     return rv;
   }
 
-  doc->SetLoadedAsData(aLoadedAsData);
+  doc->SetLoadedAsData(aLoadedAsData, /* aConsiderForMemoryReporting */ true);
   doc->mIsPlainDocument = aIsPlainDocument;
   doc.forget(aInstancePtrResult);
 

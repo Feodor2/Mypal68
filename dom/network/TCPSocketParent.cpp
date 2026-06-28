@@ -15,6 +15,7 @@
 #include "nsISocketTransportService.h"
 #include "nsISocketTransport.h"
 #include "nsNetUtil.h"
+#include "TCPSocket.h"
 
 namespace IPC {
 
@@ -50,7 +51,7 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(TCPSocketParentBase)
 
 TCPSocketParentBase::TCPSocketParentBase() : mIPCOpen(false) {}
 
-TCPSocketParentBase::~TCPSocketParentBase() {}
+TCPSocketParentBase::~TCPSocketParentBase() = default;
 
 void TCPSocketParentBase::ReleaseIPDLReference() {
   MOZ_ASSERT(mIPCOpen);

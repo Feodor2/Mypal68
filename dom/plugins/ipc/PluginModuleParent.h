@@ -307,6 +307,7 @@ class PluginModuleParent : public PPluginModuleParent,
    */
   mozilla::Mutex mCrashReporterMutex;
   UniquePtr<ipc::CrashReporterHost> mCrashReporter;
+  nsString mOrphanedDumpId;
 };
 
 class PluginModuleContentParent : public PluginModuleParent {
@@ -417,6 +418,7 @@ class PluginModuleChromeParent : public PluginModuleParent,
   virtual bool ShouldContinueFromReplyTimeout() override;
 
   void ProcessFirstMinidump();
+  void HandleOrphanedMinidump();
   void AddCrashAnnotations();
 
   PluginProcessParent* Process() const { return mSubprocess; }

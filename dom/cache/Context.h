@@ -17,8 +17,7 @@
 class nsIEventTarget;
 class nsIThread;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace quota {
 
@@ -62,7 +61,7 @@ class Manager;
 // the "profile-before-change" shutdown event to complete.  This is ensured
 // via the code in ShutdownObserver.cpp.
 class Context final : public SafeRefCounted<Context> {
-  typedef mozilla::dom::quota::DirectoryLock DirectoryLock;
+  using DirectoryLock = mozilla::dom::quota::DirectoryLock;
 
  public:
   // Define a class allowing other threads to hold the Context alive.  This also
@@ -150,8 +149,6 @@ class Context final : public SafeRefCounted<Context> {
   void AddActivity(Activity& aActivity);
   void RemoveActivity(Activity& aActivity);
 
-  const QuotaInfo& GetQuotaInfo() const { return mQuotaInfo; }
-
   // Tell the Context that some state information has been orphaned in the
   // data store and won't be cleaned up.  The Context will leave the marker
   // in place to trigger cleanup the next times its opened.
@@ -177,7 +174,8 @@ class Context final : public SafeRefCounted<Context> {
   void Init(Maybe<Context&> aOldContext);
   void Start();
   void DispatchAction(SafeRefPtr<Action> aAction, bool aDoomData = false);
-  void OnQuotaInit(nsresult aRv, const QuotaInfo& aQuotaInfo,
+  void OnQuotaInit(nsresult aRv,
+                   const Maybe<CacheDirectoryMetadata>& aDirectoryMetadata,
                    already_AddRefed<DirectoryLock> aDirectoryLock);
 
   SafeRefPtr<ThreadsafeHandle> CreateThreadsafeHandle();
@@ -191,7 +189,7 @@ class Context final : public SafeRefCounted<Context> {
   RefPtr<Data> mData;
   State mState;
   bool mOrphanedData;
-  QuotaInfo mQuotaInfo;
+  Maybe<CacheDirectoryMetadata> mDirectoryMetadata;
   RefPtr<QuotaInitRunnable> mInitRunnable;
   SafeRefPtr<Action> mInitAction;
   nsTArray<PendingAction> mPendingActions;
@@ -219,7 +217,6 @@ class Context final : public SafeRefCounted<Context> {
 };
 
 }  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_cache_Context_h

@@ -109,8 +109,6 @@ class WebMDemuxer : public MediaDataDemuxer,
 
   bool IsSeekableOnlyInBufferedRanges() const override;
 
-  UniquePtr<EncryptionInfo> GetCrypto() override;
-
   bool GetOffsetForTime(uint64_t aTime, int64_t* aOffset);
 
   // Demux next WebM packet and append samples to MediaRawDataQueue
@@ -166,7 +164,6 @@ class WebMDemuxer : public MediaDataDemuxer,
   media::TimeIntervals GetBuffered();
   nsresult SeekInternal(TrackInfo::TrackType aType,
                         const media::TimeUnit& aTarget);
-  CryptoTrack GetTrackCrypto(TrackInfo::TrackType aType, size_t aTrackNumber);
 
   // Read a packet from the nestegg file. Returns nullptr if all packets for
   // the particular track have been read. Pass TrackInfo::kVideoTrack or
@@ -233,8 +230,6 @@ class WebMDemuxer : public MediaDataDemuxer,
   // as nestegg only performs 1-byte read at a time.
   int64_t mLastWebMBlockOffset;
   const bool mIsMediaSource;
-
-  EncryptionInfo mCrypto;
 };
 
 class WebMTrackDemuxer : public MediaTrackDemuxer,

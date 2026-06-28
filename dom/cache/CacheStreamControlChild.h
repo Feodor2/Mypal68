@@ -14,8 +14,7 @@ namespace mozilla {
 namespace ipc {
 class AutoIPCStream;
 }  // namespace ipc
-namespace dom {
-namespace cache {
+namespace dom::cache {
 
 class ReadStream;
 
@@ -60,8 +59,7 @@ class CacheStreamControlChild final : public PCacheStreamControlChild,
   bool mDestroyDelayed;
 };
 
-}  // namespace cache
-}  // namespace dom
+}  // namespace dom::cache
 }  // namespace mozilla
 
 #endif  // mozilla_dom_cache_CacheStreamControlChild_h

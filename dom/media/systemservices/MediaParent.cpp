@@ -28,11 +28,10 @@ mozilla::LazyLogModule gMediaParentLog("MediaParent");
 // A file in the profile dir is used to persist mOriginKeys used to anonymize
 // deviceIds to be unique per origin, to avoid them being supercookies.
 
-#define ORIGINKEYS_FILE "enumerate_devices.txt"
+#define ORIGINKEYS_FILE u"enumerate_devices.txt"
 #define ORIGINKEYS_VERSION "1"
 
-namespace mozilla {
-namespace media {
+namespace mozilla::media {
 
 StaticMutex sOriginKeyStoreMutex;
 static OriginKeyStore* sOriginKeyStore = nullptr;
@@ -179,7 +178,7 @@ class OriginKeyStore : public nsISupports {
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return nullptr;
       }
-      file->Append(NS_LITERAL_STRING(ORIGINKEYS_FILE));
+      file->Append(nsLiteralString(ORIGINKEYS_FILE));
       return file.forget();
     }
 
@@ -241,7 +240,7 @@ class OriginKeyStore : public nsISupports {
         if (f < 0) {
           continue;
         }
-        int64_t secondsstamp = nsCString(Substring(s, 0, f)).ToInteger64(&rv);
+        int64_t secondsstamp = Substring(s, 0, f).ToInteger64(&rv);
         if (NS_FAILED(rv)) {
           continue;
         }
@@ -531,8 +530,7 @@ bool DeallocPMediaParent(media::PMediaParent* aActor) {
   return true;
 }
 
-}  // namespace media
-}  // namespace mozilla
+}  // namespace mozilla::media
 
 // Instantiate templates to satisfy linker
 template class mozilla::media::Parent<mozilla::media::NonE10s>;

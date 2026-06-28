@@ -12,8 +12,12 @@ interface FileSystemSyncAccessHandle {
   unsigned long long read(([AllowShared] ArrayBufferView or [AllowShared] ArrayBuffer) buffer, optional FileSystemReadWriteOptions options = {});
   unsigned long long write(([AllowShared] ArrayBufferView or [AllowShared] ArrayBuffer) buffer, optional FileSystemReadWriteOptions options = {});
 
-  Promise<void> truncate([EnforceRange] unsigned long long size);
+  [NewObject]
+  Promise<undefined> truncate([EnforceRange] unsigned long long size);
+  [NewObject]
   Promise<unsigned long long> getSize();
-  Promise<void> flush();
-  Promise<void> close();
+  [NewObject]
+  Promise<undefined> flush();
+  [NewObject]
+  Promise<undefined> close();
 };

@@ -46,7 +46,7 @@ class WorkerThreadFriendKey {
 class WorkerThread final : public nsThread {
   class Observer;
 
-  Lock mLock;
+  Lock2 mLock;
   ConditionVariable mWorkerPrivateCondVar;
 
   // Protected by nsThread::mLock.

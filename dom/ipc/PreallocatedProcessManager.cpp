@@ -40,7 +40,11 @@ class PreallocatedProcessManagerImpl final : public nsIObserver {
 
   PreallocatedProcessManagerImpl();
   ~PreallocatedProcessManagerImpl();
-  DISALLOW_EVIL_CONSTRUCTORS(PreallocatedProcessManagerImpl);
+  PreallocatedProcessManagerImpl(const PreallocatedProcessManagerImpl&) =
+      delete;
+
+  const PreallocatedProcessManagerImpl& operator=(
+      const PreallocatedProcessManagerImpl&) = delete;
 
   void Init();
 

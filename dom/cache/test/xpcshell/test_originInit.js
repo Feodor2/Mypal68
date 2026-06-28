@@ -13,20 +13,30 @@ async function testSteps() {
   // ToDo: Replace caches.sqlite with a getter function once we expose the
   // filename of it to a IDL file.
   const cachesDatabase = getRelativeFile(
-    `${basePath}/${originDirName}/${cacheClientDirName}/caches.sqlite`
+    `${basePath}/${originDirName}/${cacheClientDirName()}/caches.sqlite`
   );
   // ToDo: Replace .padding with a getter function once we expose the filename
   // of it to a IDL file.
   const paddingFile = getRelativeFile(
-    `${basePath}/${originDirName}/${cacheClientDirName}/.padding`
+    `${basePath}/${originDirName}/${cacheClientDirName()}/.padding`
   );
   // ToDo: Replace .padding-tmp with a getter function once we expose the
   // filename of it to a IDL file.
   const paddingTempFile = getRelativeFile(
-    `${basePath}/${originDirName}/${cacheClientDirName}/.padding-tmp`
+    `${basePath}/${originDirName}/${cacheClientDirName()}/.padding-tmp`
+  );
+  // ToDo: Replace morgue with a getter function once we expose the
+  // filename of it to a IDL file.
+  const morgueDir = getRelativeFile(
+    `${basePath}/${originDirName}/${cacheClientDirName()}/morgue`
   );
 
-  async function createTestOrigin() {
+  const persistentCacheDir = getRelativeFile(
+    `${storageDirName}/${persistentPersistenceDirName}/${originDirName}/` +
+      `${cacheClientDirName()}`
+  );
+
+  async function createNormalCacheOrigin() {
     async function sandboxScript() {
       const cache = await caches.open("myCache");
       const request = new Request("https://example.com/index.html");
@@ -53,18 +63,56 @@ async function testSteps() {
     await requestFinished(request);
   }
 
+  async function createPersistentTestOrigin() {
+    let database = getSimpleDatabase(principal, "persistent");
+
+    let request = database.open("data");
+    await requestFinished(request);
+
+    request = reset();
+    await requestFinished(request);
+  }
+
   function removeFile(file) {
     file.remove(false);
+  }
+
+  function removeDir(dir) {
+    dir.remove(true);
   }
 
   function createEmptyFile(file) {
     file.create(Ci.nsIFile.NORMAL_FILE_TYPE, 0o644);
   }
 
+  function createEmptyDirectory(dir) {
+    dir.create(Ci.nsIFile.DIRECTORY_TYPE, 0o0755);
+  }
+
+  async function initTestOrigin() {
+    let request = initStorage();
+    await requestFinished(request);
+
+    request = initTemporaryStorage();
+    await requestFinished(request);
+
+    request = initTemporaryOrigin(principal);
+    await requestFinished(request);
+  }
+
+  async function initPersistentTestOrigin() {
+    let request = initStorage();
+    await requestFinished(request);
+
+    request = initPersistentOrigin(principal);
+    await requestFinished(request);
+  }
+
   function checkFiles(
     expectCachesDatabase,
     expectPaddingFile,
-    expectTempPaddingFile
+    expectTempPaddingFile,
+    expectMorgueDir
   ) {
     let exists = cachesDatabase.exists();
     if (expectCachesDatabase) {
@@ -86,64 +134,116 @@ async function testSteps() {
     } else {
       ok(!exists, ".padding-tmp doesn't exist");
     }
+
+    exists = morgueDir.exists();
+    if (expectMorgueDir) {
+      ok(exists, "morgue does exist");
+    } else {
+      ok(!exists, "moruge doesn't exist");
+    }
   }
 
-  async function testInitFunctionality(
-    hasCachesDatabase,
-    hasPaddingFile,
-    hasTempPaddingFile
+  async function clearTestOrigin() {
+    let request = clearOrigin(principal, defaultPersistence);
+    await requestFinished(request);
+  }
+
+  async function clearPersistentTestOrigin() {
+    let request = clearOrigin(principal, persistentPersistence);
+    await requestFinished(request);
+  }
+
+  async function testOriginInit(
+    createCachesDatabase,
+    createPaddingFile,
+    createTempPaddingFile,
+    createMorgueDir
   ) {
     info(
-      `Testing init cache directory when caches.sqlite ` +
-        `${hasCachesDatabase ? "exists" : "doesn't exist"}, .padding ` +
-        `${hasPaddingFile ? "exists" : "doesn't exist"}, .padding-tmp ` +
-        `${hasTempPaddingFile ? "exists" : "doesn't exist"}`
+      `Testing initialization of cache directory when caches.sqlite ` +
+        `${createCachesDatabase ? "exists" : "doesn't exist"}, .padding ` +
+        `${createPaddingFile ? "exists" : "doesn't exist"}, .padding-tmp ` +
+        `${createTempPaddingFile ? "exists" : "doesn't exist"}, morgue ` +
+        `${createMorgueDir ? "exists" : "doesn't exist"}`
     );
 
-    await createTestOrigin();
+    await createNormalCacheOrigin();
 
-    checkFiles(true, true, false);
+    checkFiles(true, true, false, true);
 
-    if (hasTempPaddingFile) {
-      createEmptyFile(paddingTempFile);
-    }
-
-    if (!hasPaddingFile) {
-      removeFile(paddingFile);
-    }
-
-    if (!hasCachesDatabase) {
+    if (!createCachesDatabase) {
       removeFile(cachesDatabase);
     }
 
-    let request = initStorage();
-    await requestFinished(request);
+    if (!createPaddingFile) {
+      removeFile(paddingFile);
+    }
 
-    request = initTemporaryStorage();
-    await requestFinished(request);
+    if (createTempPaddingFile) {
+      createEmptyFile(paddingTempFile);
+    }
 
-    request = initTemporaryOrigin(principal);
-    await requestFinished(request);
+    if (!createMorgueDir) {
+      removeDir(morgueDir);
+    }
 
-    // After the origin is initialized, ".padding-tmp" should have always been
-    // removed and ".padding" should only exist when "caches.sqlite" exists.
-    checkFiles(hasCachesDatabase, hasCachesDatabase, false);
+    await initTestOrigin();
 
-    request = clearOrigin(principal);
-    await requestFinished(request);
+    checkFiles(
+      createCachesDatabase,
+      // After the origin is initialized, ".padding" should only exist when
+      // "caches.sqlite" exists.
+      createCachesDatabase,
+      // After the origin is initialized, ".padding-tmp" should have always been
+      // removed.
+      false,
+      createCachesDatabase && createMorgueDir
+    );
+
+    await clearTestOrigin();
   }
 
-  await testInitFunctionality(false, false, false);
-  // ToDo: .padding-tmp will be removed when the first cache operation is
-  // executed, but we should remove it during InitOrigin in this case.
-  //await testInitFunctionality(false, false, true);
-  // ToDo: .padding should be removed when there is no caches.sqlite.
-  //await testInitFunctionality(false, true, false);
-  // ToDo: In this case, padding size should be counted as zero because there is
-  // no database, but we don't.
-  //await testInitFunctionality(false, true, true);
-  await testInitFunctionality(true, false, false);
-  await testInitFunctionality(true, false, true);
-  await testInitFunctionality(true, true, false);
-  await testInitFunctionality(true, true, true);
+  // Test all possible combinations.
+  for (let createCachesDatabase of [false, true]) {
+    for (let createPaddingFile of [false, true]) {
+      for (let createTempPaddingFile of [false, true]) {
+        for (let createMorgueDir of [false, true]) {
+          await testOriginInit(
+            createCachesDatabase,
+            createPaddingFile,
+            createTempPaddingFile,
+            createMorgueDir
+          );
+        }
+      }
+    }
+  }
+
+  // Verify that InitializeOrigin doesn't fail when a
+  // storage/permanent/${origin}/cache exists.
+  async function testPermanentCacheDir() {
+    info(
+      "Testing initialization of cache directory placed in permanent origin " +
+        "directory"
+    );
+
+    await createPersistentTestOrigin();
+
+    createEmptyDirectory(persistentCacheDir);
+
+    try {
+      await initPersistentTestOrigin();
+
+      ok(true, "Should not have thrown");
+    } catch (ex) {
+      ok(false, "Should not have thrown");
+    }
+
+    let exists = persistentCacheDir.exists();
+    ok(exists, "cache directory in permanent origin directory does exist");
+
+    await clearPersistentTestOrigin();
+  }
+
+  await testPermanentCacheDir();
 }

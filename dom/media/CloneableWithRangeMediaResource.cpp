@@ -8,6 +8,7 @@
 #include "mozilla/Monitor2.h"
 #include "nsContentUtils.h"
 #include "nsIAsyncInputStream.h"
+#include "nsITimedChannel.h"
 #include "nsNetCID.h"
 
 namespace mozilla {

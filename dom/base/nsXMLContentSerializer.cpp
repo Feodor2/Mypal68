@@ -808,7 +808,7 @@ bool nsXMLContentSerializer::SerializeAttributes(
 
     bool addNSAttr = false;
     if (kNameSpaceID_XMLNS != namespaceID) {
-      nsContentUtils::NameSpaceManager()->GetNameSpaceURI(namespaceID, uriStr);
+      nsNameSpaceManager::GetInstance()->GetNameSpaceURI(namespaceID, uriStr);
       addNSAttr = ConfirmPrefix(prefixStr, uriStr, aOriginalElement, true);
     }
 

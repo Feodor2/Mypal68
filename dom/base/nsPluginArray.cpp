@@ -16,7 +16,7 @@
 #include "nsIObserverService.h"
 #include "nsIWeakReference.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsContentUtils.h"
 #include "nsIPermissionManager.h"
@@ -342,7 +342,7 @@ void nsPluginArray::EnsurePlugins() {
             if (topDoc) {
               nsIPrincipal* principal = topDoc->NodePrincipal();
               nsCOMPtr<nsIPermissionManager> permMgr =
-                  services::GetPermissionManager();
+                  components::PermissionManager::Service();
               permMgr->TestPermissionFromPrincipal(principal, permString,
                                                    &permission);
             }

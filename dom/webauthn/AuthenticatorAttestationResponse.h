@@ -14,8 +14,7 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class AuthenticatorAttestationResponse final : public AuthenticatorResponse {
  public:
@@ -42,7 +41,6 @@ class AuthenticatorAttestationResponse final : public AuthenticatorResponse {
   JS::Heap<JSObject*> mAttestationObjectCachedObj;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_AuthenticatorAttestationResponse_h

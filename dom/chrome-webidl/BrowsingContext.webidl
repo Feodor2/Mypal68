@@ -35,7 +35,7 @@ interface BrowsingContext {
 
   // Extension to give chrome JS the ability to set the window screen
   // orientation while in RDM.
-  void setRDMPaneOrientation(OrientationType type, float rotationAngle);
+  undefined setRDMPaneOrientation(OrientationType type, float rotationAngle);
 };
 
 [Exposed=Window, ChromeOnly]
@@ -52,8 +52,8 @@ interface CanonicalBrowsingContext : BrowsingContext {
 
   readonly attribute WindowGlobalParent? embedderWindowGlobal;
 
-  void notifyStartDelayedAutoplayMedia();
-  void notifyMediaMutedChanged(boolean muted);
+  undefined notifyStartDelayedAutoplayMedia();
+  undefined notifyMediaMutedChanged(boolean muted);
 };
 
 [Exposed=Window, ChromeOnly]

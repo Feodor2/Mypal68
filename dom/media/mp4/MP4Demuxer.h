@@ -30,8 +30,6 @@ class MP4Demuxer : public MediaDataDemuxer,
 
   bool IsSeekable() const override;
 
-  UniquePtr<EncryptionInfo> GetCrypto() override;
-
   void NotifyDataArrived() override;
 
   void NotifyDataRemoved() override;
@@ -41,7 +39,6 @@ class MP4Demuxer : public MediaDataDemuxer,
   RefPtr<ResourceStream> mStream;
   AutoTArray<RefPtr<MP4TrackDemuxer>, 1> mAudioDemuxers;
   AutoTArray<RefPtr<MP4TrackDemuxer>, 1> mVideoDemuxers;
-  nsTArray<uint8_t> mCryptoInitData;
   bool mIsSeekable;
 };
 

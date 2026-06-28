@@ -26,6 +26,7 @@
 #include "mozilla/intl/Collator.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/ReverseIterator.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozIStorageStatement.h"
 #include "mozIStorageValueArray.h"
 #include "nsAlgorithm.h"
@@ -478,8 +479,8 @@ nsresult Key::DecodeJSValInternal(const EncodedDataType*& aPos,
     uint32_t index = 0;
     JS::Rooted<JS::Value> val(aCx);
     while (aPos < aEnd && *aPos - aTypeOffset != eTerminator) {
-      IDB_TRY(DecodeJSValInternal(aPos, aEnd, aCx, aTypeOffset, &val,
-                                  aRecursionDepth + 1));
+      QM_TRY(MOZ_TO_RESULT(DecodeJSValInternal(aPos, aEnd, aCx, aTypeOffset,
+                                               &val, aRecursionDepth + 1)));
 
       aTypeOffset = 0;
 

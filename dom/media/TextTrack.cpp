@@ -19,8 +19,7 @@ extern mozilla::LazyLogModule gTextTrackLog;
   MOZ_LOG(gTextTrackLog, LogLevel::Debug, \
           ("TextTrack=%p, " msg, this, ##__VA_ARGS__))
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 static const char* ToStateStr(const TextTrackMode aMode) {
   switch (aMode) {
@@ -381,5 +380,4 @@ HTMLMediaElement* TextTrack::GetMediaElement() const {
   return mTextTrackList ? mTextTrackList->GetMediaElement() : nullptr;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

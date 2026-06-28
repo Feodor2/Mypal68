@@ -8,7 +8,7 @@ interface nsISupports;
 /**
  * A callback passed to SessionStoreUtils.forEachNonDynamicChildFrame().
  */
-callback SessionStoreUtilsFrameCallback = void (WindowProxy frame, unsigned long index);
+callback SessionStoreUtilsFrameCallback = undefined (WindowProxy frame, unsigned long index);
 
 /**
  * SessionStore utility functions implemented in C++ for performance reasons.
@@ -20,8 +20,8 @@ namespace SessionStoreUtils {
    * given |window|.
    */
   [Throws]
-  void forEachNonDynamicChildFrame(WindowProxy window,
-                                   SessionStoreUtilsFrameCallback callback);
+  undefined forEachNonDynamicChildFrame(WindowProxy window,
+                                        SessionStoreUtilsFrameCallback callback);
 
   /**
    * Takes the given listener, wraps it in a filter that filters out events from
@@ -51,11 +51,11 @@ namespace SessionStoreUtils {
    * EventListener.
    */
   [Throws]
-  void removeDynamicFrameFilteredListener(EventTarget target,
-                                          DOMString type,
-                                          nsISupports listener,
-                                          boolean useCapture,
-                                          optional boolean mozSystemGroup = false);
+  undefined removeDynamicFrameFilteredListener(EventTarget target,
+                                               DOMString type,
+                                               nsISupports listener,
+                                               boolean useCapture,
+                                               optional boolean mozSystemGroup = false);
 
   /*
    * Save the docShell.allow* properties
@@ -65,8 +65,8 @@ namespace SessionStoreUtils {
   /*
    * Restore the docShell.allow* properties
    */
-  void restoreDocShellCapabilities(nsIDocShell docShell,
-                                   ByteString disallowCapabilities);
+  undefined restoreDocShellCapabilities(nsIDocShell docShell,
+                                        ByteString disallowCapabilities);
 
   /**
    * Collects scroll position data for any given |frame| in the frame hierarchy.
@@ -85,7 +85,7 @@ namespace SessionStoreUtils {
    * @param frame (DOMWindow)
    * @param value (object, see collectScrollPosition())
    */
-  void restoreScrollPosition(Window frame, optional CollectedData data = {});
+  undefined restoreScrollPosition(Window frame, optional CollectedData data = {});
 
   /**
    * Collect form data for a given |frame| *not* including any subframes.
@@ -121,7 +121,7 @@ namespace SessionStoreUtils {
    *        keys and per-origin session storage data as strings. For example:
    *        {"https://example.com^userContextId=1": {"key": "value", "my_number": "123"}}
    */
-   void restoreSessionStorage(nsIDocShell docShell, record<DOMString, record<DOMString, DOMString>> data);
+   undefined restoreSessionStorage(nsIDocShell docShell, record<DOMString, record<DOMString, DOMString>> data);
 };
 
 [GenerateConversionToJS, GenerateInit]

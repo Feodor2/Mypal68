@@ -134,7 +134,7 @@ RefPtr<MediaDataEncoder::InitPromise> AndroidDataEncoder::ProcessInit() {
       mJavaCallbacks, mozilla::MakeUnique<CallbacksSupport>(this));
 
   mJavaEncoder = java::CodecProxy::Create(true /* encoder */, mFormat, nullptr,
-                                          mJavaCallbacks, EmptyString());
+                                          mJavaCallbacks, u""_ns);
   if (!mJavaEncoder) {
     return InitPromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
@@ -273,6 +273,10 @@ void AndroidDataEncoder::ProcessOutput(
     return;
   }
   AssertOnTaskQueue();
+
+  if (!mJavaEncoder) {
+    return;
+  }
 
   AutoRelease releaseSample(mJavaEncoder, aSample);
 

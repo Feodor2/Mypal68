@@ -10,6 +10,6 @@
  Exposed=Window]
 interface MIDIOutput : MIDIPort {
   [Throws]
-  void send(sequence<octet> data, optional DOMHighResTimeStamp timestamp);
-  void clear();
+  undefined send(sequence<octet> data, optional DOMHighResTimeStamp timestamp);
+  undefined clear();
 };

@@ -96,13 +96,15 @@ class ContentChild final
     nsCString sourceURL;
   };
 
-  nsresult ProvideWindowCommon(
-      BrowserChild* aTabOpener, mozIDOMWindowProxy* aParent, bool aIframeMoz,
-      uint32_t aChromeFlags, bool aCalledFromJS, bool aPositionSpecified,
-      bool aSizeSpecified, nsIURI* aURI, const nsAString& aName,
-      const nsACString& aFeatures, bool aForceNoOpener, bool aForceNoReferrer,
-      nsDocShellLoadState* aLoadState, bool* aWindowIsNew,
-      mozIDOMWindowProxy** aReturn);
+  nsresult ProvideWindowCommon(BrowserChild* aTabOpener,
+                               mozIDOMWindowProxy* aParent, bool aIframeMoz,
+                               uint32_t aChromeFlags, bool aCalledFromJS,
+                               bool aWidthSpecified, nsIURI* aURI,
+                               const nsAString& aName,
+                               const nsACString& aFeatures, bool aForceNoOpener,
+                               bool aForceNoReferrer,
+                               nsDocShellLoadState* aLoadState,
+                               bool* aWindowIsNew, mozIDOMWindowProxy** aReturn);
 
   bool Init(MessageLoop* aIOLoop, base::ProcessId aParentPid,
             const char* aParentBuildID, UniquePtr<IPC::Channel> aChannel,
@@ -276,7 +278,6 @@ class ContentChild final
   mozilla::ipc::IPCResult RecvSetOffline(const bool& offline);
 
   mozilla::ipc::IPCResult RecvSetConnectivity(const bool& connectivity);
-  mozilla::ipc::IPCResult RecvSetCaptivePortalState(const int32_t& state);
 
   mozilla::ipc::IPCResult RecvBidiKeyboardNotify(const bool& isLangRTL,
                                                  const bool& haveBidiKeyboards);
@@ -348,6 +349,8 @@ class ContentChild final
                                            const uint32_t& aMsaaID);
   mozilla::ipc::IPCResult RecvShutdownA11y();
 
+  mozilla::ipc::IPCResult RecvApplicationForeground();
+  mozilla::ipc::IPCResult RecvApplicationBackground();
   mozilla::ipc::IPCResult RecvGarbageCollect();
   mozilla::ipc::IPCResult RecvCycleCollect();
   mozilla::ipc::IPCResult RecvUnlinkGhosts();
@@ -761,7 +764,9 @@ class ContentChild final
 
   nsTArray<RefPtr<BrowsingContextGroup>> mBrowsingContextGroupHolder;
 
-  DISALLOW_EVIL_CONSTRUCTORS(ContentChild);
+  ContentChild(const ContentChild&) = delete;
+
+  const ContentChild& operator=(const ContentChild&) = delete;
 };
 
 uint64_t NextWindowID();

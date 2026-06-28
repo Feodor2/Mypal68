@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/TaskQueue.h"
-
 #include "FFmpegAudioDecoder.h"
 #include "TimeUnits.h"
 #include "VideoUtils.h"
@@ -11,9 +9,8 @@
 namespace mozilla {
 
 FFmpegAudioDecoder<LIBAV_VER>::FFmpegAudioDecoder(FFmpegLibWrapper* aLib,
-                                                  TaskQueue* aTaskQueue,
                                                   const AudioInfo& aConfig)
-    : FFmpegDataDecoder(aLib, aTaskQueue, GetCodecId(aConfig.mMimeType)) {
+    : FFmpegDataDecoder(aLib, GetCodecId(aConfig.mMimeType)) {
   MOZ_COUNT_CTOR(FFmpegAudioDecoder);
   // Use a new MediaByteBuffer as the object will be modified during
   // initialization.
@@ -175,6 +172,7 @@ MediaResult FFmpegAudioDecoder<LIBAV_VER>::DoDecode(MediaRawData* aSample,
                                                     uint8_t* aData, int aSize,
                                                     bool* aGotFrame,
                                                     DecodedData& aResults) {
+  MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
   AVPacket packet;
   mLib->av_init_packet(&packet);
 

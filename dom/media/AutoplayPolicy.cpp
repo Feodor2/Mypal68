@@ -4,32 +4,32 @@
 
 #include "AutoplayPolicy.h"
 
-#include "mozilla/Logging.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/dom/AudioContext.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/FeaturePolicyUtils.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "mozilla/dom/HTMLMediaElementBinding.h"
 #include "mozilla/dom/UserActivation.h"
+#include "mozilla/Logging.h"
+#include "mozilla/MediaManager.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/Components.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIAutoplay.h"
-#include "nsContentUtils.h"
-#include "mozilla/dom/Document.h"
-#include "MediaManager.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
-#include "nsPIDOMWindow.h"
-#include "mozilla/Services.h"
-#include "mozilla/StaticPrefs_media.h"
 #include "nsIPermissionManager.h"
+#include "nsIPrincipal.h"
+#include "nsPIDOMWindow.h"
 
 mozilla::LazyLogModule gAutoplayPermissionLog("Autoplay");
 
 #define AUTOPLAY_LOG(msg, ...) \
   MOZ_LOG(gAutoplayPermissionLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 static Document* ApproverDocOf(const Document& aDocument) {
   nsCOMPtr<nsIDocShell> ds = aDocument.GetDocShell();
@@ -66,11 +66,12 @@ static uint32_t SiteAutoplayPerm(const Document* aDocument) {
     return nsIPermissionManager::DENY_ACTION;
   }
   nsIPrincipal* principal = aDocument->NodePrincipal();
-  nsCOMPtr<nsIPermissionManager> permMgr = services::GetPermissionManager();
+  nsCOMPtr<nsIPermissionManager> permMgr =
+      components::PermissionManager::Service();
   NS_ENSURE_TRUE(permMgr, nsIPermissionManager::DENY_ACTION);
 
   uint32_t perm;
-  nsresult rv = permMgr->TestExactPermissionFromPrincipal(principal, NS_LITERAL_CSTRING("autoplay-media"), &perm);
+  nsresult rv = permMgr->TestExactPermissionFromPrincipal(principal, "autoplay-media"_ns, &perm);
   NS_ENSURE_SUCCESS(rv, nsIPermissionManager::DENY_ACTION);
   return perm;
 }
@@ -279,5 +280,4 @@ DocumentAutoplayPolicy AutoplayPolicy::IsAllowedToPlay(
   return DocumentAutoplayPolicy::Disallowed;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

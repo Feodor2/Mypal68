@@ -35,7 +35,6 @@
 #include "nsFocusManager.h"
 #include "nsIContent.h"
 #include "nsIContentInlines.h"
-#include "nsIForm.h"
 #include "nsIFormControl.h"
 #include "nsINode.h"
 #include "nsISupports.h"

@@ -367,12 +367,6 @@ nsresult WebMDemuxer::ReadMetadata() {
       if (!r) {
         mInfo.mVideo.mDuration = TimeUnit::FromNanoseconds(duration);
       }
-      mInfo.mVideo.mCrypto = GetTrackCrypto(TrackInfo::kVideoTrack, track);
-      if (mInfo.mVideo.mCrypto.IsEncrypted()) {
-        MOZ_ASSERT(mInfo.mVideo.mCrypto.mCryptoScheme == CryptoScheme::Cenc,
-                   "WebM should only use cenc scheme");
-        mCrypto.AddInitData(u"webm"_ns, mInfo.mVideo.mCrypto.mKeyId);
-      }
     } else if (type == NESTEGG_TRACK_AUDIO && !mHasAudio) {
       nestegg_audio_params params;
       r = nestegg_track_audio_params(context, track, &params);
@@ -437,12 +431,6 @@ nsresult WebMDemuxer::ReadMetadata() {
       if (!r) {
         mInfo.mAudio.mDuration = TimeUnit::FromNanoseconds(duration);
       }
-      mInfo.mAudio.mCrypto = GetTrackCrypto(TrackInfo::kAudioTrack, track);
-      if (mInfo.mAudio.mCrypto.IsEncrypted()) {
-        MOZ_ASSERT(mInfo.mAudio.mCrypto.mCryptoScheme == CryptoScheme::Cenc,
-                   "WebM should only use cenc scheme");
-        mCrypto.AddInitData(u"webm"_ns, mInfo.mAudio.mCrypto.mKeyId);
-      }
     }
   }
   return NS_OK;
@@ -492,42 +480,6 @@ void WebMDemuxer::NotifyDataRemoved() {
                                       mInitData->Length(), 0);
   }
   mNeedReIndex = true;
-}
-
-UniquePtr<EncryptionInfo> WebMDemuxer::GetCrypto() {
-  return mCrypto.IsEncrypted() ? MakeUnique<EncryptionInfo>(mCrypto) : nullptr;
-}
-
-CryptoTrack WebMDemuxer::GetTrackCrypto(TrackInfo::TrackType aType,
-                                        size_t aTrackNumber) {
-  const int WEBM_IV_SIZE = 16;
-  const unsigned char* contentEncKeyId;
-  size_t contentEncKeyIdLength;
-  CryptoTrack crypto;
-  nestegg* context = Context(aType);
-
-  int r = nestegg_track_content_enc_key_id(
-      context, aTrackNumber, &contentEncKeyId, &contentEncKeyIdLength);
-
-  if (r == -1) {
-    WEBM_DEBUG("nestegg_track_content_enc_key_id failed r=%d", r);
-    return crypto;
-  }
-
-  uint32_t i;
-  nsTArray<uint8_t> initData;
-  for (i = 0; i < contentEncKeyIdLength; i++) {
-    initData.AppendElement(contentEncKeyId[i]);
-  }
-
-  if (!initData.IsEmpty()) {
-    // Webm only uses a cenc style scheme.
-    crypto.mCryptoScheme = CryptoScheme::Cenc;
-    crypto.mIVSize = WEBM_IV_SIZE;
-    crypto.mKeyId = std::move(initData);
-  }
-
-  return crypto;
 }
 
 nsresult WebMDemuxer::GetNextPacket(TrackInfo::TrackType aType,
@@ -621,8 +573,6 @@ nsresult WebMDemuxer::GetNextPacket(TrackInfo::TrackType aType,
     (void)nestegg_packet_discard_padding(holder->Packet(), &discardPadding);
   }
 
-  int packetEncryption = nestegg_packet_encryption(holder->Packet());
-
   for (uint32_t i = 0; i < count; ++i) {
     unsigned char* data = nullptr;
     size_t length;
@@ -648,46 +598,39 @@ nsresult WebMDemuxer::GetNextPacket(TrackInfo::TrackType aType,
     if (aType == TrackInfo::kAudioTrack) {
       isKeyframe = true;
     } else if (aType == TrackInfo::kVideoTrack) {
-      if (packetEncryption == NESTEGG_PACKET_HAS_SIGNAL_BYTE_ENCRYPTED ||
-          packetEncryption == NESTEGG_PACKET_HAS_SIGNAL_BYTE_PARTITIONED) {
-        // Packet is encrypted, can't peek, use packet info
-        isKeyframe = nestegg_packet_has_keyframe(holder->Packet()) ==
-                     NESTEGG_PACKET_HAS_KEYFRAME_TRUE;
-      } else {
-        MOZ_ASSERT(
-            packetEncryption == NESTEGG_PACKET_HAS_SIGNAL_BYTE_UNENCRYPTED ||
-                packetEncryption == NESTEGG_PACKET_HAS_SIGNAL_BYTE_FALSE,
-            "Unencrypted packet expected");
-        auto sample = Span(data, length);
-        auto alphaSample = Span(alphaData, alphaLength);
+      MOZ_ASSERT(
+          packetEncryption == NESTEGG_PACKET_HAS_SIGNAL_BYTE_UNENCRYPTED ||
+              packetEncryption == NESTEGG_PACKET_HAS_SIGNAL_BYTE_FALSE,
+          "Unencrypted packet expected");
+      auto sample = Span(data, length);
+      auto alphaSample = Span(alphaData, alphaLength);
 
-        switch (mVideoCodec) {
-          case NESTEGG_CODEC_VP8:
-            isKeyframe = VPXDecoder::IsKeyframe(sample, VPXDecoder::Codec::VP8);
-            if (isKeyframe && alphaLength) {
-              isKeyframe =
-                  VPXDecoder::IsKeyframe(alphaSample, VPXDecoder::Codec::VP8);
-            }
-            break;
-          case NESTEGG_CODEC_VP9:
+      switch (mVideoCodec) {
+        case NESTEGG_CODEC_VP8:
+          isKeyframe = VPXDecoder::IsKeyframe(sample, VPXDecoder::Codec::VP8);
+          if (isKeyframe && alphaLength) {
+            isKeyframe =
+                VPXDecoder::IsKeyframe(alphaSample, VPXDecoder::Codec::VP8);
+          }
+          break;
+        case NESTEGG_CODEC_VP9:
             isKeyframe = VPXDecoder::IsKeyframe(sample, VPXDecoder::Codec::VP9);
-            if (isKeyframe && alphaLength) {
-              isKeyframe =
-                  VPXDecoder::IsKeyframe(alphaSample, VPXDecoder::Codec::VP9);
-            }
+          if (isKeyframe && alphaLength) {
+            isKeyframe =
+                VPXDecoder::IsKeyframe(alphaSample, VPXDecoder::Codec::VP9);
+          }
             break;
 #ifdef MOZ_AV1
-          case NESTEGG_CODEC_AV1:
-            isKeyframe = AOMDecoder::IsKeyframe(sample);
-            if (isKeyframe && alphaLength) {
-              isKeyframe = AOMDecoder::IsKeyframe(alphaSample);
-            }
-            break;
+        case NESTEGG_CODEC_AV1:
+          isKeyframe = AOMDecoder::IsKeyframe(sample);
+          if (isKeyframe && alphaLength) {
+            isKeyframe = AOMDecoder::IsKeyframe(alphaSample);
+          }
+          break;
 #endif
-          default:
-            NS_WARNING("Cannot detect keyframes in unknown WebM video codec");
-            return NS_ERROR_FAILURE;
-        }
+        default:
+          NS_WARNING("Cannot detect keyframes in unknown WebM video codec");
+          return NS_ERROR_FAILURE;
       }
     }
 
@@ -730,104 +673,6 @@ nsresult WebMDemuxer::GetNextPacket(TrackInfo::TrackType aType,
       }
       if (discardFrames.isValid()) {
         sample->mDiscardPadding = discardFrames.value();
-      }
-    }
-
-    if (packetEncryption == NESTEGG_PACKET_HAS_SIGNAL_BYTE_ENCRYPTED ||
-        packetEncryption == NESTEGG_PACKET_HAS_SIGNAL_BYTE_PARTITIONED) {
-      UniquePtr<MediaRawDataWriter> writer(sample->CreateWriter());
-      unsigned char const* iv;
-      size_t ivLength;
-      nestegg_packet_iv(holder->Packet(), &iv, &ivLength);
-      writer->mCrypto.mCryptoScheme = CryptoScheme::Cenc;
-      writer->mCrypto.mIVSize = ivLength;
-      if (ivLength == 0) {
-        // Frame is not encrypted. This shouldn't happen as it means the
-        // encryption bit is set on a frame with no IV, but we gracefully
-        // handle incase.
-        MOZ_ASSERT_UNREACHABLE(
-            "Unencrypted packets should not have the encryption bit set!");
-        WEBM_DEBUG("Unencrypted packet with encryption bit set");
-        writer->mCrypto.mPlainSizes.AppendElement(length);
-        writer->mCrypto.mEncryptedSizes.AppendElement(0);
-      } else {
-        // Frame is encrypted
-        writer->mCrypto.mIV.AppendElements(iv, 8);
-        // Iv from a sample is 64 bits, must be padded with 64 bits more 0s
-        // in compliance with spec
-        for (uint32_t i = 0; i < 8; i++) {
-          writer->mCrypto.mIV.AppendElement(0);
-        }
-
-        if (packetEncryption == NESTEGG_PACKET_HAS_SIGNAL_BYTE_ENCRYPTED) {
-          writer->mCrypto.mPlainSizes.AppendElement(0);
-          writer->mCrypto.mEncryptedSizes.AppendElement(length);
-        } else if (packetEncryption ==
-                   NESTEGG_PACKET_HAS_SIGNAL_BYTE_PARTITIONED) {
-          uint8_t numPartitions = 0;
-          const uint32_t* partitions = NULL;
-          nestegg_packet_offsets(holder->Packet(), &partitions, &numPartitions);
-
-          // WebM stores a list of 'partitions' in the data, which alternate
-          // clear, encrypted. The data in the first partition is always clear.
-          // So, and sample might look as follows:
-          // 00|XXXX|000|XX, where | represents a partition, 0 a clear byte and
-          // X an encrypted byte. If the first bytes in sample are unencrypted,
-          // the first partition will be at zero |XXXX|000|XX.
-          //
-          // As GMP expects the lengths of the clear and encrypted chunks of
-          // data, we calculate these from the difference between the last two
-          // partitions.
-          uint32_t lastOffset = 0;
-          bool encrypted = false;
-
-          for (uint8_t i = 0; i < numPartitions; i++) {
-            uint32_t partition = partitions[i];
-            uint32_t currentLength = partition - lastOffset;
-
-            if (encrypted) {
-              writer->mCrypto.mEncryptedSizes.AppendElement(currentLength);
-            } else {
-              writer->mCrypto.mPlainSizes.AppendElement(currentLength);
-            }
-
-            encrypted = !encrypted;
-            lastOffset = partition;
-
-            MOZ_ASSERT(lastOffset <= length);
-          }
-
-          // Add the data between the last offset and the end of the data.
-          // 000|XXX|000
-          //        ^---^
-          if (encrypted) {
-            writer->mCrypto.mEncryptedSizes.AppendElement(length - lastOffset);
-          } else {
-            writer->mCrypto.mPlainSizes.AppendElement(length - lastOffset);
-          }
-
-          // Make sure we have an equal number of encrypted and plain sizes (GMP
-          // expects this). This simple check is sufficient as there are two
-          // possible cases at this point:
-          // 1. The number of samples are even (so we don't need to do anything)
-          // 2. There is one more clear sample than encrypted samples, so add a
-          // zero length encrypted chunk.
-          // There can never be more encrypted partitions than clear partitions
-          // due to the alternating structure of the WebM samples and the
-          // restriction that the first chunk is always clear.
-          if (numPartitions % 2 == 0) {
-            writer->mCrypto.mEncryptedSizes.AppendElement(0);
-          }
-
-          // Assert that the lengths of the encrypted and plain samples add to
-          // the length of the data.
-          MOZ_ASSERT(
-              ((size_t)(std::accumulate(writer->mCrypto.mPlainSizes.begin(),
-                                        writer->mCrypto.mPlainSizes.end(), 0) +
-                        std::accumulate(writer->mCrypto.mEncryptedSizes.begin(),
-                                        writer->mCrypto.mEncryptedSizes.end(),
-                                        0)) == length));
-        }
       }
     }
     aSamples->Push(sample);
@@ -1207,13 +1052,6 @@ void WebMTrackDemuxer::Reset() {
 
 void WebMTrackDemuxer::UpdateSamples(
     const nsTArray<RefPtr<MediaRawData>>& aSamples) {
-  for (const auto& sample : aSamples) {
-    if (sample->mCrypto.IsEncrypted()) {
-      UniquePtr<MediaRawDataWriter> writer(sample->CreateWriter());
-      writer->mCrypto.mIVSize = mInfo->mCrypto.mIVSize;
-      writer->mCrypto.mKeyId.AppendElements(mInfo->mCrypto.mKeyId);
-    }
-  }
   if (mNextKeyframeTime.isNothing() ||
       aSamples.LastElement()->mTime >= mNextKeyframeTime.value()) {
     SetNextKeyFrameTime();

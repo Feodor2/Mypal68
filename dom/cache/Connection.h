@@ -8,9 +8,7 @@
 #include "mozIStorageConnection.h"
 #include "nsCOMPtr.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 class Connection final : public mozIStorageConnection {
  public:
@@ -27,8 +25,6 @@ class Connection final : public mozIStorageConnection {
   NS_DECL_MOZISTORAGECONNECTION
 };
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache
 
 #endif  // mozilla_dom_cache_Connection_h

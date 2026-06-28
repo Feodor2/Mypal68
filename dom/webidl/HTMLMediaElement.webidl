@@ -32,7 +32,7 @@ interface HTMLMediaElement : HTMLElement {
            attribute DOMString preload;
   [NewObject]
   readonly attribute TimeRanges buffered;
-  void load();
+  undefined load();
   DOMString canPlayType(DOMString type);
 
   // ready state
@@ -48,10 +48,8 @@ interface HTMLMediaElement : HTMLElement {
   [SetterThrows]
            attribute double currentTime;
   [Throws]
-  void fastSeek(double time);
+  undefined fastSeek(double time);
   readonly attribute unrestricted double duration;
-  [ChromeOnly]
-  readonly attribute boolean isEncrypted;
   // TODO: Bug 847376 - readonly attribute any startDate;
   readonly attribute boolean paused;
   [SetterThrows]
@@ -67,10 +65,10 @@ interface HTMLMediaElement : HTMLElement {
            attribute boolean autoplay;
   [CEReactions, SetterThrows]
            attribute boolean loop;
+  [NewObject]
+  Promise<undefined> play();
   [Throws]
-  Promise<void> play();
-  [Throws]
-  void pause();
+  undefined pause();
 
   // TODO: Bug 847377 - mediaGroup and MediaController
   // media controller
@@ -108,12 +106,12 @@ partial interface HTMLMediaElement {
   Promise<DOMString> mozRequestDebugInfo();
 
   [Func="HasDebuggerOrTabsPrivilege", NewObject]
-  static void mozEnableDebugLog();
+  static undefined mozEnableDebugLog();
   [Func="HasDebuggerOrTabsPrivilege", NewObject]
   Promise<DOMString> mozRequestDebugLog();
 
   //[Pref="media.test.dumpDebugInfo"]
-  Promise<void> mozDumpDebugInfo();
+  Promise<undefined> mozDumpDebugInfo();
 
   attribute MediaStream? srcObject;
 
@@ -181,8 +179,8 @@ partial interface HTMLMediaElement {
  *     event and an "ended" event.
  */
 partial interface HTMLMediaElement {
-  [Throws, Pref="media.seekToNextFrame.enabled"]
-  Promise<void> seekToNextFrame();
+  [NewObject, Pref="media.seekToNextFrame.enabled"]
+  Promise<undefined> seekToNextFrame();
 };
 
 /*
@@ -196,11 +194,10 @@ partial interface HTMLMediaElement {
  * - isVisible is a boolean value which indicate whether media element is visible.
  * - isVideoDecodingSuspended() is used to know whether video decoding has suspended.
  */
+#ifdef ENABLE_TESTS
 partial interface HTMLMediaElement {
-  [Pref="media.test.video-suspend"]
-  void setVisible(boolean aVisible);
+  undefined setVisible(boolean aVisible);
 
-  [Pref="media.test.video-suspend"]
   boolean hasSuspendTaint();
 
   [ChromeOnly]
@@ -209,13 +206,16 @@ partial interface HTMLMediaElement {
   [ChromeOnly]
   readonly attribute boolean isVideoDecodingSuspended;
 };
+#endif
 
-/* Audio Output Devices API */
+/* Audio Output Devices API
+ * https://w3c.github.io/mediacapture-output/
+ */
 partial interface HTMLMediaElement {
-  [Pref="media.setsinkid.enabled"]
+  [SecureContext, Pref="media.setsinkid.enabled"]
   readonly attribute DOMString sinkId;
-  [Throws, Pref="media.setsinkid.enabled"]
-  Promise<void> setSinkId(DOMString sinkId);
+  [NewObject, SecureContext, Pref="media.setsinkid.enabled"]
+  Promise<undefined> setSinkId(DOMString sinkId);
 };
 
 /*

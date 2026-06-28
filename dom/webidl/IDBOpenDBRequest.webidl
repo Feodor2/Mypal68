@@ -3,7 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is
- * https://dvcs.w3.org/hg/IndexedDB/raw-file/tip/Overview.html#idl-def-IDBOpenDBRequest
+ * https://w3c.github.io/IndexedDB/#idbopendbrequest
  */
 
 [Exposed=(Window,Worker)]

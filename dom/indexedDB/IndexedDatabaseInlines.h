@@ -9,15 +9,13 @@
 #  error Must include IndexedDatabase.h first
 #endif
 
-#include "FileManager.h"
+#include "DatabaseFileInfo.h"
 #include "IDBMutableFile.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 #include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/File.h"
 
-namespace mozilla {
-namespace dom {
-namespace indexedDB {
+namespace mozilla::dom::indexedDB {
 
 #ifdef NS_BUILD_REFCNT_LOGGING
 inline StructuredCloneFileChild::StructuredCloneFileChild(
@@ -46,7 +44,7 @@ inline StructuredCloneFileChild::StructuredCloneFileChild(
 }
 
 inline StructuredCloneFileParent::StructuredCloneFileParent(
-    FileType aType, SafeRefPtr<indexedDB::FileInfo> aFileInfo)
+    FileType aType, SafeRefPtr<DatabaseFileInfo> aFileInfo)
     : StructuredCloneFileBase{aType}, mContents{Some(std::move(aFileInfo))} {
   MOZ_ASSERT(**mContents);
   MOZ_COUNT_CTOR(StructuredCloneFileParent);
@@ -73,7 +71,7 @@ inline StructuredCloneFileParent::~StructuredCloneFileParent() {
   MOZ_COUNT_DTOR(StructuredCloneFileParent);
 }
 
-inline SafeRefPtr<indexedDB::FileInfo> StructuredCloneFileParent::FileInfoPtr()
+inline SafeRefPtr<DatabaseFileInfo> StructuredCloneFileParent::FileInfoPtr()
     const {
   return (*mContents)->clonePtr();
 }
@@ -185,8 +183,6 @@ bool WrapAsJSObject(JSContext* const aCx, T& aBaseObject,
   return true;
 }
 
-}  // namespace indexedDB
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::indexedDB
 
 #endif  // IndexedDatabaseInlines_h

@@ -3,11 +3,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-[LegacyNoInterfaceObject, JSImplementation="@mozilla.org/sidebar;1",
- Exposed=Window]
-interface External
-{
+[LegacyNoInterfaceObject, Exposed=Window]
+interface External {
   [Deprecated="External_AddSearchProvider"]
-  void AddSearchProvider(DOMString aDescriptionURL);
-  void IsSearchProviderInstalled();
+  undefined AddSearchProvider();
+  undefined IsSearchProviderInstalled();
 };

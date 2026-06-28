@@ -65,9 +65,10 @@
 #include "mozilla/Result.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/ScrollTypes.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "mozilla/SizeOfState.h"
 #include "mozilla/Span.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -105,6 +106,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/EventTarget.h"
+#include "mozilla/dom/External.h"
 #include "mozilla/dom/Fetch.h"
 #ifdef MOZ_GAMEPAD
 #  include "mozilla/dom/Gamepad.h"
@@ -297,10 +299,6 @@
 #  include "nsIPrintSettings.h"
 #  include "nsIPrintSettingsService.h"
 #  include "nsIWebBrowserPrint.h"
-#endif
-
-#ifdef HAVE_SIDEBAR
-#  include "mozilla/dom/ExternalBinding.h"
 #endif
 
 #ifdef MOZ_WEBSPEECH
@@ -552,20 +550,11 @@ class IdleRequestExecutor final : public nsIRunnable,
   Maybe<int32_t> mDelayedExecutorHandle;
 };
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(IdleRequestExecutor)
+NS_IMPL_CYCLE_COLLECTION(IdleRequestExecutor, mWindow,
+                         mDelayedExecutorDispatcher)
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(IdleRequestExecutor)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(IdleRequestExecutor)
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(IdleRequestExecutor)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mWindow)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDelayedExecutorDispatcher)
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(IdleRequestExecutor)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDelayedExecutorDispatcher)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(IdleRequestExecutor)
   NS_INTERFACE_MAP_ENTRY(nsIRunnable)
@@ -1257,7 +1246,10 @@ void nsGlobalWindowInner::FreeInnerObjects() {
   mExternal = nullptr;
   mInstallTrigger = nullptr;
 
-  mLocalStorage = nullptr;
+  if (mLocalStorage) {
+    mLocalStorage->Disconnect();
+    mLocalStorage = nullptr;
+  }
   mSessionStorage = nullptr;
   mPerformance = nullptr;
 
@@ -1478,7 +1470,10 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindowInner)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mHistory)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mCustomElements)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSharedWorkers)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mLocalStorage)
+  if (tmp->mLocalStorage) {
+    tmp->mLocalStorage->Disconnect();
+    NS_IMPL_CYCLE_COLLECTION_UNLINK(mLocalStorage)
+  }
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSessionStorage)
   if (tmp->mApplicationCache) {
     static_cast<nsDOMOfflineResourceList*>(tmp->mApplicationCache.get())
@@ -2554,6 +2549,39 @@ bool nsPIDOMWindowInner::HasOpenWebSockets() const {
          (mTopInnerWindow && mTopInnerWindow->mNumOfOpenWebSockets);
 }
 
+bool nsPIDOMWindowInner::IsFullyActive() const {
+  Document* document = GetExtantDoc();
+  if (!document) {
+    return false;
+  }
+  nsPIDOMWindowInner* win = document->GetInnerWindow();
+  while (true) {
+    if (!win || nsGlobalWindowInner::Cast(win)->IsDying()) {
+      return false;
+    }
+    document = win->GetExtantDoc();
+    if (!document) {
+      return false;
+    }
+    if (!document->IsCurrentActiveDocument()) {
+      return false;
+    }
+    nsPIDOMWindowOuter* context = win->GetOuterWindow();
+    if (!context) {
+      return false;
+    }
+    if (context->IsTopLevelWindow()) {
+      return true;
+    }
+    nsCOMPtr<Element> frameElement =
+        nsGlobalWindowOuter::Cast(context)->GetRealFrameElementOuter();
+    if (!frameElement) {
+      return false;
+    }
+    win = frameElement->OwnerDoc()->GetInnerWindow();
+  }
+}
+
 void nsPIDOMWindowInner::SetAudioCapture(bool aCapture) {
   RefPtr<AudioChannelService> service = AudioChannelService::GetOrCreate();
   if (service) {
@@ -2973,8 +3001,7 @@ void nsGlobalWindowInner::GetOwnPropertyNames(
 }
 
 /* static */
-bool nsGlobalWindowInner::IsPrivilegedChromeWindow(JSContext* aCx,
-                                                   JSObject* aObj) {
+bool nsGlobalWindowInner::IsPrivilegedChromeWindow(JSContext*, JSObject* aObj) {
   // For now, have to deal with XPConnect objects here.
   nsGlobalWindowInner* win = xpc::WindowOrNull(aObj);
   return win && win->IsChromeWindow() &&
@@ -2984,22 +3011,21 @@ bool nsGlobalWindowInner::IsPrivilegedChromeWindow(JSContext* aCx,
 
 /* static */
 bool nsGlobalWindowInner::IsRequestIdleCallbackEnabled(JSContext* aCx,
-                                                       JSObject* aObj) {
+                                                       JSObject*) {
   // The requestIdleCallback should always be enabled for system code.
   return StaticPrefs::dom_requestIdleCallback_enabled() ||
          nsContentUtils::IsSystemCaller(aCx);
 }
 
 /* static */
-bool nsGlobalWindowInner::RegisterProtocolHandlerAllowedForContext(
-    JSContext* aCx, JSObject* aObj) {
-  return IsSecureContextOrObjectIsFromSecureContext(aCx, aObj) ||
-         Preferences::GetBool("dom.registerProtocolHandler.insecure.enabled");
+bool nsGlobalWindowInner::DeviceSensorsEnabled(JSContext*, JSObject*) {
+  return Preferences::GetBool("device.sensors.enabled");
 }
 
 /* static */
-bool nsGlobalWindowInner::DeviceSensorsEnabled(JSContext* aCx, JSObject* aObj) {
-  return Preferences::GetBool("device.sensors.enabled");
+bool nsGlobalWindowInner::ContentPropertyEnabled(JSContext* aCx, JSObject*) {
+  return StaticPrefs::dom_window_content_untrusted_enabled() ||
+         nsContentUtils::IsSystemCaller(aCx);
 }
 
 nsDOMOfflineResourceList* nsGlobalWindowInner::GetApplicationCache(
@@ -3685,8 +3711,7 @@ void nsGlobalWindowInner::ScrollBy(const ScrollToOptions& aOptions) {
                                 ? ScrollMode::SmoothMsd
                                 : ScrollMode::Instant;
 
-    sf->ScrollByCSSPixels(scrollDelta, scrollMode,
-                          mozilla::ScrollOrigin::Relative);
+    sf->ScrollByCSSPixels(scrollDelta, scrollMode);
   }
 }
 
@@ -3923,6 +3948,31 @@ bool nsGlobalWindowInner::Find(const nsAString& aString, bool aCaseSensitive,
 
 void nsGlobalWindowInner::GetOrigin(nsAString& aOrigin) {
   nsContentUtils::GetUTFOrigin(GetPrincipal(), aOrigin);
+}
+
+// See also AutoJSAPI::ReportException
+void nsGlobalWindowInner::ReportError(JSContext* aCx,
+                                      JS::Handle<JS::Value> aError,
+                                      CallerType aCallerType,
+                                      ErrorResult& aRv) {
+  if (MOZ_UNLIKELY(!HasActiveDocument())) {
+    return aRv.Throw(NS_ERROR_XPC_SECURITY_MANAGER_VETO);
+  }
+
+  JS::ErrorReportBuilder jsReport(aCx);
+  JS::ExceptionStack exnStack(aCx, aError, nullptr);
+  if (!jsReport.init(aCx, exnStack, JS::ErrorReportBuilder::NoSideEffects)) {
+    return aRv.NoteJSContextException(aCx);
+  }
+
+  RefPtr<xpc::ErrorReport> xpcReport = new xpc::ErrorReport();
+  bool isChrome = aCallerType == CallerType::System;
+  xpcReport->Init(jsReport.report(), jsReport.toStringResult().c_str(),
+                  isChrome, WindowID());
+
+  JS::RootingContext* rcx = JS::RootingContext::get(aCx);
+  DispatchScriptErrorEvent(this, rcx, xpcReport, exnStack.exception(),
+                           exnStack.stack());
 }
 
 void nsGlobalWindowInner::Atob(const nsAString& aAsciiBase64String,
@@ -6139,13 +6189,15 @@ bool nsGlobalWindowInner::IsVRContentPresenting() const {
 
 void nsGlobalWindowInner::AddSizeOfIncludingThis(
     nsWindowSizes& aWindowSizes) const {
-  aWindowSizes.mDOMOtherSize += aWindowSizes.mState.mMallocSizeOf(this);
-  aWindowSizes.mDOMOtherSize += nsIGlobalObject::ShallowSizeOfExcludingThis(
-      aWindowSizes.mState.mMallocSizeOf);
+  aWindowSizes.mDOMSizes.mDOMOtherSize +=
+      aWindowSizes.mState.mMallocSizeOf(this);
+  aWindowSizes.mDOMSizes.mDOMOtherSize +=
+      nsIGlobalObject::ShallowSizeOfExcludingThis(
+          aWindowSizes.mState.mMallocSizeOf);
 
   EventListenerManager* elm = GetExistingListenerManager();
   if (elm) {
-    aWindowSizes.mDOMOtherSize +=
+    aWindowSizes.mDOMSizes.mDOMOtherSize +=
         elm->SizeOfIncludingThis(aWindowSizes.mState.mMallocSizeOf);
     aWindowSizes.mDOMEventListenersCount += elm->ListenerCount();
   }
@@ -6159,13 +6211,13 @@ void nsGlobalWindowInner::AddSizeOfIncludingThis(
   }
 
   if (mNavigator) {
-    aWindowSizes.mDOMOtherSize +=
+    aWindowSizes.mDOMSizes.mDOMOtherSize +=
         mNavigator->SizeOfIncludingThis(aWindowSizes.mState.mMallocSizeOf);
   }
 
   ForEachEventTargetObject([&](DOMEventTargetHelper* et, bool* aDoneOut) {
     if (nsCOMPtr<nsISizeOfEventTarget> iSizeOf = do_QueryObject(et)) {
-      aWindowSizes.mDOMEventTargetsSize +=
+      aWindowSizes.mDOMSizes.mDOMEventTargetsSize +=
           iSizeOf->SizeOfEventTargetIncludingThis(
               aWindowSizes.mState.mMallocSizeOf);
     }
@@ -6176,12 +6228,35 @@ void nsGlobalWindowInner::AddSizeOfIncludingThis(
   });
 
   if (mPerformance) {
-    aWindowSizes.mDOMPerformanceUserEntries =
+    aWindowSizes.mDOMSizes.mDOMPerformanceUserEntries =
         mPerformance->SizeOfUserEntries(aWindowSizes.mState.mMallocSizeOf);
-    aWindowSizes.mDOMPerformanceResourceEntries =
+    aWindowSizes.mDOMSizes.mDOMPerformanceResourceEntries =
         mPerformance->SizeOfResourceEntries(aWindowSizes.mState.mMallocSizeOf);
-    aWindowSizes.mDOMPerformanceEventEntries =
+    aWindowSizes.mDOMSizes.mDOMPerformanceEventEntries =
         mPerformance->SizeOfEventEntries(aWindowSizes.mState.mMallocSizeOf);
+  }
+}
+
+void nsGlobalWindowInner::RegisterDataDocumentForMemoryReporting(
+    Document* aDocument) {
+  aDocument->SetAddedToMemoryReportAsDataDocument();
+  mDataDocumentsForMemoryReporting.AppendElement(
+      do_GetWeakReference(aDocument));
+}
+
+void nsGlobalWindowInner::UnregisterDataDocumentForMemoryReporting(
+    Document* aDocument) {
+  nsWeakPtr doc = do_GetWeakReference(aDocument);
+  MOZ_ASSERT(mDataDocumentsForMemoryReporting.Contains(doc));
+  mDataDocumentsForMemoryReporting.RemoveElement(doc);
+}
+
+void nsGlobalWindowInner::CollectDOMSizesForDataDocuments(
+    nsWindowSizes& aSize) const {
+  for (const nsWeakPtr& ptr : mDataDocumentsForMemoryReporting) {
+    if (nsCOMPtr<Document> doc = do_QueryReferent(ptr)) {
+      doc->DocAddSizeOfIncludingThis(aSize);
+    }
   }
 }
 #ifdef MOZ_GAMEPAD
@@ -6764,39 +6839,11 @@ bool nsGlobalWindowInner::IsSecureContext() const {
 }
 
 External* nsGlobalWindowInner::GetExternal(ErrorResult& aRv) {
-#ifdef HAVE_SIDEBAR
   if (!mExternal) {
-    mExternal = ConstructJSImplementation<External>("@mozilla.org/sidebar;1",
-                                                    this, aRv);
-    if (aRv.Failed()) {
-      return nullptr;
-    }
+    mExternal = new dom::External(ToSupports(this));
   }
 
-  return static_cast<External*>(mExternal.get());
-#else
-  aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
-  return nullptr;
-#endif
-}
-
-void nsGlobalWindowInner::GetSidebar(OwningExternalOrWindowProxy& aResult,
-                                     ErrorResult& aRv) {
-#ifdef HAVE_SIDEBAR
-  // First check for a named frame named "sidebar"
-  RefPtr<BrowsingContext> domWindow = GetChildWindow(u"sidebar"_ns);
-  if (domWindow) {
-    aResult.SetAsWindowProxy() = std::move(domWindow);
-    return;
-  }
-
-  RefPtr<External> external = GetExternal(aRv);
-  if (external) {
-    aResult.SetAsExternal() = external;
-  }
-#else
-  aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
-#endif
+  return mExternal;
 }
 
 void nsGlobalWindowInner::ClearDocumentDependentSlots(JSContext* aCx) {

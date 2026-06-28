@@ -8,7 +8,6 @@
 #include "GMPLog.h"
 #include "GMPTimerParent.h"
 #include "mozIGeckoMediaPluginService.h"
-#include "mozilla/AbstractThread.h"
 #include "mozilla/ipc/CrashReporterHost.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
@@ -30,6 +29,10 @@
 #ifdef XP_WIN
 #  include "WMFDecoderModule.h"
 #endif
+#if defined(MOZ_WIDGET_ANDROID)
+#  include "mozilla/java/GeckoProcessManagerWrappers.h"
+#  include "mozilla/java/GeckoProcessTypeWrappers.h"
+#endif  // defined(MOZ_WIDGET_ANDROID)
 
 using mozilla::ipc::GeckoChildProcessHost;
 
@@ -48,8 +51,9 @@ namespace mozilla {
 
 namespace gmp {
 
-GMPParent::GMPParent(AbstractThread* aMainThread)
+GMPParent::GMPParent()
     : mState(GMPStateNotLoaded),
+      mPluginId(GeckoChildProcessHost::GetUniqueID()),
       mProcess(nullptr),
       mDeleteProcessOnlyOnUnload(false),
       mAbnormalShutdownInProgress(false),
@@ -58,12 +62,13 @@ GMPParent::GMPParent(AbstractThread* aMainThread)
       mGMPContentChildCount(0),
       mChildPid(0),
       mHoldingSelfRef(false),
-      mMainThread(aMainThread) {
-  mPluginId = GeckoChildProcessHost::GetUniqueID();
+      mMainThread(GetMainThreadSerialEventTarget()) {
+  MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   GMP_PARENT_LOG_DEBUG("GMPParent ctor id=%u", mPluginId);
 }
 
 GMPParent::~GMPParent() {
+  // This method is not restricted to a specific thread.
   GMP_PARENT_LOG_DEBUG("GMPParent dtor id=%u", mPluginId);
   MOZ_ASSERT(!mProcess);
 }
@@ -211,8 +216,8 @@ void GMPParent::CloseIfUnused() {
 }
 
 void GMPParent::CloseActive(bool aDieWhenUnloaded) {
-  GMP_PARENT_LOG_DEBUG("%s: state %d", __FUNCTION__, mState);
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
+  GMP_PARENT_LOG_DEBUG("%s: state %d", __FUNCTION__, mState);
 
   if (aDieWhenUnloaded) {
     mDeleteProcessOnlyOnUnload = true;  // don't allow this to go back...
@@ -234,8 +239,8 @@ void GMPParent::MarkForDeletion() {
 bool GMPParent::IsMarkedForDeletion() { return mIsBlockingDeletion; }
 
 void GMPParent::Shutdown() {
-  GMP_PARENT_LOG_DEBUG("%s", __FUNCTION__);
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
+  GMP_PARENT_LOG_DEBUG("%s", __FUNCTION__);
 
   if (mAbnormalShutdownInProgress) {
     return;
@@ -296,6 +301,7 @@ void GMPParent::ChildTerminated() {
 }
 
 void GMPParent::DeleteProcess() {
+  MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   GMP_PARENT_LOG_DEBUG("%s", __FUNCTION__);
 
   if (mState != GMPStateClosing) {
@@ -389,10 +395,9 @@ void GMPParent::AddCrashAnnotations() {
   }
 }
 
-bool GMPParent::GetCrashID(nsString& aResult) {
+void GMPParent::GetCrashID(nsString& aResult) {
   AddCrashAnnotations();
-
-  return GenerateCrashReport(OtherPid(), &aResult);
+  GenerateCrashReport(OtherPid(), &aResult);
 }
 
 static void GMPNotifyObservers(const uint32_t aPluginID,
@@ -416,13 +421,13 @@ static void GMPNotifyObservers(const uint32_t aPluginID,
 }
 
 void GMPParent::ActorDestroy(ActorDestroyReason aWhy) {
+  MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   GMP_PARENT_LOG_DEBUG("%s: (%d)", __FUNCTION__, (int)aWhy);
 
   if (AbnormalShutdown == aWhy) {
-    Telemetry::Accumulate(Telemetry::SUBPROCESS_ABNORMAL_ABORT, "gmplugin"_ns,
-                          1);
     nsString dumpID;
-    if (!GetCrashID(dumpID)) {
+    GetCrashID(dumpID);
+    if (dumpID.IsEmpty()) {
       NS_WARNING("GMP crash without crash report");
       dumpID = mName;
       dumpID += '-';
@@ -504,6 +509,7 @@ bool ReadInfoField(GMPInfoFileParser& aParser, const nsCString& aKey,
 }
 
 RefPtr<GenericPromise> GMPParent::ReadGMPMetaData() {
+  MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   MOZ_ASSERT(mDirectory, "Plugin directory cannot be NULL!");
   MOZ_ASSERT(!mName.IsEmpty(), "Plugin mName cannot be empty!");
 
@@ -521,6 +527,7 @@ RefPtr<GenericPromise> GMPParent::ReadGMPMetaData() {
 }
 
 RefPtr<GenericPromise> GMPParent::ReadGMPInfoFile(nsIFile* aFile) {
+  MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   GMPInfoFileParser parser;
   if (!parser.Init(aFile)) {
     return GenericPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
@@ -650,8 +657,8 @@ void GMPParent::RejectGetContentParentPromises() {
 
 void GMPParent::GetGMPContentParent(
     UniquePtr<MozPromiseHolder<GetGMPContentParentPromise>>&& aPromiseHolder) {
-  GMP_PARENT_LOG_DEBUG("%s %p", __FUNCTION__, this);
   MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
+  GMP_PARENT_LOG_DEBUG("%s %p", __FUNCTION__, this);
 
   if (mGMPContentParent) {
     RefPtr<GMPContentParent::CloseBlocker> blocker(

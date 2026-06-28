@@ -27,12 +27,6 @@ bool TrackInfo::IsEqualTo(const TrackInfo& rhs) const {
       mLanguage == rhs.mLanguage && mEnabled == rhs.mEnabled &&
       mTrackId == rhs.mTrackId && mMimeType == rhs.mMimeType &&
       mDuration == rhs.mDuration && mMediaTime == rhs.mMediaTime &&
-      mCrypto.mCryptoScheme == rhs.mCrypto.mCryptoScheme &&
-      mCrypto.mIVSize == rhs.mCrypto.mIVSize &&
-      mCrypto.mKeyId == rhs.mCrypto.mKeyId &&
-      mCrypto.mCryptByteBlock == rhs.mCrypto.mCryptByteBlock &&
-      mCrypto.mSkipByteBlock == rhs.mCrypto.mSkipByteBlock &&
-      mCrypto.mConstantIV == rhs.mCrypto.mConstantIV && mTags == rhs.mTags &&
       mIsRenderedExternally == rhs.mIsRenderedExternally && mType == rhs.mType);
 }
 

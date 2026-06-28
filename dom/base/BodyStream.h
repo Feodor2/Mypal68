@@ -15,7 +15,6 @@
 #include "nsISupportsImpl.h"
 #include "nsNetCID.h"
 #include "nsWeakReference.h"
-#include "mozilla/Mutex.h"
 
 class nsIGlobalObject;
 
@@ -44,15 +43,21 @@ class BodyStreamHolder : public nsISupports {
 
   BodyStreamHolder();
 
-  virtual void NullifyStream() = 0;
+  virtual void NullifyStream() { mReadableStreamBody = nullptr; }
 
-  virtual void MarkAsRead() = 0;
+  virtual void MarkAsRead() {}
 
-  virtual void SetReadableStreamBody(ReadableStream* aBody) = 0;
-  virtual ReadableStream* GetReadableStreamBody() = 0;
+  void SetReadableStreamBody(ReadableStream* aBody) {
+    mReadableStreamBody = aBody;
+  }
+  ReadableStream* GetReadableStreamBody() { return mReadableStreamBody; }
 
  protected:
   virtual ~BodyStreamHolder() = default;
+
+  // This is the ReadableStream exposed to content. It's underlying source is a
+  // BodyStream object.
+  RefPtr<ReadableStream> mReadableStreamBody;
 
  private:
   void StoreBodyStream(BodyStream* aBodyStream);
@@ -75,7 +80,7 @@ class BodyStream final : public nsIInputStreamCallback,
   friend class BodyStreamHolder;
 
  public:
-  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_ISUPPORTS
   NS_DECL_NSIINPUTSTREAMCALLBACK
   NS_DECL_NSIOBSERVER
 
@@ -94,26 +99,15 @@ class BodyStream final : public nsIInputStreamCallback,
  private:
   BodyStream(nsIGlobalObject* aGlobal, BodyStreamHolder* aStreamHolder,
              nsIInputStream* aInputStream);
-  ~BodyStream() = default;
-
-#ifdef DEBUG
-  void AssertIsOnOwningThread();
-#else
-  void AssertIsOnOwningThread() {}
-#endif
+  ~BodyStream();
 
  public:
-  // Cancel Callback
-  already_AddRefed<Promise> CancelCallback(
-      JSContext* aCx, const Optional<JS::Handle<JS::Value>>& aReason,
-      ErrorResult& aRv);
-
   // Pull Callback
   already_AddRefed<Promise> PullCallback(JSContext* aCx,
                                          ReadableStreamController& aController,
                                          ErrorResult& aRv);
 
-  void ErrorCallback();
+  void CloseInputAndReleaseObjects();
 
  private:
   // Fills a buffer with bytes from the stream.
@@ -124,59 +118,36 @@ class BodyStream final : public nsIInputStreamCallback,
   // This is a script boundary until Bug 1750605 is resolved and allows us
   // to replace this with MOZ_CAN_RUN_SCRIPT.
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void EnqueueChunkWithSizeIntoStream(
-      JSContext* aCx, ReadableStream* aStream, uint64_t bytes,
+      JSContext* aCx, ReadableStream* aStream, uint64_t aAvailableData,
       ErrorResult& aRv);
 
-  void ErrorPropagation(JSContext* aCx, const MutexAutoLock& aProofOfLock,
-                        ReadableStream* aStream, nsresult aRv);
+  void ErrorPropagation(JSContext* aCx, ReadableStream* aStream,
+                        nsresult aError);
 
   // TODO: convert this to MOZ_CAN_RUN_SCRIPT (bug 1750605)
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void CloseAndReleaseObjects(
-      JSContext* aCx, const MutexAutoLock& aProofOfLock,
-      ReadableStream* aStream);
+      JSContext* aCx, ReadableStream* aStream);
 
   class WorkerShutdown;
 
-  void ReleaseObjects(const MutexAutoLock& aProofOfLock);
-
   void ReleaseObjects();
+
+  // The closed state should ultimately be managed by the source algorithms
+  // class. See also bug 1815997.
+  bool IsClosed() { return !mStreamHolder; }
 
   // Common methods
 
-  enum State {
-    // This is the beginning state before any reading operation.
-    eInitializing,
-
-    // RequestDataCallback has not been called yet. We haven't started to read
-    // data from the stream yet.
-    eWaiting,
-
-    // We are reading data in a separate I/O thread.
-    eReading,
-
-    // We are ready to write something in the JS Buffer.
-    eWriting,
-
-    // After a writing, we want to check if the stream is closed. After the
-    // check, we go back to eWaiting. If a reading request happens in the
-    // meantime, we move to eReading state.
-    eChecking,
-
-    // Operation completed.
-    eClosed,
-  };
-
-  // We need a mutex because JS engine can release BodyStream on a non-owning
-  // thread. We must be sure that the releasing of resources doesn't trigger
-  // race conditions.
-  Mutex mMutex;
-
-  // Protected by mutex.
-  State mState;
-
+  // mGlobal is set on creation, and isn't modified off the owning thread.
+  // It isn't set to nullptr until ReleaseObjects() runs.
   nsCOMPtr<nsIGlobalObject> mGlobal;
+  // Same for mStreamHolder. mStreamHolder being nullptr means the stream is
+  // closed.
   RefPtr<BodyStreamHolder> mStreamHolder;
   nsCOMPtr<nsIEventTarget> mOwningEventTarget;
+  // Same as mGlobal but set to nullptr on OnInputStreamReady (on the owning
+  // thread).
+  RefPtr<Promise> mPullPromise;
 
   // This is the original inputStream received during the CTOR. It will be
   // converted into an nsIAsyncInputStream and stored into mInputStream at the

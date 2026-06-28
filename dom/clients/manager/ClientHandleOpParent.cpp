@@ -6,10 +6,10 @@
 
 #include "ClientHandleParent.h"
 #include "ClientSourceParent.h"
+#include "mozilla/dom/ipc/StructuredCloneData.h"
 #include "mozilla/dom/PClientManagerParent.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 ClientSourceParent* ClientHandleOpParent::GetSource() const {
   auto handle = static_cast<ClientHandleParent*>(Manager());
@@ -41,7 +41,7 @@ void ClientHandleOpParent::Init(ClientOpConstructorArgs&& aArgs) {
     ClientPostMessageArgs rebuild;
     rebuild.serviceWorker() = orig.serviceWorker();
 
-    StructuredCloneData data;
+    ipc::StructuredCloneData data;
     data.BorrowFromClonedMessageDataForBackgroundParent(orig.clonedData());
     if (!data.BuildClonedMessageDataForBackgroundParent(
             source->Manager()->Manager(), rebuild.clonedData())) {
@@ -74,5 +74,4 @@ void ClientHandleOpParent::Init(ClientOpConstructorArgs&& aArgs) {
       ->Track(mPromiseRequestHolder);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

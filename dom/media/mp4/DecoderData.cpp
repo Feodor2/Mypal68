@@ -44,24 +44,12 @@ mozilla::Result<mozilla::Ok, nsresult> CryptoFile::DoUpdate(
 static MediaResult UpdateTrackProtectedInfo(mozilla::TrackInfo& aConfig,
                                             const Mp4parseSinfInfo& aSinf) {
   if (aSinf.is_encrypted != 0) {
-    if (aSinf.scheme_type == MP4_PARSE_ENCRYPTION_SCHEME_TYPE_CENC) {
-      aConfig.mCrypto.mCryptoScheme = CryptoScheme::Cenc;
-    } else if (aSinf.scheme_type == MP4_PARSE_ENCRYPTION_SCHEME_TYPE_CBCS) {
-      aConfig.mCrypto.mCryptoScheme = CryptoScheme::Cbcs;
-    } else {
-      // Unsupported encryption type;
-      return MediaResult(
-          NS_ERROR_DOM_MEDIA_METADATA_ERR,
-          RESULT_DETAIL(
-              "Unsupported encryption scheme encountered aSinf.scheme_type=%d",
-              static_cast<int>(aSinf.scheme_type)));
-    }
-    aConfig.mCrypto.mIVSize = aSinf.iv_size;
-    aConfig.mCrypto.mKeyId.AppendElements(aSinf.kid.data, aSinf.kid.length);
-    aConfig.mCrypto.mCryptByteBlock = aSinf.crypt_byte_block;
-    aConfig.mCrypto.mSkipByteBlock = aSinf.skip_byte_block;
-    aConfig.mCrypto.mConstantIV.AppendElements(aSinf.constant_iv.data,
-                                               aSinf.constant_iv.length);
+    // Unsupported encryption type;
+    return MediaResult(
+        NS_ERROR_DOM_MEDIA_METADATA_ERR,
+        RESULT_DETAIL(
+            "Unsupported encryption scheme encountered aSinf.scheme_type=%d",
+            static_cast<int>(aSinf.scheme_type)));
   }
   return NS_OK;
 }

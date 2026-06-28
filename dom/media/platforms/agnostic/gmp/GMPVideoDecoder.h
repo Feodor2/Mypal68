@@ -18,7 +18,6 @@ struct GMPVideoDecoderParams {
   explicit GMPVideoDecoderParams(const CreateDecoderParams& aParams);
 
   const VideoInfo& mConfig;
-  TaskQueue* mTaskQueue;
   layers::ImageContainer* mImageContainer;
   layers::LayersBackend mLayersBackend;
   RefPtr<GMPCrashHelper> mCrashHelper;

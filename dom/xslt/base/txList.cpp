@@ -24,7 +24,7 @@ txList::txList() {
  */
 txList::~txList() { clear(); }  //-- ~txList
 
-void txList::add(void* objPtr) { insertBefore(objPtr, 0); }  //-- add
+void txList::add(void* objPtr) { insertBefore(objPtr, nullptr); }  //-- add
 
 /**
  * Returns the number of items in this txList
@@ -39,12 +39,7 @@ int32_t List::getLength() { return itemCount; }  //-- getLength
  * is a private method, I feel that's a valid assumption
  **/
 void txList::insertAfter(void* objPtr, ListItem* refItem) {
-  //-- if refItem == null insert at front
-  if (!refItem) {
-    insertBefore(objPtr, firstItem);
-  } else {
-    insertBefore(objPtr, refItem->nextItem);
-  }
+  insertBefore(objPtr, refItem ? refItem->nextItem : firstItem);
 }  //-- insertAfter
 
 /**
@@ -142,7 +137,7 @@ void txListIterator::addAfter(void* objPtr) {
   if (currentItem || !atEndOfList) {
     list->insertAfter(objPtr, currentItem);
   } else {
-    list->insertBefore(objPtr, 0);
+    list->insertBefore(objPtr, nullptr);
   }
 }  //-- addAfter
 
@@ -156,7 +151,7 @@ void txListIterator::addBefore(void* objPtr) {
   if (currentItem || atEndOfList) {
     list->insertBefore(objPtr, currentItem);
   } else {
-    list->insertAfter(objPtr, 0);
+    list->insertAfter(objPtr, nullptr);
   }
 }  //-- addBefore
 

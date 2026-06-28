@@ -4,7 +4,9 @@
 
 #include "AudioWorkletNode.h"
 
+#include "AudioNodeEngine.h"
 #include "AudioParamMap.h"
+#include "AudioWorkletImpl.h"
 #include "js/Array.h"  // JS::{Get,Set}ArrayLength, JS::NewArrayLength
 #include "js/CallAndConstruct.h"  // JS::Call, JS::IsCallable
 #include "js/Exception.h"
@@ -15,6 +17,7 @@
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ErrorEvent.h"
+#include "mozilla/dom/Worklet.h"
 #include "nsIScriptGlobalObject.h"
 #include "AudioParam.h"
 #include "AudioDestinationNode.h"
@@ -24,6 +27,7 @@
 #include "mozilla/Span.h"
 #include "PlayingRefChangeHandler.h"
 #include "nsPrintfCString.h"
+#include "Tracing.h"
 
 namespace mozilla::dom {
 
@@ -246,7 +250,12 @@ void WorkletNodeEngine::ConstructProcessor(
     UniqueMessagePortId& aPortIdentifier, AudioNodeTrack* aTrack) {
   MOZ_ASSERT(mInputs.mPorts.empty() && mOutputs.mPorts.empty());
   RefPtr<AudioWorkletGlobalScope> global = aWorkletImpl->GetGlobalScope();
-  MOZ_ASSERT(global);  // global has already been used to register processor
+  if (!global) {
+    // A global was previously used to register this kind of processor.  If it
+    // no longer exists now, that is because the document is going away and so
+    // there is no need to send an error.
+    return;
+  }
   AutoJSAPI api;
   if (NS_WARN_IF(!api.Init(global))) {
     SendProcessorError(aTrack, nullptr);
@@ -407,6 +416,8 @@ static bool PrepareBufferArrays(JSContext* aCx, Span<const AudioBlock> aBlocks,
 // do not run until after ProcessBlocksOnPorts() has returned.
 bool WorkletNodeEngine::CallProcess(AudioNodeTrack* aTrack, JSContext* aCx,
                                     JS::Handle<JS::Value> aCallable) {
+  TRACE();
+
   JS::RootedVector<JS::Value> argv(aCx);
   if (NS_WARN_IF(!argv.resize(3))) {
     return false;
@@ -455,6 +466,7 @@ void WorkletNodeEngine::ProcessBlocksOnPorts(AudioNodeTrack* aTrack,
                                              bool* aFinished) {
   MOZ_ASSERT(aInput.Length() == InputCount());
   MOZ_ASSERT(aOutput.Length() == OutputCount());
+  TRACE();
 
   bool isSilent = true;
   if (mProcessor) {
@@ -629,7 +641,7 @@ void AudioWorkletNode::SendParameterData(
       for (auto& audioParam : mParams) {
         audioParam->GetName(name);
         if (paramDataEntry.mKey.Equals(name)) {
-          audioParam->SetValue(paramDataEntry.mValue);
+          audioParam->SetInitialValue(paramDataEntry.mValue);
         }
       }
     }

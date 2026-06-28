@@ -7,6 +7,12 @@
 #ifndef nsContentSecurityUtils_h___
 #define nsContentSecurityUtils_h___
 
+#include "nsStringFwd.h"
+
+struct JSContext;
+class nsIPrincipal;
+class NS_ConvertUTF8toUTF16;
+
 namespace mozilla {
 namespace dom {
 class Document;

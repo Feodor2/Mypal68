@@ -11,6 +11,7 @@
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/SnappyUncompressInputStream.h"
 #include "nsIAsyncInputStream.h"
+#include "nsIThread.h"
 #include "nsStringStream.h"
 #include "nsTArray.h"
 
@@ -20,7 +21,6 @@ namespace mozilla::dom::cache {
 
 using mozilla::Unused;
 using mozilla::ipc::AutoIPCStream;
-using mozilla::ipc::IPCStream;
 
 // ----------------------------------------------------------------------------
 
@@ -98,7 +98,7 @@ class ReadStream::Inner final : public ReadStream::Controllable {
   // to close a stream on our owning thread while an IO thread is simultaneously
   // reading the same stream.  Therefore, protect all access to these stream
   // objects with a mutex.
-  Lock mMutex;
+  Lock2 mMutex;
   ConditionVariable mCondVar;
   nsCOMPtr<nsIInputStream> mStream;
   nsCOMPtr<nsIInputStream> mSnappyStream;
@@ -439,6 +439,13 @@ nsIInputStream* ReadStream::Inner::EnsureStream() {
 
 void ReadStream::Inner::AsyncOpenStreamOnOwningThread() {
   MOZ_ASSERT(mOwningEventTarget->IsOnCurrentThread());
+
+  if (mSnappyStream) {
+    // Different threads might request opening the stream at the same time. If
+    // the earlier request succeeded, then use the result.
+    mCondVar.Broadcast();
+    return;
+  }
 
   if (!mControl || mState == Closed) {
     AutoLock lock(mMutex);

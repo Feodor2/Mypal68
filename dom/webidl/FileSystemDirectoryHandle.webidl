@@ -25,10 +25,14 @@ interface FileSystemDirectoryHandle : FileSystemHandle {
   FileSystemDirectoryIterator keys();
   FileSystemDirectoryIterator values();
 
+  [NewObject]
   Promise<FileSystemFileHandle> getFileHandle(USVString name, optional FileSystemGetFileOptions options = {});
+  [NewObject]
   Promise<FileSystemDirectoryHandle> getDirectoryHandle(USVString name, optional FileSystemGetDirectoryOptions options = {});
 
-  Promise<void> removeEntry(USVString name, optional FileSystemRemoveOptions options = {});
+  [NewObject]
+  Promise<undefined> removeEntry(USVString name, optional FileSystemRemoveOptions options = {});
 
+  [NewObject]
   Promise<sequence<USVString>?> resolve(FileSystemHandle possibleDescendant);
 };

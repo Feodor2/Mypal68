@@ -5,6 +5,8 @@
 #ifndef DOM_QUOTA_CACHINGDATABASECONNECTION_H_
 #define DOM_QUOTA_CACHINGDATABASECONNECTION_H_
 
+#include "mozilla/dom/quota/Config.h"
+
 #include "mozStorageHelper.h"
 #include "nsCOMPtr.h"
 #include "nscore.h"
@@ -16,6 +18,8 @@
 #include "mozilla/InitializedOnce.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
+#include "mozilla/dom/quota/ScopedLogExtraInfo.h"
 
 namespace mozilla::dom::quota {
 
@@ -45,7 +49,7 @@ class CachingDatabaseConnection {
    private:
     friend class CachedStatement;
 
-#if defined(EARLY_BETA_OR_EARLIER) || defined(DEBUG)
+#ifdef QM_SCOPED_LOG_EXTRA_INFO_ENABLED
     BorrowedStatement(NotNull<mozIStorageStatement*> aStatement,
                       const nsACString& aQuery)
         : mozStorageStatementScoper(aStatement),
@@ -88,7 +92,7 @@ class CachingDatabaseConnection {
                                   BindFunctor&& aBindFunctor) {
     QM_TRY_INSPECT(const auto& stmt, BorrowCachedStatement(aQuery));
     QM_TRY(std::forward<BindFunctor>(aBindFunctor)(*stmt));
-    QM_TRY(stmt->Execute());
+    QM_TRY(MOZ_TO_RESULT(stmt->Execute()));
 
     return NS_OK;
   }
@@ -135,7 +139,7 @@ class CachingDatabaseConnection::CachedStatement final {
 
   nsCOMPtr<mozIStorageStatement> mStatement;
 
-#if defined(EARLY_BETA_OR_EARLIER) || defined(DEBUG)
+#ifdef QM_SCOPED_LOG_EXTRA_INFO_ENABLED
   nsCString mQuery;
 #endif
 
@@ -167,7 +171,7 @@ class CachingDatabaseConnection::CachedStatement final {
 #if defined(NS_BUILD_REFCNT_LOGGING)
   CachedStatement(CachedStatement&& aOther)
       : mStatement(std::move(aOther.mStatement))
-#  if defined(EARLY_BETA_OR_EARLIER) || defined(DEBUG)
+#  ifdef QM_SCOPED_LOG_EXTRA_INFO_ENABLED
         ,
         mQuery(std::move(aOther.mQuery))
 #  endif
@@ -204,8 +208,9 @@ class CachingDatabaseConnection::LazyStatement final {
 
     QM_TRY(std::forward<BindFunctor>(aBindFunctor)(*borrowedStatement));
 
-    QM_TRY_INSPECT(const bool& hasResult,
-                   MOZ_TO_RESULT_INVOKE(&*borrowedStatement, ExecuteStep));
+    QM_TRY_INSPECT(
+        const bool& hasResult,
+        MOZ_TO_RESULT_INVOKE_MEMBER(&*borrowedStatement, ExecuteStep));
 
     return hasResult ? Some(std::move(borrowedStatement)) : Nothing{};
   }

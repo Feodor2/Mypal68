@@ -48,9 +48,7 @@ mozilla::LazyLogModule gMediaRecorderLog("MediaRecorder");
 #define DEFAULT_AUDIO_BITRATE_BPS 128e3  // 128kbps
 #define MAX_AUDIO_BITRATE_BPS 512e3      // 512kbps
 
-namespace mozilla {
-
-namespace dom {
+namespace mozilla::dom {
 
 using namespace mozilla::media;
 
@@ -113,9 +111,9 @@ class MediaRecorderReporter final : public nsIMemoryReporter {
                 sum += size;
               }
 
-              handleReport->Callback(
-                  EmptyCString(), "explicit/media/recorder"_ns, KIND_HEAP,
-                  UNITS_BYTES, sum, "Memory used by media recorder."_ns, data);
+              handleReport->Callback(""_ns, "explicit/media/recorder"_ns,
+                                     KIND_HEAP, UNITS_BYTES, sum,
+                                     "Memory used by media recorder."_ns, data);
 
               manager->EndReport();
             },
@@ -1060,7 +1058,7 @@ class MediaRecorder::Session : public PrincipalChangeObserver<MediaStreamTrack>,
     name.AppendPrintf("MediaRecorder::Session %p shutdown", this);
     mShutdownBlocker = MakeAndAddRef<Blocker>(this, name);
     nsresult rv = GetShutdownBarrier()->AddBlocker(
-        mShutdownBlocker, NS_LITERAL_STRING(__FILE__), __LINE__,
+        mShutdownBlocker, NS_LITERAL_STRING_FROM_CSTRING(__FILE__), __LINE__,
         u"MediaRecorder::Session: shutdown"_ns);
     MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
 
@@ -2060,7 +2058,6 @@ RefPtr<MediaRecorder::SizeOfPromise> MediaRecorder::SizeOfExcludingThis(
 
 StaticRefPtr<MediaRecorderReporter> MediaRecorderReporter::sUniqueInstance;
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #undef LOG

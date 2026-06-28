@@ -280,7 +280,6 @@ class MediaFormatReader final
   size_t SizeOfQueue(TrackType aTrack);
 
   RefPtr<PDMFactory> mPlatform;
-  RefPtr<PDMFactory> mEncryptedPlatform;
 
   enum class DrainState {
     None,
@@ -512,7 +511,6 @@ class MediaFormatReader final
     // Typically for audio, the number of channels and/or sampling rate can vary
     // between what was found in the metadata and what the decoder returned.
     const TrackInfo* GetWorkingInfo() const { return mWorkingInfo.get(); }
-    bool IsEncrypted() const { return GetCurrentInfo()->mCrypto.IsEncrypted(); }
 
     // Used by the MDSM for logging purposes.
     Atomic<size_t> mSizeOfQueue;
@@ -658,7 +656,6 @@ class MediaFormatReader final
   // True if we've read the streams' metadata.
   bool mInitDone;
   MozPromiseHolder<MetadataPromise> mMetadataPromise;
-  bool IsEncrypted() const;
 
   // Set to true if any of our track buffers may be blocking.
   bool mTrackDemuxersMayBlock;

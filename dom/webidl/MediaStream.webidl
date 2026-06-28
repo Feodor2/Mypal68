@@ -41,18 +41,18 @@ interface MediaStream : EventTarget {
     sequence<MediaStreamTrack> getVideoTracks ();
     sequence<MediaStreamTrack> getTracks ();
     MediaStreamTrack?          getTrackById (DOMString trackId);
-    void                       addTrack (MediaStreamTrack track);
-    void                       removeTrack (MediaStreamTrack track);
+    undefined                  addTrack (MediaStreamTrack track);
+    undefined                  removeTrack (MediaStreamTrack track);
     MediaStream                clone ();
     readonly    attribute boolean      active;
                 attribute EventHandler onaddtrack;
                 attribute EventHandler onremovetrack;
 
-    [ChromeOnly, Throws]
+    [ChromeOnly, NewObject]
     static Promise<long> countUnderlyingStreams();
 
     // Webrtc allows the remote side to name a stream whatever it wants, and we
     // need to surface this to content.
     [ChromeOnly]
-    void assignId(DOMString id);
+    undefined assignId(DOMString id);
 };

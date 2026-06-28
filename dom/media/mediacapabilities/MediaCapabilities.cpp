@@ -34,8 +34,7 @@ static mozilla::LazyLogModule sMediaCapabilitiesLog("MediaCapabilities");
 #define LOG(msg, ...) \
   DDMOZ_LOG(sMediaCapabilitiesLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 static nsCString VideoConfigurationToStr(const VideoConfiguration* aConfig) {
   if (!aConfig) {
@@ -243,9 +242,8 @@ already_AddRefed<Promise> MediaCapabilities::DecodingInfo(
           // MediaDataDecoder keeps a reference to the config object, so we must
           // keep it alive until the decoder has been shutdown.
           CreateDecoderParams params{
-              *config, taskQueue, compositor,
-              CreateDecoderParams::VideoFrameRate(frameRate),
-              TrackInfo::kVideoTrack};
+              *config, compositor,
+              CreateDecoderParams::VideoFrameRate(frameRate)};
           // We want to ensure that all decoder's queries are occurring only
           // once at a time as it can quickly exhaust the system resources
           // otherwise.
@@ -566,5 +564,4 @@ bool MediaCapabilitiesInfo::WrapObject(
                                              aReflector);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

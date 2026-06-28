@@ -44,15 +44,14 @@ nsresult AppleDecoderModule::Startup() {
 already_AddRefed<MediaDataDecoder> AppleDecoderModule::CreateVideoDecoder(
     const CreateDecoderParams& aParams) {
   RefPtr<MediaDataDecoder> decoder =
-      new AppleVTDecoder(aParams.VideoConfig(), aParams.mTaskQueue,
-                         aParams.mImageContainer, aParams.mOptions);
+      new AppleVTDecoder(aParams.VideoConfig(), aParams.mImageContainer,
+                         aParams.mOptions);
   return decoder.forget();
 }
 
 already_AddRefed<MediaDataDecoder> AppleDecoderModule::CreateAudioDecoder(
     const CreateDecoderParams& aParams) {
-  RefPtr<MediaDataDecoder> decoder =
-      new AppleATDecoder(aParams.AudioConfig(), aParams.mTaskQueue);
+  RefPtr<MediaDataDecoder> decoder = new AppleATDecoder(aParams.AudioConfig());
   return decoder.forget();
 }
 

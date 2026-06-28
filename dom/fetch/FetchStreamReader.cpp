@@ -177,14 +177,15 @@ void FetchStreamReader::CloseAndRelease(JSContext* aCx, nsresult aStatus) {
   mBuffer.Clear();
 }
 
+// https://fetch.spec.whatwg.org/#body-incrementally-read
 void FetchStreamReader::StartConsuming(JSContext* aCx, ReadableStream* aStream,
                                        ReadableStreamDefaultReader** aReader,
                                        ErrorResult& aRv) {
   MOZ_DIAGNOSTIC_ASSERT(!mReader);
   MOZ_DIAGNOSTIC_ASSERT(aStream);
 
-  RefPtr<ReadableStreamDefaultReader> reader =
-      AcquireReadableStreamDefaultReader(aStream, aRv);
+  // Step 2: Let reader be the result of getting a reader for body’s stream.
+  RefPtr<ReadableStreamDefaultReader> reader = aStream->GetReader(aRv);
   if (aRv.Failed()) {
     CloseAndRelease(aCx, NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
@@ -263,9 +264,10 @@ FetchStreamReader::OnOutputStreamReady(nsIAsyncOutputStream* aStream) {
   // https://fetch.spec.whatwg.org/#incrementally-read-loop
   // The below very loosely tries to implement the incrementally-read-loop from
   // the fetch spec.
+  // Step 2: Read a chunk from reader given readRequest.
   RefPtr<ReadRequest> readRequest = new FetchReadRequest(this);
-  ReadableStreamDefaultReaderRead(aes.cx(), MOZ_KnownLive(mReader), readRequest,
-                                  rv);
+  RefPtr<ReadableStreamDefaultReader> reader = mReader;
+  reader->ReadChunk(aes.cx(), *readRequest, rv);
 
   if (NS_WARN_IF(rv.Failed())) {
     // Let's close the stream.
@@ -309,8 +311,7 @@ void FetchStreamReader::ChunkSteps(JSContext* aCx, JS::Handle<JS::Value> aChunk,
   mBufferRemaining = len;
 
   nsresult rv = WriteBuffer();
-  if (NS_FAILED(rv)) {
-    // Normalize to a generic DOM exception.
+  if (NS_WARN_IF(NS_FAILED(rv))) {
     CloseAndRelease(aCx, NS_ERROR_DOM_ABORT_ERR);
   }
 }
@@ -322,11 +323,11 @@ void FetchStreamReader::ErrorSteps(JSContext* aCx, JS::Handle<JS::Value> aError,
 }
 
 nsresult FetchStreamReader::WriteBuffer() {
-  MOZ_ASSERT(!mBuffer.IsEmpty());
+  MOZ_ASSERT(mBuffer.Length() == (mBufferOffset + mBufferRemaining));
 
   char* data = reinterpret_cast<char*>(mBuffer.Elements());
 
-  while (1) {
+  while (mBufferRemaining > 0) {
     uint32_t written = 0;
     nsresult rv =
         mPipeOut->Write(data + mBufferOffset, mBufferRemaining, &written);

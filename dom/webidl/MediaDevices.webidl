@@ -16,12 +16,22 @@ interface MediaDevices : EventTarget {
   attribute EventHandler ondevicechange;
   MediaTrackSupportedConstraints getSupportedConstraints();
 
-  [Throws, NeedsCallerType]
+  [NewObject, NeedsCallerType]
   Promise<sequence<MediaDeviceInfo>> enumerateDevices();
 
-  [Throws, NeedsCallerType]
+  [NewObject, NeedsCallerType]
   Promise<MediaStream> getUserMedia(optional MediaStreamConstraints constraints = {});
 
-  [SecureContext, Throws, NeedsCallerType]
+  [SecureContext, NewObject, NeedsCallerType]
   Promise<MediaStream> getDisplayMedia(optional DisplayMediaStreamConstraints constraints = {});
+};
+
+// https://w3c.github.io/mediacapture-output/#audiooutputoptions-dictionary
+dictionary AudioOutputOptions {
+  DOMString deviceId = "";
+};
+// https://w3c.github.io/mediacapture-output/#mediadevices-extensions
+partial interface MediaDevices {
+  [SecureContext, Pref="media.setsinkid.enabled", NewObject, NeedsCallerType]
+  Promise<MediaDeviceInfo> selectAudioOutput(optional AudioOutputOptions options = {});
 };

@@ -6,11 +6,11 @@ interface nsISupports;
 
 interface mixin JSWindowActor {
   [Throws]
-  void sendAsyncMessage(DOMString messageName,
+  undefined sendAsyncMessage(DOMString messageName,
                         optional any obj,
                         optional any transfers);
 
-  [Throws]
+  [NewObject]
   Promise<any> sendQuery(DOMString messageName,
                          optional any obj,
                          optional any transfers);
@@ -73,7 +73,7 @@ JSWindowActorChild includes JSWindowActor;
  */
 [Exposed=Window]
 callback interface MozObserverCallback {
-  void observe(nsISupports subject, ByteString topic, DOMString? data);
+  undefined observe(nsISupports subject, ByteString topic, DOMString? data);
 };
 
 /**
@@ -81,7 +81,7 @@ callback interface MozObserverCallback {
  * method on JSWindowActors.
  */
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
-callback MozActorDestroyCallback = void();
+callback MozActorDestroyCallback = undefined();
 
 /**
  * The willDestroy method, if present, will be called at the last opportunity

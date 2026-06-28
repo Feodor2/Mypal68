@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ErrorList.h"
+#include "ReadableStreamPipeTo.h"
 #include "js/RootingAPI.h"
 #include "js/String.h"
 #include "js/TypeDecls.h"
@@ -21,12 +22,13 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Promise-inl.h"
 #include "mozilla/dom/ReadableStream.h"
-#include "mozilla/dom/ReadableStreamPipeTo.h"
 #include "mozilla/dom/WritableStream.h"
 #include "mozilla/dom/TransformStream.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla::dom {
+
+using namespace streams_abstract;
 
 static void PackAndPostMessage(JSContext* aCx, MessagePort* aPort,
                                const nsAString& aType,
@@ -181,8 +183,9 @@ class SetUpTransformWritableMessageEventListener final
   // Note: This promise field is shared with the sink algorithms.
   Promise* BackpressurePromise() { return mBackpressurePromise; }
 
-  void CreateBackpressurePromise(ErrorResult& aRv) {
-    mBackpressurePromise = Promise::Create(mController->GetParentObject(), aRv);
+  void CreateBackpressurePromise() {
+    mBackpressurePromise =
+        Promise::CreateInfallible(mController->GetParentObject());
   }
 
  private:
@@ -320,10 +323,7 @@ class CrossRealmWritableUnderlyingSinkAlgorithms final
     // promise resolved with undefined.
     // Note: This promise field is shared with the message event listener.
     if (!mListener->BackpressurePromise()) {
-      mListener->CreateBackpressurePromise(aRv);
-      if (aRv.Failed()) {
-        return nullptr;
-      }
+      mListener->CreateBackpressurePromise();
       mListener->BackpressurePromise()->MaybeResolveWithUndefined();
     }
 
@@ -336,11 +336,7 @@ class CrossRealmWritableUnderlyingSinkAlgorithms final
                MessagePort* aPort,
                JS::Handle<JS::Value> aChunk) -> already_AddRefed<Promise> {
               // Step 2.1: Set backpressurePromise to a new promise.
-              aListener->CreateBackpressurePromise(aRv);
-              if (aRv.Failed()) {
-                aPort->Close();
-                return nullptr;
-              }
+              aListener->CreateBackpressurePromise();
 
               // Step 2.2: Let result be PackAndPostMessageHandlingError(port,
               // "chunk", chunk).
@@ -431,7 +427,7 @@ NS_IMPL_RELEASE_INHERITED(CrossRealmWritableUnderlyingSinkAlgorithms,
                           UnderlyingSinkAlgorithmsBase)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(
     CrossRealmWritableUnderlyingSinkAlgorithms)
-NS_INTERFACE_MAP_END_INHERITING(CrossRealmWritableUnderlyingSinkAlgorithms)
+NS_INTERFACE_MAP_END_INHERITING(UnderlyingSinkAlgorithmsBase)
 
 // https://streams.spec.whatwg.org/#abstract-opdef-setupcrossrealmtransformwritable
 MOZ_CAN_RUN_SCRIPT static void SetUpCrossRealmTransformWritable(
@@ -453,10 +449,7 @@ MOZ_CAN_RUN_SCRIPT static void SetUpCrossRealmTransformWritable(
 
   // Step 3: Let backpressurePromise be a new promise.
   RefPtr<Promise> backpressurePromise =
-      Promise::Create(aWritable->GetParentObject(), aRv);
-  if (aRv.Failed()) {
-    return;
-  }
+      Promise::CreateInfallible(aWritable->GetParentObject());
 
   // Step 4: Add a handler for port’s message event with the following steps:
   auto listener = MakeRefPtr<SetUpTransformWritableMessageEventListener>(
@@ -752,8 +745,6 @@ class CrossRealmReadableUnderlyingSourceAlgorithms final
     return Promise::CreateResolvedWithUndefined(mPort->GetParentObject(), aRv);
   }
 
-  void ErrorCallback() override {}
-
  protected:
   ~CrossRealmReadableUnderlyingSourceAlgorithms() override = default;
 
@@ -769,7 +760,7 @@ NS_IMPL_RELEASE_INHERITED(CrossRealmReadableUnderlyingSourceAlgorithms,
                           UnderlyingSourceAlgorithmsBase)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(
     CrossRealmReadableUnderlyingSourceAlgorithms)
-NS_INTERFACE_MAP_END_INHERITING(CrossRealmReadableUnderlyingSourceAlgorithms)
+NS_INTERFACE_MAP_END_INHERITING(UnderlyingSourceAlgorithmsBase)
 
 // https://streams.spec.whatwg.org/#abstract-opdef-setupcrossrealmtransformreadable
 MOZ_CAN_RUN_SCRIPT static void SetUpCrossRealmTransformReadable(
@@ -822,7 +813,13 @@ MOZ_CAN_RUN_SCRIPT static void SetUpCrossRealmTransformReadable(
 bool ReadableStream::Transfer(JSContext* aCx, UniqueMessagePortId& aPortId) {
   // Step 1: If ! IsReadableStreamLocked(value) is true, throw a
   // "DataCloneError" DOMException.
-  // (Implemented in StructuredCloneHolder::CustomCanTransferHandler)
+  // (Implemented in StructuredCloneHolder::CustomCanTransferHandler, but double
+  // check here as the state might have changed in case this ReadableStream is
+  // created by a TransferStream and being transferred together with the
+  // parent.)
+  if (IsReadableStreamLocked(this)) {
+    return false;
+  }
 
   // Step 2: Let port1 be a new MessagePort in the current Realm.
   // Step 3: Let port2 be a new MessagePort in the current Realm.
@@ -837,7 +834,8 @@ bool ReadableStream::Transfer(JSContext* aCx, UniqueMessagePortId& aPortId) {
   }
 
   // Step 5: Let writable be a new WritableStream in the current Realm.
-  RefPtr<WritableStream> writable = new WritableStream(mGlobal);
+  RefPtr<WritableStream> writable = new WritableStream(
+      mGlobal, WritableStream::HoldDropJSObjectsCaller::Implicit);
 
   // Step 6: Perform ! SetUpCrossRealmTransformWritable(writable, port1).
   // MOZ_KnownLive because Port1 never changes before CC
@@ -866,17 +864,17 @@ bool ReadableStream::Transfer(JSContext* aCx, UniqueMessagePortId& aPortId) {
 }
 
 // https://streams.spec.whatwg.org/#ref-for-transfer-receiving-steps
-MOZ_CAN_RUN_SCRIPT static already_AddRefed<ReadableStream>
-ReadableStreamTransferReceivingStepsImpl(JSContext* aCx,
-                                         nsIGlobalObject* aGlobal,
-                                         MessagePort& aPort) {
+MOZ_CAN_RUN_SCRIPT already_AddRefed<ReadableStream>
+ReadableStream::ReceiveTransferImpl(JSContext* aCx, nsIGlobalObject* aGlobal,
+                                    MessagePort& aPort) {
   // Step 1: Let deserializedRecord be
   // ! StructuredDeserializeWithTransfer(dataHolder.[[port]], the current
   // Realm).
   // Step 2: Let port be deserializedRecord.[[Deserialized]].
 
   // Step 3: Perform ! SetUpCrossRealmTransformReadable(value, port).
-  RefPtr<ReadableStream> readable = new ReadableStream(aGlobal);
+  RefPtr<ReadableStream> readable =
+      new ReadableStream(aGlobal, HoldDropJSObjectsCaller::Implicit);
   ErrorResult rv;
   SetUpCrossRealmTransformReadable(readable, &aPort, rv);
   if (rv.MaybeSetPendingException(aCx)) {
@@ -889,7 +887,7 @@ bool ReadableStream::ReceiveTransfer(
     JSContext* aCx, nsIGlobalObject* aGlobal, MessagePort& aPort,
     JS::MutableHandle<JSObject*> aReturnObject) {
   RefPtr<ReadableStream> readable =
-      ReadableStreamTransferReceivingStepsImpl(aCx, aGlobal, aPort);
+      ReadableStream::ReceiveTransferImpl(aCx, aGlobal, aPort);
   if (!readable) {
     return false;
   }
@@ -908,7 +906,13 @@ bool ReadableStream::ReceiveTransfer(
 bool WritableStream::Transfer(JSContext* aCx, UniqueMessagePortId& aPortId) {
   // Step 1: If ! IsWritableStreamLocked(value) is true, throw a
   // "DataCloneError" DOMException.
-  // (Implemented in StructuredCloneHolder::CustomCanTransferHandler)
+  // (Implemented in StructuredCloneHolder::CustomCanTransferHandler, but double
+  // check here as the state might have changed in case this WritableStream is
+  // created by a TransferStream and being transferred together with the
+  // parent.)
+  if (IsWritableStreamLocked(this)) {
+    return false;
+  }
 
   // Step 2: Let port1 be a new MessagePort in the current Realm.
   // Step 3: Let port2 be a new MessagePort in the current Realm.
@@ -923,7 +927,8 @@ bool WritableStream::Transfer(JSContext* aCx, UniqueMessagePortId& aPortId) {
   }
 
   // Step 5: Let readable be a new ReadableStream in the current Realm.
-  auto readable = MakeRefPtr<ReadableStream>(mGlobal);
+  RefPtr<ReadableStream> readable = new ReadableStream(
+      mGlobal, ReadableStream::HoldDropJSObjectsCaller::Implicit);
 
   // Step 6: Perform ! SetUpCrossRealmTransformReadable(readable, port1).
   // MOZ_KnownLive because Port1 never changes before CC
@@ -952,16 +957,16 @@ bool WritableStream::Transfer(JSContext* aCx, UniqueMessagePortId& aPortId) {
 }
 
 // https://streams.spec.whatwg.org/#ref-for-transfer-receiving-steps①
-MOZ_CAN_RUN_SCRIPT static already_AddRefed<WritableStream>
-WritableStreamTransferReceivingStepsImpl(JSContext* aCx,
-                                         nsIGlobalObject* aGlobal,
-                                         MessagePort& aPort) {
+MOZ_CAN_RUN_SCRIPT already_AddRefed<WritableStream>
+WritableStream::ReceiveTransferImpl(JSContext* aCx, nsIGlobalObject* aGlobal,
+                                    MessagePort& aPort) {
   // Step 1: Let deserializedRecord be !
   // StructuredDeserializeWithTransfer(dataHolder.[[port]], the current Realm).
   // Step 2: Let port be a deserializedRecord.[[Deserialized]].
 
   // Step 3: Perform ! SetUpCrossRealmTransformWritable(value, port).
-  auto writable = MakeRefPtr<WritableStream>(aGlobal);
+  RefPtr<WritableStream> writable = new WritableStream(
+      aGlobal, WritableStream::HoldDropJSObjectsCaller::Implicit);
   ErrorResult rv;
   SetUpCrossRealmTransformWritable(writable, &aPort, rv);
   if (rv.MaybeSetPendingException(aCx)) {
@@ -975,7 +980,7 @@ bool WritableStream::ReceiveTransfer(
     JSContext* aCx, nsIGlobalObject* aGlobal, MessagePort& aPort,
     JS::MutableHandle<JSObject*> aReturnObject) {
   RefPtr<WritableStream> writable =
-      WritableStreamTransferReceivingStepsImpl(aCx, aGlobal, aPort);
+      WritableStream::ReceiveTransferImpl(aCx, aGlobal, aPort);
   if (!writable) {
     return false;
   }
@@ -999,7 +1004,13 @@ bool TransformStream::Transfer(JSContext* aCx, UniqueMessagePortId& aPortId1,
   // "DataCloneError" DOMException.
   // Step 4: If ! IsWritableStreamLocked(writable) is true, throw a
   // "DataCloneError" DOMException.
-  // (Implemented in StructuredCloneHolder::CustomCanTransferHandler)
+  // (Implemented in StructuredCloneHolder::CustomCanTransferHandler, but double
+  // check here as the state might have changed by
+  // Readable/WritableStream::Transfer in case the stream members of this
+  // TransformStream are being transferred together.)
+  if (IsReadableStreamLocked(mReadable) || IsWritableStreamLocked(mWritable)) {
+    return false;
+  }
 
   // Step 5: Set dataHolder.[[readable]] to !
   // StructuredSerializeWithTransfer(readable, « readable »).
@@ -1022,7 +1033,7 @@ bool TransformStream::ReceiveTransfer(
   // StructuredDeserializeWithTransfer(dataHolder.[[readable]], the current
   // Realm).
   RefPtr<ReadableStream> readable =
-      ReadableStreamTransferReceivingStepsImpl(aCx, aGlobal, aPort1);
+      ReadableStream::ReceiveTransferImpl(aCx, aGlobal, aPort1);
   if (!readable) {
     return false;
   }
@@ -1031,7 +1042,7 @@ bool TransformStream::ReceiveTransfer(
   // StructuredDeserializeWithTransfer(dataHolder.[[writable]], the current
   // Realm).
   RefPtr<WritableStream> writable =
-      WritableStreamTransferReceivingStepsImpl(aCx, aGlobal, aPort2);
+      WritableStream::ReceiveTransferImpl(aCx, aGlobal, aPort2);
   if (!writable) {
     return false;
   }
@@ -1040,7 +1051,8 @@ bool TransformStream::ReceiveTransfer(
   // Step 4: Set value.[[writable]] to writableRecord.[[Deserialized]].
   // Step 5: Set value.[[backpressure]], value.[[backpressureChangePromise]],
   // and value.[[controller]] to undefined.
-  auto stream = MakeRefPtr<TransformStream>(aGlobal, readable, writable);
+  RefPtr<TransformStream> stream =
+      new TransformStream(aGlobal, readable, writable);
   JS::Rooted<JS::Value> value(aCx);
   if (!GetOrCreateDOMReflector(aCx, stream, &value)) {
     JS_ClearPendingException(aCx);

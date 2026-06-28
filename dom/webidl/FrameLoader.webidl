@@ -52,31 +52,31 @@ interface FrameLoader {
    * Throws an exception with non-remote frames.
    */
   [Throws]
-  void activateRemoteFrame();
+  undefined activateRemoteFrame();
 
   /**
    * Deactivate remote frame.
    * Throws an exception with non-remote frames.
    */
   [Throws]
-  void deactivateRemoteFrame();
+  undefined deactivateRemoteFrame();
 
   /**
    * @see nsIDOMWindowUtils sendMouseEvent.
    */
   [Throws]
-  void sendCrossProcessMouseEvent(DOMString aType,
-                                  float aX,
-                                  float aY,
-                                  long aButton,
-                                  long aClickCount,
-                                  long aModifiers);
+  undefined sendCrossProcessMouseEvent(DOMString aType,
+                                       float aX,
+                                       float aY,
+                                       long aButton,
+                                       long aClickCount,
+                                       long aModifiers);
 
   /**
    * Activate event forwarding from client (remote frame) to parent.
    */
   [Throws]
-  void activateFrameEvent(DOMString aType, boolean capture);
+  undefined activateFrameEvent(DOMString aType, boolean capture);
 
   // Note, when frameloaders are swapped, also messageManagers are swapped.
   readonly attribute MessageSender? messageManager;
@@ -86,13 +86,13 @@ interface FrameLoader {
    * received by the Compositor, a MozAfterRemoteFrame event be sent
    * to the window.
    */
-  void requestNotifyAfterRemotePaint();
+  undefined requestNotifyAfterRemotePaint();
 
   /**
    * Force a remote browser to recompute its dimension and screen position.
    */
   [Throws]
-  void requestUpdatePosition();
+  undefined requestUpdatePosition();
 
   /**
    * Force a TabStateFlush from native sessionStoreListeners.
@@ -103,7 +103,7 @@ interface FrameLoader {
   /**
    * Force Epoch update in native sessionStoreListeners.
    */
-  void requestEpochUpdate(unsigned long aEpoch);
+  undefined requestEpochUpdate(unsigned long aEpoch);
 
   /**
    * Print the current document.
@@ -114,9 +114,9 @@ interface FrameLoader {
    * @param aProgressListener optional print progress listener.
    */
   [Throws]
-  void print(unsigned long long aOuterWindowID,
-             nsIPrintSettings aPrintSettings,
-             optional nsIWebProgressListener? aProgressListener = null);
+  undefined print(unsigned long long aOuterWindowID,
+                  nsIPrintSettings aPrintSettings,
+                  optional nsIWebProgressListener? aProgressListener = null);
 
   /**
    * Renders a region of the frame into an image bitmap.
@@ -134,7 +134,7 @@ interface FrameLoader {
    * cannot access the rendering of out of process iframes. This API works
    * with remote and local frames.
    */
-  [Throws]
+  [NewObject]
   Promise<ImageBitmap> drawSnapshot(double x,
                                     double y,
                                     double w,
@@ -217,8 +217,8 @@ interface FrameLoader {
 interface mixin WebBrowserPersistable
 {
   [Throws]
-  void startPersistence(unsigned long long aOuterWindowID,
-                        nsIWebBrowserPersistDocumentReceiver aRecv);
+  undefined startPersistence(unsigned long long aOuterWindowID,
+                             nsIWebBrowserPersistDocumentReceiver aRecv);
 };
 
 FrameLoader includes WebBrowserPersistable;

@@ -86,6 +86,7 @@ already_AddRefed<Promise> GamepadServiceTest::AddGamepad(
     uint32_t aNumButtons, uint32_t aNumAxes, uint32_t aNumHaptics,
     ErrorResult& aRv) {
   if (mShuttingDown) {
+    aRv.ThrowInvalidStateError("Shutting down");
     return nullptr;
   }
 

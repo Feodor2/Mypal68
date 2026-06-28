@@ -234,10 +234,13 @@ EVENT(playing, ePlaying, EventNameType_HTML, eBasicEventClass)
 EVENT(progress, eProgress, EventNameType_HTML, eBasicEventClass)
 EVENT(ratechange, eRateChange, EventNameType_HTML, eBasicEventClass)
 EVENT(reset, eFormReset, EventNameType_HTMLXUL, eBasicEventClass)
+EVENT(securitypolicyviolation, eSecurityPolicyViolation, EventNameType_All,
+      eBasicEventClass)
 EVENT(seeked, eSeeked, EventNameType_HTML, eBasicEventClass)
 EVENT(seeking, eSeeking, EventNameType_HTML, eBasicEventClass)
 EVENT(select, eFormSelect, EventNameType_HTMLXUL, eBasicEventClass)
 EVENT(show, eShow, EventNameType_HTML, eBasicEventClass)
+EVENT(slotchange, eSlotChange, EventNameType_All, eBasicEventClass)
 EVENT(stalled, eStalled, EventNameType_HTML, eBasicEventClass)
 EVENT(start, eMarqueeStart, EventNameType_HTMLMarqueeOnly, eBasicEventClass)
 EVENT(submit, eFormSubmit, EventNameType_HTMLXUL, eBasicEventClass)
@@ -338,9 +341,6 @@ WINDOW_ONLY_EVENT(vrdisplaydisconnect, eVRDisplayDisconnect, EventNameType_None,
 WINDOW_ONLY_EVENT(vrdisplaypresentchange, eVRDisplayPresentChange,
                   EventNameType_None, eBasicEventClass)
 #endif
-// Install events as per W3C Manifest spec
-WINDOW_ONLY_EVENT(appinstalled, eAppInstalled, EventNameType_None,
-                  eBasicEventClass)
 
 TOUCH_EVENT(touchstart, eTouchStart, EventNameType_All, eTouchEventClass)
 TOUCH_EVENT(touchend, eTouchEnd, EventNameType_All, eTouchEventClass)
@@ -411,8 +411,6 @@ NON_IDL_EVENT(command, eXULCommand, EventNameType_XUL, eInputEventClass)
 NON_IDL_EVENT(popupshowing, eXULPopupShowing, EventNameType_XUL,
               eBasicEventClass)
 NON_IDL_EVENT(popupshown, eXULPopupShown, EventNameType_XUL, eBasicEventClass)
-NON_IDL_EVENT(popuppositioned, eXULPopupPositioned, EventNameType_XUL,
-              eBasicEventClass)
 NON_IDL_EVENT(popuphiding, eXULPopupHiding, EventNameType_XUL, eBasicEventClass)
 NON_IDL_EVENT(popuphidden, eXULPopupHidden, EventNameType_XUL, eBasicEventClass)
 NON_IDL_EVENT(broadcast, eXULBroadcast, EventNameType_XUL, eBasicEventClass)

@@ -28,8 +28,7 @@
 #include "nsTArrayForwardDeclare.h"
 #include "xpcObjectHelper.h"  // for xpcObjectHelper
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class CallbackObject;
 class Promise;
@@ -443,7 +442,6 @@ template <typename T>
   return ToJSValue(aCx, aArgument.Value(), aValue);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_ToJSValue_h */

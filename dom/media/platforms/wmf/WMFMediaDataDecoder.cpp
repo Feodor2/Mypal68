@@ -3,21 +3,24 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WMFMediaDataDecoder.h"
+
 #include "VideoUtils.h"
 #include "WMFUtils.h"
-#include "mozilla/Telemetry.h"
-#include "nsTArray.h"
-
 #include "mozilla/Logging.h"
 #include "mozilla/SyncRunnable.h"
+#include "mozilla/TaskQueue.h"
+#include "mozilla/Telemetry.h"
+#include "nsTArray.h"
 
 #define LOG(...) MOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
 
 namespace mozilla {
 
-WMFMediaDataDecoder::WMFMediaDataDecoder(MFTManager* aMFTManager,
-                                         TaskQueue* aTaskQueue)
-    : mTaskQueue(aTaskQueue), mMFTManager(aMFTManager) {}
+WMFMediaDataDecoder::WMFMediaDataDecoder(MFTManager* aMFTManager)
+    : mTaskQueue(
+          new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
+                        "WMFMediaDataDecoder")),
+      mMFTManager(aMFTManager) {}
 
 WMFMediaDataDecoder::~WMFMediaDataDecoder() {}
 
@@ -28,22 +31,15 @@ RefPtr<MediaDataDecoder::InitPromise> WMFMediaDataDecoder::Init() {
 
 RefPtr<ShutdownPromise> WMFMediaDataDecoder::Shutdown() {
   MOZ_DIAGNOSTIC_ASSERT(!mIsShutDown);
-
   mIsShutDown = true;
 
-  if (mTaskQueue) {
-    return InvokeAsync(mTaskQueue, this, __func__,
-                       &WMFMediaDataDecoder::ProcessShutdown);
-  }
-  return ProcessShutdown();
-}
-
-RefPtr<ShutdownPromise> WMFMediaDataDecoder::ProcessShutdown() {
-  if (mMFTManager) {
-    mMFTManager->Shutdown();
-    mMFTManager = nullptr;
-  }
-  return ShutdownPromise::CreateAndResolve(true, __func__);
+  return InvokeAsync(mTaskQueue, __func__, [self = RefPtr{this}, this] {
+    if (mMFTManager) {
+      mMFTManager->Shutdown();
+      mMFTManager = nullptr;
+    }
+    return mTaskQueue->BeginShutdown();
+  });
 }
 
 // Inserts data into the decoder's pipeline.

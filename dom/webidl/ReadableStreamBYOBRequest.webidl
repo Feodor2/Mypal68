@@ -6,13 +6,13 @@
  * https://streams.spec.whatwg.org/#rs-byob-request-class-definition
  */
 
-[Exposed=*, Pref="dom.streams.byte_streams.enabled"]
+[Exposed=*]
 interface ReadableStreamBYOBRequest {
   readonly attribute ArrayBufferView? view;
 
   [Throws]
-  void respond([EnforceRange] unsigned long long bytesWritten);
+  undefined respond([EnforceRange] unsigned long long bytesWritten);
 
   [Throws]
-  void respondWithNewView(ArrayBufferView view);
+  undefined respondWithNewView(ArrayBufferView view);
 };

@@ -22,12 +22,12 @@
 #include "mozilla/dom/ButtonInputTypes.h"
 #include "mozilla/dom/DateTimeInputTypes.h"
 #include "mozilla/dom/ColorInputType.h"
+#include "mozilla/dom/ConstraintValidation.h"
 #include "mozilla/dom/FileInputType.h"
 #include "mozilla/dom/HiddenInputType.h"
 #include "nsGenericHTMLElement.h"
 #include "nsImageLoadingContent.h"
 #include "nsCOMPtr.h"
-#include "nsIConstraintValidation.h"
 #include "nsIFilePicker.h"
 #include "nsIContentPrefService2.h"
 #include "nsContentUtils.h"
@@ -48,8 +48,10 @@ class DispatchChangeEventCallback;
 class File;
 class FileList;
 class FileSystemEntry;
+class FormData;
 class GetFilesHelper;
 class InputType;
+class OwningFileOrDirectory; //MY
 
 /**
  * A class we use to create a singleton object that is used to keep track of
@@ -106,15 +108,15 @@ class UploadLastDir final : public nsIObserver, public nsSupportsWeakReference {
 
 class HTMLInputElement final : public TextControlElement,
                                public nsImageLoadingContent,
-                               public nsIConstraintValidation {
+                               public ConstraintValidation {
   friend class AfterSetFilesOrDirectoriesCallback;
   friend class DispatchChangeEventCallback;
   friend class InputType;
 
  public:
-  using nsGenericHTMLFormElementWithState::GetForm;
-  using nsGenericHTMLFormElementWithState::GetFormAction;
-  using nsIConstraintValidation::GetValidationMessage;
+  using ConstraintValidation::GetValidationMessage;
+  using nsGenericHTMLFormControlElementWithState::GetForm;
+  using nsGenericHTMLFormControlElementWithState::GetFormAction;
   using ValueSetterOption = TextControlState::ValueSetterOption;
   using ValueSetterOptions = TextControlState::ValueSetterOptions;
 
@@ -143,18 +145,21 @@ class HTMLInputElement final : public TextControlElement,
   // Element
   virtual bool IsInteractiveHTMLContent() const override;
 
+  // nsGenericHTMLElement
+  virtual bool IsDisabledForEvents(WidgetEvent* aEvent) override;
+
+  // nsGenericHTMLFormElement
+  void SaveState() override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY bool RestoreState(PresState* aState) override;
+
   // EventTarget
   virtual void AsyncEventRunning(AsyncEventDispatcher* aEvent) override;
 
   // Overriden nsIFormControl methods
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   NS_IMETHOD Reset() override;
-  NS_IMETHOD SubmitNamesValues(HTMLFormSubmission* aFormSubmission) override;
-  NS_IMETHOD SaveState() override;
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual bool RestoreState(PresState* aState) override;
+  NS_IMETHOD SubmitNamesValues(FormData* aFormData) override;
   virtual bool AllowDrop() override;
-  virtual bool IsDisabledForEvents(WidgetEvent* aEvent) override;
 
   virtual void FieldSetDisabledChanged(bool aNotify) override;
 
@@ -681,13 +686,7 @@ class HTMLInputElement final : public TextControlElement,
                                        SelectionMode aSelectMode,
                                        ErrorResult& aRv);
 
-  bool Allowdirs() const {
-    return HasAttr(kNameSpaceID_None, nsGkAtoms::allowdirs);
-  }
-
-  void SetAllowdirs(bool aValue, ErrorResult& aRv) {
-    SetHTMLBoolAttr(nsGkAtoms::allowdirs, aValue, aRv);
-  }
+  void ShowPicker(ErrorResult& aRv);
 
   bool WebkitDirectoryAttr() const {
     return HasAttr(kNameSpaceID_None, nsGkAtoms::webkitdirectory);
@@ -699,13 +698,7 @@ class HTMLInputElement final : public TextControlElement,
 
   void GetWebkitEntries(nsTArray<RefPtr<FileSystemEntry>>& aSequence);
 
-  bool IsFilesAndDirectoriesSupported() const;
-
   already_AddRefed<Promise> GetFilesAndDirectories(ErrorResult& aRv);
-
-  already_AddRefed<Promise> GetFiles(bool aRecursiveFlag, ErrorResult& aRv);
-
-  void ChooseDirectory(ErrorResult& aRv);
 
   void GetAlign(nsAString& aValue) { GetHTMLAttr(nsGkAtoms::align, aValue); }
   void SetAlign(const nsAString& aValue, ErrorResult& aRv) {
@@ -849,7 +842,7 @@ class HTMLInputElement final : public TextControlElement,
 
   // Pull IsSingleLineTextControl into our scope, otherwise it'd be hidden
   // by the TextControlElement version.
-  using nsGenericHTMLFormElementWithState::IsSingleLineTextControl;
+  using nsGenericHTMLFormControlElementWithState::IsSingleLineTextControl;
 
   /**
    * The ValueModeType specifies how the value IDL attribute should behave.

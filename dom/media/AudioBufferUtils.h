@@ -7,6 +7,7 @@
 
 #include "mozilla/PodOperations.h"
 #include "mozilla/UniquePtr.h"
+#include "nsDebug.h"
 
 #include <algorithm>
 

@@ -7,9 +7,7 @@
 #include "OMX_Audio.h"
 #include "OMX_Component.h"
 #include "OMX_Types.h"
-
 #include "OmxPlatformLayer.h"
-
 #include "mozilla/IntegerPrintfMacros.h"
 
 #ifdef LOG
@@ -92,11 +90,9 @@ class MediaDataHelper {
 };
 
 OmxDataDecoder::OmxDataDecoder(const TrackInfo& aTrackInfo,
-                               TaskQueue* aTaskQueue,
                                layers::ImageContainer* aImageContainer)
     : mOmxTaskQueue(
           CreateMediaDecodeTaskQueue("OmxDataDecoder::mOmxTaskQueue")),
-      mTaskQueue(aTaskQueue),
       mImageContainer(aImageContainer),
       mWatchManager(this, mOmxTaskQueue),
       mOmxState(OMX_STATETYPE::OMX_StateInvalid, "OmxDataDecoder::mOmxState"),
@@ -133,6 +129,7 @@ void OmxDataDecoder::EndOfStream() {
 RefPtr<MediaDataDecoder::InitPromise> OmxDataDecoder::Init() {
   LOG("");
 
+  mThread = GetCurrentSerialEventTarget();
   RefPtr<OmxDataDecoder> self = this;
   return InvokeAsync(mOmxTaskQueue, __func__, [self, this]() {
     InitializationTask();
@@ -156,6 +153,7 @@ RefPtr<MediaDataDecoder::InitPromise> OmxDataDecoder::Init() {
 RefPtr<MediaDataDecoder::DecodePromise> OmxDataDecoder::Decode(
     MediaRawData* aSample) {
   LOG("sample %p", aSample);
+  MOZ_ASSERT(mThread->IsOnCurrentThread());
   MOZ_ASSERT(mInitPromise.IsEmpty());
 
   RefPtr<OmxDataDecoder> self = this;
@@ -174,6 +172,7 @@ RefPtr<MediaDataDecoder::DecodePromise> OmxDataDecoder::Decode(
 
 RefPtr<MediaDataDecoder::FlushPromise> OmxDataDecoder::Flush() {
   LOG("");
+  MOZ_ASSERT(mThread->IsOnCurrentThread());
 
   mFlushing = true;
 
@@ -182,6 +181,7 @@ RefPtr<MediaDataDecoder::FlushPromise> OmxDataDecoder::Flush() {
 
 RefPtr<MediaDataDecoder::DecodePromise> OmxDataDecoder::Drain() {
   LOG("");
+  MOZ_ASSERT(mThread->IsOnCurrentThread());
 
   RefPtr<OmxDataDecoder> self = this;
   return InvokeAsync(mOmxTaskQueue, __func__, [self]() {
@@ -193,6 +193,7 @@ RefPtr<MediaDataDecoder::DecodePromise> OmxDataDecoder::Drain() {
 
 RefPtr<ShutdownPromise> OmxDataDecoder::Shutdown() {
   LOG("");
+  MOZ_ASSERT(mThread->IsOnCurrentThread());
 
   mShuttingDown = true;
 
@@ -267,7 +268,7 @@ RefPtr<ShutdownPromise> OmxDataDecoder::DoAsyncShutdown() {
             return ShutdownPromise::CreateAndReject(false, __func__);
           })
       ->Then(
-          mTaskQueue, __func__,
+          mThread, __func__,
           [self]() {
             self->mOmxTaskQueue->BeginShutdown();
             self->mOmxTaskQueue->AwaitShutdownAndIdle();

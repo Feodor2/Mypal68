@@ -9,8 +9,7 @@
 #include "js/RootingAPI.h"
 #include "js/TracingAPI.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /*
  * Class that just handles the JSObject storage and tracing for spidermonkey
@@ -108,7 +107,6 @@ class MOZ_RAII RootedSpiderMonkeyInterface final
         SpiderMonkeyInterfaceRooter<InterfaceType>(cx, this) {}
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_SpiderMonkeyInterface_h */

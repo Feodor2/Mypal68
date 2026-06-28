@@ -10,6 +10,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/WorkletImpl.h"
+#include "nsIObserver.h"
 #include "nsThread.h"
 
 class nsIRunnable;

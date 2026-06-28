@@ -4,6 +4,8 @@
 #ifndef _mozilla_dom_ClientManagerService_h
 #define _mozilla_dom_ClientManagerService_h
 
+#include "mozilla/dom/ClientIPCTypes.h"
+#include "mozilla/dom/ipc/IdType.h"
 #include "ClientOpPromise.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"

@@ -25,7 +25,7 @@ dictionary AddEventListenerOptions : EventListenerOptions {
   boolean wantUntrusted;
 };
 
-[Exposed=(Window,Worker,WorkerDebugger,AudioWorklet)]
+[Exposed=*]
 interface EventTarget {
   [Throws]
   constructor();
@@ -35,14 +35,14 @@ interface EventTarget {
      value is true, while in chrome the default boolean value is
      false. */
   [Throws]
-  void addEventListener(DOMString type,
-                        EventListener? listener,
-                        optional (AddEventListenerOptions or boolean) options = {},
-                        optional boolean? wantsUntrusted = null);
+  undefined addEventListener(DOMString type,
+                             EventListener? listener,
+                             optional (AddEventListenerOptions or boolean) options = {},
+                             optional boolean? wantsUntrusted = null);
   [Throws]
-  void removeEventListener(DOMString type,
-                           EventListener? listener,
-                           optional (EventListenerOptions or boolean) options = {});
+  undefined removeEventListener(DOMString type,
+                                EventListener? listener,
+                                optional (EventListenerOptions or boolean) options = {});
   [Throws, NeedsCallerType]
   boolean dispatchEvent(Event event);
 };
@@ -56,8 +56,8 @@ partial interface EventTarget {
   // accordingly.  In particular, it will NOT actually treat a non-null
   // non-callable object as null here.
   [ChromeOnly, Throws]
-  void setEventHandler(DOMString type,
-                       [TreatNonCallableAsNull] EventHandler handler);
+  undefined setEventHandler(DOMString type,
+                            [TreatNonCallableAsNull] EventHandler handler);
 
   [ChromeOnly]
   EventHandler getEventHandler(DOMString type);

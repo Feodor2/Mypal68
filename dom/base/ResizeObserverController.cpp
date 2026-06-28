@@ -73,13 +73,6 @@ ResizeObserverNotificationHelper::~ResizeObserverNotificationHelper() {
   MOZ_RELEASE_ASSERT(!mOwner, "Forgot to clear weak pointer?");
 }
 
-void ResizeObserverController::Traverse(
-    nsCycleCollectionTraversalCallback& aCb) {
-  ImplCycleCollectionTraverse(aCb, mResizeObservers, "mResizeObservers");
-}
-
-void ResizeObserverController::Unlink() { mResizeObservers.Clear(); }
-
 void ResizeObserverController::ShellDetachedFromDocument() {
   mResizeObserverNotificationHelper->Unregister();
 }
@@ -166,7 +159,8 @@ uint32_t ResizeObserverController::BroadcastAllActiveObservations() {
 
   // Copy the observers as this invokes the callbacks and could register and
   // unregister observers at will.
-  const nsTArray<RefPtr<ResizeObserver>> observers(mResizeObservers);
+  const auto observers =
+      ToTArray<nsTArray<RefPtr<ResizeObserver>>>(mResizeObservers);
   for (auto& observer : observers) {
     // MOZ_KnownLive because 'observers' is guaranteed to keep it
     // alive.
@@ -219,7 +213,7 @@ void ResizeObserverController::AddSizeOfIncludingThis(
   size += mResizeObservers.ShallowSizeOfExcludingThis(mallocSizeOf);
   // TODO(emilio): Measure the observers individually or something? They aren't
   // really owned by us.
-  aSizes.mDOMResizeObserverControllerSize += size;
+  aSizes.mDOMSizes.mDOMResizeObserverControllerSize += size;
 }
 
 }  // namespace mozilla::dom

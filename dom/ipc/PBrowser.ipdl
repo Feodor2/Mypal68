@@ -123,6 +123,7 @@ struct WebProgressStateChangeData
 {
   bool isNavigating;
   bool mayEnableCharacterEncodingMenu;
+  bool charsetAutodetected;
 
   // The following fields are only set when the aStateFlags param passed with
   // this struct is |nsIWebProgress.STATE_STOP|.
@@ -473,19 +474,6 @@ parent:
     async PColorPicker(nsString title, nsString initialColor);
 
     async PFilePicker(nsString aTitle, int16_t aMode);
-
-    /**
-     * Initiates an asynchronous request for one of the special indexedDB
-     * permissions for the provided principal.
-     *
-     * @param principal
-     *   The principal of the request.
-     *
-     * NOTE: The principal is untrusted in the parent process. Only
-     *       principals that can live in the content process should
-     *       provided.
-     */
-    async IndexedDBPermissionRequest(nsIPrincipal aPrincipal) returns (uint32_t permission);
 
     /**
      * window.open from inside <iframe mozbrowser> is special.  When the child

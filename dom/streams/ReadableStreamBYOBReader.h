@@ -10,7 +10,6 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/ReadableStreamGenericReader.h"
-#include "mozilla/dom/ReadIntoRequest.h"
 #include "mozilla/dom/TypedArray.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
@@ -19,6 +18,7 @@
 namespace mozilla::dom {
 
 class Promise;
+struct ReadIntoRequest;
 class ReadableStream;
 
 }  // namespace mozilla::dom
@@ -33,8 +33,7 @@ class ReadableStreamBYOBReader final : public ReadableStreamGenericReader,
       ReadableStreamBYOBReader, ReadableStreamGenericReader)
 
  public:
-  explicit ReadableStreamBYOBReader(nsISupports* aGlobal)
-      : ReadableStreamGenericReader(do_QueryInterface(aGlobal)) {}
+  explicit ReadableStreamBYOBReader(nsISupports* aGlobal);
 
   bool IsDefault() override { return false; };
   bool IsBYOB() override { return true; }
@@ -62,8 +61,10 @@ class ReadableStreamBYOBReader final : public ReadableStreamGenericReader,
  private:
   ~ReadableStreamBYOBReader() override = default;
 
-  LinkedList<RefPtr<ReadIntoRequest>> mReadIntoRequests = {};
+  LinkedList<RefPtr<ReadIntoRequest>> mReadIntoRequests;
 };
+
+namespace streams_abstract {
 
 already_AddRefed<ReadableStreamBYOBReader> AcquireReadableStreamBYOBReader(
     ReadableStream* aStream, ErrorResult& aRv);
@@ -80,6 +81,8 @@ void ReadableStreamBYOBReaderErrorReadIntoRequests(
 void ReadableStreamBYOBReaderRelease(JSContext* aCx,
                                      ReadableStreamBYOBReader* aReader,
                                      ErrorResult& aRv);
+
+}  // namespace streams_abstract
 
 }  // namespace mozilla::dom
 

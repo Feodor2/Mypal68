@@ -9,6 +9,7 @@
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/NotifyPaintEventBinding.h"
+#include "nsDOMNavigationTiming.h"
 #include "nsPresContext.h"
 
 namespace mozilla {

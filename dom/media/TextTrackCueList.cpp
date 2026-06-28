@@ -6,8 +6,7 @@
 #include "mozilla/dom/TextTrackCueListBinding.h"
 #include "mozilla/dom/TextTrackCue.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class CompareCuesByTime {
  public:
@@ -122,5 +121,4 @@ nsTArray<RefPtr<TextTrackCue>>& TextTrackCueList::GetCuesArray() {
   return mList;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

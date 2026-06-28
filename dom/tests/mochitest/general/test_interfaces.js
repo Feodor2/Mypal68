@@ -544,8 +544,6 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "HTMLMenuElement", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "HTMLMenuItemElement", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "HTMLMetaElement", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "HTMLMeterElement", insecureContext: true },
@@ -626,15 +624,15 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "IDBFactory", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "IDBFileHandle", insecureContext: true },
+  { name: "IDBFileHandle", insecureContext: true, disabled: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "IDBFileRequest", insecureContext: true },
+  { name: "IDBFileRequest", insecureContext: true, disabled: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "IDBIndex", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "IDBKeyRange", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "IDBMutableFile", insecureContext: true },
+  { name: "IDBMutableFile", insecureContext: true, disabled: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "IDBObjectStore", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -676,15 +674,19 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Location", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "Lock", insecureContext: false, disabled: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "LockManager", insecureContext: false, disabled: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "MathMLElement", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "MediaCapabilities", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "MediaCapabilitiesInfo", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "MediaDeviceInfo", insecureContext: true },
+  { name: "MediaDeviceInfo", insecureContext: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "MediaDevices", insecureContext: true },
+  { name: "MediaDevices", insecureContext: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "MediaElementAudioSourceNode", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -841,7 +843,7 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PluginArray", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "PointerEvent", insecureContext: true, android: false },
+  { name: "PointerEvent", insecureContext: true, fennec: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PopStateEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -855,11 +857,11 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PublicKeyCredential" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "PushManager", insecureContext: true, fennec: true },
+  { name: "PushManager", insecureContext: true, fennecOrDesktop: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "PushSubscription", insecureContext: true, fennec: true },
+  { name: "PushSubscription", insecureContext: true, fennecOrDesktop: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "PushSubscriptionOptions", insecureContext: true, fennec: true },
+  { name: "PushSubscriptionOptions", insecureContext: true, fennecOrDesktop: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "RadioNodeList", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -892,6 +894,8 @@ var interfaceNamesInGlobalScope = [
   { name: "RTCDataChannel", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "RTCDataChannelEvent", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "RTCDtlsTransport", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "RTCDTMFSender", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -927,11 +931,11 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Selection", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "ServiceWorker", insecureContext: true, fennec: true },
+  { name: "ServiceWorker", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "ServiceWorkerContainer", insecureContext: false, fennec: true },
+  { name: "ServiceWorkerContainer", insecureContext: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "ServiceWorkerRegistration", insecureContext: true, fennec: true },
+  { name: "ServiceWorkerRegistration", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "ScopedCredential", insecureContext: true, disabled: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!

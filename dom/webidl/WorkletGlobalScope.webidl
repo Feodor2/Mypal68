@@ -12,5 +12,5 @@ interface WorkletGlobalScope {
 
 // Mozilla extensions
 partial interface WorkletGlobalScope {
-  void dump(optional DOMString str);
+  undefined dump(optional DOMString str);
 };

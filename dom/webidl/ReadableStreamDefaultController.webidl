@@ -6,16 +6,16 @@
  * https://streams.spec.whatwg.org/#rs-default-controller-class-definition
  */
 
-[Exposed=*, Pref="dom.streams.readable_stream_default_controller.enabled"]
+[Exposed=*]
 interface ReadableStreamDefaultController {
   readonly attribute unrestricted double? desiredSize;
 
   [Throws]
-  void close();
+  undefined close();
 
   [Throws]
-  void enqueue(optional any chunk);
+  undefined enqueue(optional any chunk);
 
   [Throws]
-  void error(optional any e);
+  undefined error(optional any e);
 };

@@ -52,7 +52,7 @@ static nsresult ReportLengthParseError(const nsString& aValue,
                                        Document* aDocument) {
   AutoTArray<nsString, 1> arg = {aValue};
   return nsContentUtils::ReportToConsole(
-      nsIScriptError::errorFlag, NS_LITERAL_CSTRING("MathML"), aDocument,
+      nsIScriptError::errorFlag, "MathML"_ns, aDocument,
       nsContentUtils::eMATHML_PROPERTIES, "LengthParsingError", arg);
 }
 
@@ -60,7 +60,7 @@ static nsresult ReportParseErrorNoTag(const nsString& aValue, nsAtom* aAtom,
                                       Document* aDocument) {
   AutoTArray<nsString, 2> argv = {aValue, nsDependentAtomString(aAtom)};
   return nsContentUtils::ReportToConsole(
-      nsIScriptError::errorFlag, NS_LITERAL_CSTRING("MathML"), aDocument,
+      nsIScriptError::errorFlag, "MathML"_ns, aDocument,
       nsContentUtils::eMATHML_PROPERTIES, "AttributeParsingErrorNoTag", argv);
 }
 
@@ -344,10 +344,9 @@ bool MathMLElement::ParseNumericValue(const nsString& aString,
         (aFlags & PARSE_ALLOW_UNITLESS)) {
       // no explicit unit, this is a number that will act as a multiplier
       if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
-        nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
-                                        NS_LITERAL_CSTRING("MathML"), aDocument,
-                                        nsContentUtils::eMATHML_PROPERTIES,
-                                        "UnitlessValuesAreDeprecated");
+        nsContentUtils::ReportToConsole(
+            nsIScriptError::warningFlag, "MathML"_ns, aDocument,
+            nsContentUtils::eMATHML_PROPERTIES, "UnitlessValuesAreDeprecated");
       }
       if (aFlags & CONVERT_UNITLESS_TO_PERCENT) {
         aCSSValue.SetPercentValue(floatValue);

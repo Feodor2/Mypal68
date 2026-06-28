@@ -11,7 +11,6 @@
 #include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/RadioGroupManager.h"
 #include "nsCOMPtr.h"
-#include "nsIForm.h"
 #include "nsIFormControl.h"
 #include "nsGenericHTMLElement.h"
 #include "nsIWebProgressListener.h"
@@ -30,13 +29,14 @@ namespace mozilla {
 class EventChainPostVisitor;
 class EventChainPreVisitor;
 namespace dom {
+class DialogFormSubmission;
 class HTMLFormControlsCollection;
+class HTMLFormSubmission;
 class HTMLImageElement;
 class FormData;
 
 class HTMLFormElement final : public nsGenericHTMLElement,
                               public nsIWebProgressListener,
-                              public nsIForm,
                               public nsIRadioGroupContainer,
                               RadioGroupManager {
   friend class HTMLFormControlsCollection;
@@ -55,11 +55,8 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   // nsIWebProgressListener
   NS_DECL_NSIWEBPROGRESSLISTENER
 
-  // nsIForm
-  NS_IMETHOD_(nsIFormControl*) GetElementAt(int32_t aIndex) const override;
-  NS_IMETHOD_(uint32_t) GetElementCount() const override;
-  NS_IMETHOD_(int32_t) IndexOfControl(nsIFormControl* aControl) override;
-  NS_IMETHOD_(nsIFormControl*) GetDefaultSubmitElement() const override;
+  int32_t IndexOfContent(nsIContent* aContent);
+  nsGenericHTMLFormElement* GetDefaultSubmitElement() const;
 
   // nsIRadioGroupContainer
   void SetCurrentRadioButton(const nsAString& aName,

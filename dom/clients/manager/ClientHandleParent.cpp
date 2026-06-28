@@ -6,12 +6,12 @@
 
 #include "ClientHandleOpParent.h"
 #include "ClientManagerService.h"
+#include "ClientPrincipalUtils.h"
 #include "ClientSourceParent.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/Unused.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using mozilla::ipc::IPCResult;
 
@@ -62,5 +62,4 @@ void ClientHandleParent::Init(const IPCClientInfo& aClientInfo) {
 
 ClientSourceParent* ClientHandleParent::GetSource() const { return mSource; }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

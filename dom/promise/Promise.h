@@ -66,12 +66,22 @@ class Promise : public SupportsWeakPtr {
       PropagateUserInteraction aPropagateUserInteraction =
           eDontPropagateUserInteraction);
 
+  // Same as Promise::Create but never throws, but instead:
+  // 1. Causes crash on OOM (as nearly every other web APIs do)
+  // 2. Silently creates a no-op Promise if the JS context is shut down
+  // This can be useful for implementations that produce promises but do not
+  // care whether the current global is alive to consume them.
+  // Note that PromiseObj() can return a nullptr if created this way.
+  static already_AddRefed<Promise> CreateInfallible(
+      nsIGlobalObject* aGlobal,
+      PropagateUserInteraction aPropagateUserInteraction =
+          eDontPropagateUserInteraction);
+
   // Reports a rejected Promise by sending an error report.
   static void ReportRejectedPromise(JSContext* aCx,
                                     JS::Handle<JSObject*> aPromise);
 
-  typedef void (Promise::*MaybeFunc)(JSContext* aCx,
-                                     JS::Handle<JS::Value> aValue);
+  using MaybeFunc = void (Promise::*)(JSContext*, JS::Handle<JS::Value>);
 
   // Helpers for using Promise from C++.
   // Most DOM objects are handled already.  To add a new type T, add a
@@ -210,6 +220,27 @@ class Promise : public SupportsWeakPtr {
                                           JS::Handle<JS::Value> aValue,
                                           ErrorResult& aRv);
 
+  template <typename T>
+  static already_AddRefed<Promise> Reject(nsIGlobalObject* aGlobal, T&& aValue,
+                                          ErrorResult& aError) {
+    AutoJSAPI jsapi;
+    if (!jsapi.Init(aGlobal)) {
+      aError.Throw(NS_ERROR_UNEXPECTED);
+      return nullptr;
+    }
+
+    JSContext* cx = jsapi.cx();
+    JS::Rooted<JS::Value> val(cx);
+    if (!ToJSValue(cx, std::forward<T>(aValue), &val)) {
+      return Promise::RejectWithExceptionFromContext(aGlobal, cx, aError);
+    }
+
+    return Reject(aGlobal, cx, val, aError);
+  }
+
+  static already_AddRefed<Promise> RejectWithExceptionFromContext(
+      nsIGlobalObject* aGlobal, JSContext* aCx, ErrorResult& aError);
+
   // Do the equivalent of Promise.all in the current compartment of aCx.  Errors
   // are reported on the ErrorResult; if aRv comes back !Failed(), this function
   // MUST return a non-null value.
@@ -296,6 +327,8 @@ class Promise : public SupportsWeakPtr {
                                           RejectCallback&& aOnReject,
                                           Args&&... aArgs);
 
+  // This can be null if this promise is made after the corresponding JSContext
+  // is dead.
   JSObject* PromiseObj() const { return mPromiseObj; }
 
   void AppendNativeHandler(PromiseNativeHandler* aRunnable);

@@ -12,8 +12,7 @@
 #include "PermissionObserver.h"
 #include "PermissionUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /* static */
 already_AddRefed<PermissionStatus> PermissionStatus::Create(
@@ -32,7 +31,7 @@ PermissionStatus::PermissionStatus(nsPIDOMWindowInner* aWindow,
     : DOMEventTargetHelper(aWindow),
       mName(aName),
       mState(PermissionState::Denied) {
-  KeepAliveIfHasListenersFor(NS_LITERAL_STRING("change"));
+  KeepAliveIfHasListenersFor(u"change"_ns);
 }
 
 nsresult PermissionStatus::Init() {
@@ -113,14 +112,14 @@ void PermissionStatus::PermissionChanged() {
   auto oldState = mState;
   UpdateState();
   if (mState != oldState) {
-    RefPtr<AsyncEventDispatcher> eventDispatcher = new AsyncEventDispatcher(
-        this, NS_LITERAL_STRING("change"), CanBubble::eNo);
+    RefPtr<AsyncEventDispatcher> eventDispatcher =
+        new AsyncEventDispatcher(this, u"change"_ns, CanBubble::eNo);
     eventDispatcher->PostDOMEvent();
   }
 }
 
 void PermissionStatus::DisconnectFromOwner() {
-  IgnoreKeepAliveIfHasListenersFor(NS_LITERAL_STRING("change"));
+  IgnoreKeepAliveIfHasListenersFor(u"change"_ns);
 
   if (mObserver) {
     mObserver->RemoveSink(this);
@@ -130,5 +129,4 @@ void PermissionStatus::DisconnectFromOwner() {
   DOMEventTargetHelper::DisconnectFromOwner();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

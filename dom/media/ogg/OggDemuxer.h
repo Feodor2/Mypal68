@@ -31,8 +31,6 @@ class OggDemuxer : public MediaDataDemuxer,
 
   bool IsSeekable() const override;
 
-  UniquePtr<EncryptionInfo> GetCrypto() override;
-
   // Set the events to notify when chaining is encountered.
   void SetChainingEvents(TimedMetadataEventProducer* aMetadataEvent,
                          MediaEventProducer<void>* aOnSeekableEvent);

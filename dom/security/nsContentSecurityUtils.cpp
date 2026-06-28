@@ -6,11 +6,22 @@
 
 #include "nsContentSecurityUtils.h"
 
+#include "mozilla/Components.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIURI.h"
 
+#include "js/Array.h"  // JS::GetArrayLength
 #include "mozilla/dom/Document.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/StaticPrefs_extensions.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "nsIConsoleService.h"
+#include "nsIStringBundle.h"
+
+using namespace mozilla;
+using namespace mozilla::dom;
+
+extern mozilla::LazyLogModule sCSMLog;
 
 // Helper function for IsConsideredSameOriginForUIR which makes
 // Principals of scheme 'http' return Principals of scheme 'https'.
@@ -292,7 +303,7 @@ void nsContentSecurityUtils::NotifyEvalUsage(bool aIsSystemPrincipal,
   }
   nsCOMPtr<nsIStringBundle> bundle;
   nsCOMPtr<nsIStringBundleService> stringService =
-      mozilla::services::GetStringBundleService();
+      mozilla::components::StringBundle::Service();
   if (!stringService) {
     return;
   }

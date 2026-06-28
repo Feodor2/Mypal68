@@ -7,6 +7,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/Link.h"
+#include "mozilla/dom/HTMLDNSPrefetch.h"
 #include "nsGenericHTMLElement.h"
 #include "nsDOMTokenList.h"
 
@@ -15,7 +16,9 @@ class EventChainPostVisitor;
 class EventChainPreVisitor;
 namespace dom {
 
-class HTMLAnchorElement final : public nsGenericHTMLElement, public Link {
+class HTMLAnchorElement final : public nsGenericHTMLElement,
+                                public Link,
+                                public SupportsDNSPrefetch {
  public:
   using Element::GetText;
 
@@ -65,10 +68,6 @@ class HTMLAnchorElement final : public nsGenericHTMLElement, public Link {
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
   virtual EventStates IntrinsicState() const override;
-
-  virtual void OnDNSPrefetchDeferred() override;
-  virtual void OnDNSPrefetchRequested() override;
-  virtual bool HasDeferredDNSPrefetchRequest() override;
 
   // WebIDL API
 

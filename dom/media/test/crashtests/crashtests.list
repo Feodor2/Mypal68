@@ -1,5 +1,5 @@
 load 0-timescale.html # bug 1229166
-skip-if(Android) load 459439-1.html # bug 888557
+skip-if(Android) pref(media.autoplay.default,0) load 459439-1.html # bug 888557
 load 466607-1.html
 load 466945-1.html
 load 468763-1.html
@@ -7,7 +7,7 @@ load 474744-1.html
 HTTP load 481136-1.html # needs to be HTTP to recognize the ogg as an audio file?
 load 492286-1.xhtml
 load 493915-1.html
-load 495794-1.html
+pref(media.autoplay.default,0) load 495794-1.html
 load 497734-1.xhtml
 load 497734-2.html
 load 576612-1.html
@@ -99,11 +99,15 @@ load 1450845.html
 load disconnect-wrong-destination.html
 load analyser-channels-1.html
 skip-if(verify&&isDebugBuild&&gtkWidget) load audiocontext-double-suspend.html
+skip-if(Android) load audioworkletnode-after-unload-1.html # Needs secure context
 load buffer-source-duration-1.html
 skip-if(verify&&isDebugBuild&&gtkWidget) load buffer-source-ended-1.html
 load buffer-source-resampling-start-1.html
 load buffer-source-slow-resampling-1.html
 load convolver-memory-report-1.html
+load copyFromChannel-2.html
+load empty-buffer-source.html
+test-pref(media.devices.insecure.enabled,true) load enumerateDevices-after-discard-1.html
 skip-if(verify&&isDebugBuild&&gtkWidget) HTTP load media-element-source-seek-1.html
 skip-if(verify&&isDebugBuild&&gtkWidget) load offline-buffer-source-ended-1.html
 load oscillator-ended-1.html
@@ -112,7 +116,7 @@ skip-if(Android&&AndroidVersion=='22') load video-replay-after-audio-end.html # 
 # This needs to run at the end to avoid leaking busted state into other tests.
 skip-if(Android) load 691096-1.html # Bug 1365451
 load 1236639.html
-test-pref(media.navigator.permission.disabled,true) test-pref(media.getusermedia.insecure.enabled,true) test-pref(media.getusermedia.insecure.enabled,true) load 1388372.html
+test-pref(media.navigator.permission.disabled,true) test-pref(media.devices.insecure.enabled,true) test-pref(media.getusermedia.insecure.enabled,true) load 1388372.html
 load 1494073.html
 skip-if(Android) load 1526044.html # Bug 1528391
 skip-if(Android&&AndroidVersion<21) load encrypted-track-with-bad-sample-description-index.mp4 # Bug 1533211, unkip after bug 1550912

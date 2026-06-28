@@ -3,17 +3,17 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PermissionUtils.h"
+#include "nsIPermissionManager.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 static const nsLiteralCString kPermissionTypes[] = {
     // clang-format off
-    NS_LITERAL_CSTRING("geo"),
-    NS_LITERAL_CSTRING("desktop-notification"),
+    "geo"_ns,
+    "desktop-notification"_ns,
     // Alias `push` to `desktop-notification`.
-    NS_LITERAL_CSTRING("desktop-notification"),
-    NS_LITERAL_CSTRING("persistent-storage")
+    "desktop-notification"_ns,
+    "persistent-storage"_ns
     // clang-format on
 };
 
@@ -51,5 +51,4 @@ PermissionState ActionToPermissionState(uint32_t aAction) {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

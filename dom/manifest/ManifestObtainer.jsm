@@ -20,8 +20,6 @@
  *   dom/ipc/manifestMessages.js
  *
  * Which is injected into every browser instance via browser.js.
- *
- * exported ManifestObtainer
  */
 "use strict";
 
@@ -33,7 +31,6 @@ const { ManifestProcessor } = ChromeUtils.import(
 );
 
 var ManifestObtainer = {
-  // jshint ignore:line
   /**
    * Public interface for obtaining a web manifest from a XUL browser, to use
    * on the parent process.
@@ -146,6 +143,7 @@ async function fetchManifest(aWindow) {
   // Throws on malformed URLs
   const manifestURL = new aWindow.URL(elem.href, elem.baseURI);
   const reqInit = {
+    credentials: "omit",
     mode: "cors",
   };
   if (elem.crossOrigin === "use-credentials") {
@@ -157,4 +155,4 @@ async function fetchManifest(aWindow) {
   return aWindow.fetch(request);
 }
 
-var EXPORTED_SYMBOLS = ["ManifestObtainer"]; // jshint ignore:line
+var EXPORTED_SYMBOLS = ["ManifestObtainer"];

@@ -18,11 +18,11 @@ interface DedicatedWorkerGlobalScope : WorkerGlobalScope {
   readonly attribute DOMString name;
 
   [Throws]
-  void postMessage(any message, sequence<object> transfer);
+  undefined postMessage(any message, sequence<object> transfer);
   [Throws]
-  void postMessage(any message, optional StructuredSerializeOptions options = {});
+  undefined postMessage(any message, optional StructuredSerializeOptions options = {});
 
-  void close();
+  undefined close();
 
   attribute EventHandler onmessage;
   attribute EventHandler onmessageerror;

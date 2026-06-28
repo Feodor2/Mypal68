@@ -6,7 +6,6 @@
 #define mozilla_dom_UDPSocketChild_h__
 
 #include "mozilla/net/PUDPSocketChild.h"
-#include "nsIUDPSocketChild.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
 
@@ -17,8 +16,11 @@
     }                                                \
   }
 
-namespace mozilla {
-namespace dom {
+class nsIUDPSocketInternal;
+class nsIInputStream;
+class nsIPrincipal;
+
+namespace mozilla::dom {
 
 class UDPSocketChildBase : public nsISupports {
  public:
@@ -101,7 +103,6 @@ class UDPSocketChild : public mozilla::net::PUDPSocketChild,
   nsCString mFilterName;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // !defined(mozilla_dom_UDPSocketChild_h__)

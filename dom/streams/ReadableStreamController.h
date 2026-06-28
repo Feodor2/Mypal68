@@ -9,9 +9,11 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
 #include "nsISupports.h"
+#include "UnderlyingSourceCallbackHelpers.h"
 
 namespace mozilla::dom {
 struct ReadRequest;
+class ReadableStream;
 class ReadableStreamDefaultController;
 class ReadableByteStreamController;
 
@@ -20,7 +22,7 @@ class ReadableStreamController : public nsISupports {
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(ReadableStreamController)
 
-  ReadableStreamController(nsIGlobalObject* aGlobal) : mGlobal(aGlobal) {}
+  ReadableStreamController(nsIGlobalObject* aGlobal);
 
   nsIGlobalObject* GetParentObject() const { return mGlobal; }
 
@@ -40,8 +42,27 @@ class ReadableStreamController : public nsISupports {
   // No JS implementable UnderlyingSource callback exists for this.
   virtual void ReleaseSteps() = 0;
 
+  UnderlyingSourceAlgorithmsBase* GetAlgorithms() const { return mAlgorithms; }
+  void SetAlgorithms(UnderlyingSourceAlgorithmsBase& aAlgorithms) {
+    mAlgorithms = &aAlgorithms;
+  }
+  void ClearAlgorithms() {
+    MOZ_ASSERT(mAlgorithms);
+    mAlgorithms->ReleaseObjects();
+    mAlgorithms = nullptr;
+  }
+
+  ReadableStream* Stream() const { return mStream; }
+  void SetStream(ReadableStream* aStream);
+
  protected:
   nsCOMPtr<nsIGlobalObject> mGlobal;
+
+  // The algorithms for the underlying source
+  RefPtr<UnderlyingSourceAlgorithmsBase> mAlgorithms;
+
+  RefPtr<ReadableStream> mStream;
+
   virtual ~ReadableStreamController() = default;
 };
 

@@ -287,7 +287,7 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(
   const auto lock = mSharedData.Lock();
   lock->mWorkerPrivate = WorkerPrivate::Constructor(
       jsapi.cx(), aData.originalScriptURL(), false,
-      aData.isSharedWorker() ? WorkerTypeShared : WorkerTypeService,
+      aData.isSharedWorker() ? WorkerKindShared : WorkerKindService,
       aData.name(), VoidCString(), &info, error);
   if (NS_WARN_IF(error.Failed())) {
     return error.StealNSResult();

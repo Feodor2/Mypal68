@@ -18,6 +18,7 @@
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/dom/quota/CommonMetadata.h"
+#include "mozilla/dom/quota/ForwardDecls.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
 #include "nsCOMPtr.h"
@@ -102,8 +103,7 @@ class QuotaManager final : public BackgroundThreadObject {
 
   static Result<MovingNotNull<RefPtr<QuotaManager>>, nsresult> GetOrCreate();
 
-  // TODO: Remove this overload once all clients use the synchronous GetOrCreate
-  static void GetOrCreate(nsIRunnable* aCallback);
+  static Result<Ok, nsresult> EnsureCreated();
 
   // Returns a non-owning reference.
   static QuotaManager* Get();
@@ -453,7 +453,7 @@ class QuotaManager final : public BackgroundThreadObject {
 
   nsresult MaybeCreateOrUpgradeStorage(mozIStorageConnection& aConnection);
 
-  nsresult MaybeRemoveLocalStorageArchiveTmpFile();
+  OkOrErr MaybeRemoveLocalStorageArchiveTmpFile();
 
   nsresult MaybeRemoveLocalStorageDataAndArchive(nsIFile& aLsArchiveFile);
 
@@ -546,7 +546,7 @@ class QuotaManager final : public BackgroundThreadObject {
   LazyInitializedOnceNotNull<const nsCOMPtr<nsITimer>> mShutdownTimer;
   Atomic<bool> mShutdownStarted;
 
-  Lock mQuotaMutex;
+  Lock2 mQuotaMutex;
 
   nsClassHashtable<nsCStringHashKey, GroupInfoPair> mGroupInfoPairs;
 

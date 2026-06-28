@@ -62,7 +62,6 @@
 #include "mozilla/dom/workerinternals/NetworkLoadHandler.h"
 #include "mozilla/UniquePtr.h"
 #include "Principal.h"
-#include "WorkerPrivate.h"
 #include "WorkerRunnable.h"
 #include "WorkerScope.h"
 

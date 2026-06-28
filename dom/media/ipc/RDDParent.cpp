@@ -6,6 +6,8 @@
 #if defined(XP_WIN)
 #  include <process.h>
 #  include <dwrite.h>
+#else
+#  include <unistd.h>
 #endif
 
 #include "chrome/common/ipc_channel.h"

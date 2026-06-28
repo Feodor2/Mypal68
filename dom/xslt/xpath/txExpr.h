@@ -62,7 +62,7 @@ class Expr {
   /**
    * Returns the type or types of results this Expr return.
    */
-  typedef uint16_t ResultType;
+  using ResultType = uint16_t;
   enum {
     NODESET_RESULT = 0x01,
     BOOLEAN_RESULT = 0x02,
@@ -76,7 +76,7 @@ class Expr {
     return (getReturnType() & aType) != 0;
   }
 
-  typedef uint16_t ContextSensitivity;
+  using ContextSensitivity = uint16_t;
   enum {
     NO_CONTEXT = 0x00,
     NODE_CONTEXT = 0x01,
@@ -221,14 +221,8 @@ class FunctionCall : public Expr {
    * The ownership of the given Expr is passed over to the FunctionCall,
    * even on failure.
    * @param aExpr the Expr to add to this FunctionCall's parameter list
-   * @return nsresult indicating out of memory
    */
-  nsresult addParam(Expr* aExpr) {
-    // XXX(Bug 1631371) Check if this should use a fallible operation as it
-    // pretended earlier, or change the return type to void.
-    mParams.AppendElement(aExpr);
-    return NS_OK;
-  }
+  void addParam(Expr* aExpr) { mParams.AppendElement(aExpr); }
 
   /**
    * Check if the number of parameters falls within a range.
@@ -446,14 +440,10 @@ class PredicateList {
    * The ownership of the given Expr is passed over the PredicateList,
    * even on failure.
    * @param aExpr the Expr to add to the list
-   * @return nsresult indicating out of memory
    */
-  nsresult add(Expr* aExpr) {
+  void add(Expr* aExpr) {
     NS_ASSERTION(aExpr, "missing expression");
-    // XXX(Bug 1631371) Check if this should use a fallible operation as it
-    // pretended earlier, or change the return type to void.
     mPredicates.AppendElement(aExpr);
-    return NS_OK;
   }
 
   nsresult evaluatePredicates(txNodeSet* aNodes, txIMatchContext* aContext);
@@ -709,9 +699,8 @@ class PathExpr : public Expr {
    * The ownership of the given Expr is passed over the PathExpr,
    * even on failure.
    * @param aExpr the Expr to add to this PathExpr
-   * @return nsresult indicating out of memory
    */
-  nsresult addExpr(Expr* aExpr, PathOperator pathOp);
+  void addExpr(Expr* aExpr, PathOperator pathOp);
 
   /**
    * Removes and deletes the expression at the given index.
@@ -786,14 +775,8 @@ class UnionExpr : public Expr {
    * The ownership of the given Expr is passed over the UnionExpr,
    * even on failure.
    * @param aExpr the Expr to add to this UnionExpr
-   * @return nsresult indicating out of memory
    */
-  nsresult addExpr(Expr* aExpr) {
-    // XXX(Bug 1631371) Check if this should use a fallible operation as it
-    // pretended earlier, or change the return type to void.
-    mExpressions.AppendElement(aExpr);
-    return NS_OK;
-  }
+  void addExpr(Expr* aExpr) { mExpressions.AppendElement(aExpr); }
 
   /**
    * Removes and deletes the expression at the given index.
@@ -833,11 +816,8 @@ class txNamedAttributeStep : public Expr {
  */
 class txUnionNodeTest : public txNodeTest {
  public:
-  nsresult addNodeTest(txNodeTest* aNodeTest) {
-    // XXX(Bug 1631371) Check if this should use a fallible operation as it
-    // pretended earlier, or change the return type to void.
+  void addNodeTest(txNodeTest* aNodeTest) {
     mNodeTests.AppendElement(aNodeTest);
-    return NS_OK;
   }
 
   TX_DECL_NODE_TEST

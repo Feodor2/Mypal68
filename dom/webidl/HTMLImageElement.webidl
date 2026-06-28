@@ -46,7 +46,7 @@ interface HTMLImageElement : HTMLElement {
   readonly attribute unsigned long naturalHeight;
   readonly attribute boolean complete;
            [NewObject]
-           Promise<void> decode();
+           Promise<undefined> decode();
 };
 
 // http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
@@ -101,13 +101,13 @@ interface mixin MozImageLoadingContent {
    * from another or without a document.
    */
   [ChromeOnly]
-  void addObserver(imgINotificationObserver aObserver);
+  undefined addObserver(imgINotificationObserver aObserver);
   /**
    * Same as removeNativeObserver but intended for scripted observers or
    * observers from another or without a document.
    */
   [ChromeOnly]
-  void removeObserver(imgINotificationObserver aObserver);
+  undefined removeObserver(imgINotificationObserver aObserver);
   [ChromeOnly,Throws]
   imgIRequest? getRequest(long aRequestType);
   [ChromeOnly,Throws]
@@ -125,9 +125,7 @@ interface mixin MozImageLoadingContent {
    * @throws NS_ERROR_NOT_AVAILABLE if there is no current URI to reload
    */
   [ChromeOnly,Throws]
-  void forceReload(optional boolean aNotify = true);
-  [ChromeOnly]
-  void forceImageState(boolean aForce, unsigned long long aState);
+  undefined forceReload(optional boolean aNotify = true);
 };
 
 HTMLImageElement includes MozImageLoadingContent;

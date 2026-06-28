@@ -15,6 +15,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/ImageBitmapSource.h"
+#include "mozilla/dom/WorkerPrivate.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIGlobalObject.h"
@@ -68,6 +69,7 @@ class CacheStorage;
 }  // namespace cache
 
 class WorkerGlobalScopeBase : public DOMEventTargetHelper,
+                              public nsSupportsWeakReference,
                               public nsIGlobalObject {
   friend class WorkerPrivate;
 
@@ -76,7 +78,7 @@ class WorkerGlobalScopeBase : public DOMEventTargetHelper,
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(WorkerGlobalScopeBase,
                                                          DOMEventTargetHelper)
 
-  WorkerGlobalScopeBase(NotNull<WorkerPrivate*> aWorkerPrivate,
+  WorkerGlobalScopeBase(WorkerPrivate* aWorkerPrivate,
                         UniquePtr<ClientSource> aClientSource);
 
   virtual bool WrapGlobalObject(JSContext* aCx,
@@ -111,6 +113,10 @@ class WorkerGlobalScopeBase : public DOMEventTargetHelper,
     MOZ_CRASH("AbstractMainThreadFor not supported for workers.");
   }
 
+  MOZ_CAN_RUN_SCRIPT
+  void ReportError(JSContext* aCx, JS::Handle<JS::Value> aError,
+                   CallerType aCallerType, ErrorResult& aRv);
+
   // atob, btoa, and dump are declared (separately) by both WorkerGlobalScope
   // and WorkerDebuggerGlobalScope WebIDL interfaces
   void Atob(const nsAString& aAtob, nsAString& aOut, ErrorResult& aRv) const;
@@ -123,6 +129,10 @@ class WorkerGlobalScopeBase : public DOMEventTargetHelper,
 
   void NoteTerminating() { StartDying(); }
 
+  // Usually global scope dies earlier than the WorkerPrivate, but if we see
+  // it leak at least we can tell it to not carry away a dead pointer.
+  void NoteWorkerTerminated() { mWorkerPrivate = nullptr; }
+
   ClientSource& MutableClientSourceRef() const { return *mClientSource; }
 
   // WorkerPrivate wants to be able to forbid script when its state machine
@@ -133,12 +143,19 @@ class WorkerGlobalScopeBase : public DOMEventTargetHelper,
  protected:
   ~WorkerGlobalScopeBase();
 
-  const NotNull<WorkerPrivate*> mWorkerPrivate;
+  CheckedUnsafePtr<WorkerPrivate> mWorkerPrivate;
+
+  void AssertIsOnWorkerThread() const {
+    MOZ_ASSERT(mWorkerThreadUsedOnlyForAssert == PR_GetCurrentThread());
+  }
 
  private:
   RefPtr<Console> mConsole;
   const UniquePtr<ClientSource> mClientSource;
   nsCOMPtr<nsISerialEventTarget> mSerialEventTarget;
+#ifdef DEBUG
+  PRThread* mWorkerThreadUsedOnlyForAssert;
+#endif
 };
 
 namespace workerinternals {
@@ -158,8 +175,7 @@ class NamedWorkerGlobalScopeMixin {
 
 }  // namespace workerinternals
 
-class WorkerGlobalScope : public WorkerGlobalScopeBase,
-                          public nsSupportsWeakReference {
+class WorkerGlobalScope : public WorkerGlobalScopeBase {
  public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(WorkerGlobalScope,
@@ -306,7 +322,7 @@ class DedicatedWorkerGlobalScope final
     : public WorkerGlobalScope,
       public workerinternals::NamedWorkerGlobalScopeMixin {
  public:
-  DedicatedWorkerGlobalScope(NotNull<WorkerPrivate*> aWorkerPrivate,
+  DedicatedWorkerGlobalScope(WorkerPrivate* aWorkerPrivate,
                              UniquePtr<ClientSource> aClientSource,
                              const nsString& aName);
 
@@ -333,7 +349,7 @@ class SharedWorkerGlobalScope final
     : public WorkerGlobalScope,
       public workerinternals::NamedWorkerGlobalScopeMixin {
  public:
-  SharedWorkerGlobalScope(NotNull<WorkerPrivate*> aWorkerPrivate,
+  SharedWorkerGlobalScope(WorkerPrivate* aWorkerPrivate,
                           UniquePtr<ClientSource> aClientSource,
                           const nsString& aName);
 
@@ -355,8 +371,7 @@ class ServiceWorkerGlobalScope final : public WorkerGlobalScope {
                                            WorkerGlobalScope)
 
   ServiceWorkerGlobalScope(
-      NotNull<WorkerPrivate*> aWorkerPrivate,
-      UniquePtr<ClientSource> aClientSource,
+      WorkerPrivate* aWorkerPrivate, UniquePtr<ClientSource> aClientSource,
       const ServiceWorkerRegistrationDescriptor& aRegistrationDescriptor);
 
   bool WrapGlobalObject(JSContext* aCx,

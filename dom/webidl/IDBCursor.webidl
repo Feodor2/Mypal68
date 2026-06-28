@@ -3,7 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is
- * https://dvcs.w3.org/hg/IndexedDB/raw-file/tip/Overview.html#idl-def-IDBCursorDirection
+ * https://w3c.github.io/IndexedDB/#cursor-interface
  */
 
 enum IDBCursorDirection {
@@ -20,30 +20,24 @@ interface IDBCursor {
     [BinaryName="getDirection"]
     readonly    attribute IDBCursorDirection           direction;
 
-    [Throws]
-    readonly    attribute any                          key;
+    [Pure, Throws] readonly attribute any key;
+    [Pure, Throws] readonly attribute any primaryKey;
+    [SameObject] readonly attribute IDBRequest request;
 
     [Throws]
-    readonly    attribute any                          primaryKey;
+    undefined  advance ([EnforceRange] unsigned long count);
 
     [Throws]
-    IDBRequest update (any value);
+    undefined  continue (optional any key);
 
     [Throws]
-    void       advance ([EnforceRange] unsigned long count);
+    undefined  continuePrimaryKey(any key, any primaryKey);
 
-    [Throws]
-    void       continue (optional any key);
-
-    [Throws]
-    void       continuePrimaryKey(any key, any primaryKey);
-
-    [Throws]
-    IDBRequest delete ();
+    [NewObject, Throws] IDBRequest update(any value);
+    [NewObject, Throws] IDBRequest delete();
 };
 
 [Exposed=(Window,Worker)]
 interface IDBCursorWithValue : IDBCursor {
-    [Throws]
-    readonly    attribute any value;
+    [Pure, Throws] readonly attribute any value;
 };

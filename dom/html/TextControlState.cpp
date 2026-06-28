@@ -58,15 +58,15 @@ using ValueSetterOptions = TextControlState::ValueSetterOptions;
 NS_IMPL_CYCLE_COLLECTION_CLASS(TextControlElement)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(
-    TextControlElement, nsGenericHTMLFormElementWithState)
+    TextControlElement, nsGenericHTMLFormControlElementWithState)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(
-    TextControlElement, nsGenericHTMLFormElementWithState)
+    TextControlElement, nsGenericHTMLFormControlElementWithState)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(
-    TextControlElement, nsGenericHTMLFormElementWithState)
+    TextControlElement, nsGenericHTMLFormControlElementWithState)
 
 /*static*/
 bool TextControlElement::GetWrapPropertyEnum(
@@ -106,6 +106,37 @@ TextControlElement::GetTextControlElementFromEditingHost(nsIContent* aHost) {
   RefPtr<TextControlElement> parent =
       TextControlElement::FromNodeOrNull(aHost->GetParent());
   return parent.forget();
+}
+
+TextControlElement::FocusTristate TextControlElement::FocusState() {
+  // We can't be focused if we aren't in a (composed) document
+  Document* doc = GetComposedDoc();
+  if (!doc) {
+    return FocusTristate::eUnfocusable;
+  }
+
+  // first see if we are disabled or not. If disabled then do nothing.
+  if (IsDisabled()) {
+    return FocusTristate::eUnfocusable;
+  }
+
+  // If the window is not active, do not allow the focus to bring the
+  // window to the front.  We update the focus controller, but do
+  // nothing else.
+  if (nsPIDOMWindowOuter* win = doc->GetWindow()) {
+    nsCOMPtr<nsPIDOMWindowOuter> rootWindow = win->GetPrivateRoot();
+
+    nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
+    if (fm && rootWindow) {
+      nsCOMPtr<mozIDOMWindowProxy> activeWindow;
+      fm->GetActiveWindow(getter_AddRefs(activeWindow));
+      if (activeWindow == rootWindow) {
+        return FocusTristate::eActiveWindow;
+      }
+    }
+  }
+
+  return FocusTristate::eInactiveWindow;
 }
 
 using ValueChangeKind = TextControlElement::ValueChangeKind;

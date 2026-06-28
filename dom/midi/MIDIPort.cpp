@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MIDIPort.h"
+#include "mozilla/dom/MIDIConnectionEvent.h"
 #include "mozilla/dom/MIDIPortChild.h"
 #include "mozilla/dom/MIDIAccess.h"
 #include "mozilla/dom/MIDITypes.h"
@@ -15,8 +16,7 @@
 
 using namespace mozilla::ipc;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(MIDIPort, DOMEventTargetHelper,
                                    mOpeningPromise, mClosingPromise)
@@ -111,17 +111,16 @@ bool MIDIPort::SysexEnabled() const {
   return mPort->SysexEnabled();
 }
 
-already_AddRefed<Promise> MIDIPort::Open() {
+already_AddRefed<Promise> MIDIPort::Open(ErrorResult& aError) {
   MOZ_ASSERT(mPort);
   RefPtr<Promise> p;
   if (mOpeningPromise) {
     p = mOpeningPromise;
     return p.forget();
   }
-  ErrorResult rv;
   nsCOMPtr<nsIGlobalObject> go = do_QueryInterface(GetOwner());
-  p = Promise::Create(go, rv);
-  if (rv.Failed()) {
+  p = Promise::Create(go, aError);
+  if (aError.Failed()) {
     return nullptr;
   }
   mOpeningPromise = p;
@@ -129,17 +128,16 @@ already_AddRefed<Promise> MIDIPort::Open() {
   return p.forget();
 }
 
-already_AddRefed<Promise> MIDIPort::Close() {
+already_AddRefed<Promise> MIDIPort::Close(ErrorResult& aError) {
   MOZ_ASSERT(mPort);
   RefPtr<Promise> p;
   if (mClosingPromise) {
     p = mClosingPromise;
     return p.forget();
   }
-  ErrorResult rv;
   nsCOMPtr<nsIGlobalObject> go = do_QueryInterface(GetOwner());
-  p = Promise::Create(go, rv);
-  if (rv.Failed()) {
+  p = Promise::Create(go, aError);
+  if (aError.Failed()) {
     return nullptr;
   }
   mClosingPromise = p;
@@ -192,5 +190,4 @@ void MIDIPort::Receive(const nsTArray<MIDIMessage>& aMsg) {
   MOZ_CRASH("We should never get here!");
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

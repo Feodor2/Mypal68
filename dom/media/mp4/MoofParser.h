@@ -196,43 +196,15 @@ class Sbgp final : public Atom  // SampleToGroup box.
   Result<Ok, nsresult> Parse(Box& aBox);
 };
 
-// Stores information form CencSampleEncryptionInformationGroupEntry (seig).
-// Cenc here refers to the common encryption standard, rather than the specific
-// cenc scheme from that standard. This structure is used for all encryption
-// schemes. I.e. it is used for both cenc and cbcs, not just cenc.
-struct CencSampleEncryptionInfoEntry final {
- public:
-  CencSampleEncryptionInfoEntry() = default;
-
-  Result<Ok, nsresult> Init(BoxReader& aReader);
-
-  bool mIsEncrypted = false;
-  uint8_t mIVSize = 0;
-  nsTArray<uint8_t> mKeyId;
-  uint8_t mCryptByteBlock = 0;
-  uint8_t mSkipByteBlock = 0;
-  nsTArray<uint8_t> mConsantIV;
-};
-
 class Sgpd final : public Atom  // SampleGroupDescription box.
 {
  public:
   explicit Sgpd(Box& aBox);
 
   AtomType mGroupingType;
-  FallibleTArray<CencSampleEncryptionInfoEntry> mEntries;
 
  protected:
   Result<Ok, nsresult> Parse(Box& aBox);
-};
-
-// Audio/video entries from the sample description box (stsd). We only need to
-// store if these are encrypted, so do not need a specialized class for
-// different audio and video data. Currently most of the parsing of these
-// entries is by the mp4parse-rust, but moof pasrser needs to know which of
-// these are encrypted when parsing the track fragment header (tfhd).
-struct SampleDescriptionEntry {
-  bool mIsEncryptedEntry = false;
 };
 
 // Used to indicate in variants if all tracks should be parsed.
@@ -254,8 +226,6 @@ class Moof final : public Atom {
   MP4Interval<Microseconds> mTimeRange;
   FallibleTArray<Sample> mIndex;
 
-  FallibleTArray<CencSampleEncryptionInfoEntry>
-      mFragmentSampleEncryptionInfoEntries;
   FallibleTArray<SampleToGroupEntry> mFragmentSampleToGroupEntries;
 
   Tfhd mTfhd;
@@ -318,8 +288,6 @@ class MoofParser : public DecoderDoctorLifeLogger<MoofParser> {
 
   void ParseMinf(Box& aBox);
   void ParseStbl(Box& aBox);
-  void ParseStsd(Box& aBox);
-  void ParseEncrypted(Box& aBox);
 
   bool BlockingReadNextMoof();
 
@@ -337,10 +305,7 @@ class MoofParser : public DecoderDoctorLifeLogger<MoofParser> {
   Edts mEdts;
   Sinf mSinf;
 
-  FallibleTArray<CencSampleEncryptionInfoEntry>
-      mTrackSampleEncryptionInfoEntries;
   FallibleTArray<SampleToGroupEntry> mTrackSampleToGroupEntries;
-  FallibleTArray<SampleDescriptionEntry> mSampleDescriptions;
 
   nsTArray<Moof>& Moofs() { return mMoofs; }
 

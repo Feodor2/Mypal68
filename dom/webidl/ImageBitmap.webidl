@@ -31,7 +31,7 @@ interface ImageBitmap {
 // new interface type "Closeable".
 partial interface ImageBitmap {
   // Dispose of all graphical resources associated with this ImageBitmap.
-  void close();
+  undefined close();
 };
 
 // ImageBitmap-extensions

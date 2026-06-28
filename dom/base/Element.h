@@ -109,6 +109,7 @@ namespace css {
 struct URLValue;
 }  // namespace css
 namespace dom {
+struct CheckVisibilityOptions;
 struct CustomElementData;
 struct GetAnimationsOptions;
 struct ScrollIntoViewOptions;
@@ -163,8 +164,12 @@ enum {
   // style of an element is up-to-date, even during the same restyle process.
   ELEMENT_HANDLED_SNAPSHOT = ELEMENT_FLAG_BIT(3),
 
+  // If this flag is set on an element, that means that it is a HTML datalist
+  // element or has a HTML datalist element ancestor.
+  ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR = ELEMENT_FLAG_BIT(4),
+
   // Remaining bits are for subclasses
-  ELEMENT_TYPE_SPECIFIC_BITS_OFFSET = NODE_TYPE_SPECIFIC_BITS_OFFSET + 4
+  ELEMENT_TYPE_SPECIFIC_BITS_OFFSET = NODE_TYPE_SPECIFIC_BITS_OFFSET + 5
 };
 
 #undef ELEMENT_FLAG_BIT
@@ -280,6 +285,11 @@ class Element : public FragmentOrElement {
    * @param aShadowRoot The ShadowRoot to be bound to this element.
    */
   void SetShadowRoot(ShadowRoot* aShadowRoot);
+
+  void SetLastRememberedBSize(float aBSize);
+  void SetLastRememberedISize(float aISize);
+  void RemoveLastRememberedBSize();
+  void RemoveLastRememberedISize();
 
   /**
    * Make focus on this element.
@@ -577,7 +587,7 @@ class Element : public FragmentOrElement {
    *
    * @param aDefinition The custom element definition.
    */
-  void SetCustomElementDefinition(CustomElementDefinition* aDefinition);
+  virtual void SetCustomElementDefinition(CustomElementDefinition* aDefinition);
 
   void SetDefined(bool aSet) {
     if (aSet) {
@@ -1103,6 +1113,20 @@ class Element : public FragmentOrElement {
                     ErrorResult& aError) {
     SetAttribute(aName, aValue, nullptr, aError);
   }
+  /**
+   * This method creates a principal that subsumes this element's NodePrincipal
+   * and which has flags set for elevated permissions that devtools needs to
+   * operate on this element. The principal returned by this method is used by
+   * various devtools methods to permit otherwise blocked operations, without
+   * changing any other restrictions the NodePrincipal might have.
+   */
+  already_AddRefed<nsIPrincipal> CreateDevtoolsPrincipal();
+  void SetAttributeDevtools(const nsAString& aName, const nsAString& aValue,
+                            ErrorResult& aError);
+  void SetAttributeDevtoolsNS(const nsAString& aNamespaceURI,
+                              const nsAString& aLocalName,
+                              const nsAString& aValue, ErrorResult& aError);
+
   void RemoveAttribute(const nsAString& aName, ErrorResult& aError);
   void RemoveAttributeNS(const nsAString& aNamespaceURI,
                          const nsAString& aLocalName, ErrorResult& aError);
@@ -1190,7 +1214,7 @@ class Element : public FragmentOrElement {
   bool CanAttachShadowDOM() const;
 
   already_AddRefed<ShadowRoot> AttachShadowWithoutNameChecks(
-      ShadowRootMode aMode,
+      ShadowRootMode aMode, bool aDelegatesFocus = false,
       SlotAssignmentMode aSlotAssignmentMode = SlotAssignmentMode::Named);
 
   // Attach UA Shadow Root if it is not attached.
@@ -1221,11 +1245,33 @@ class Element : public FragmentOrElement {
     return slots ? slots->mShadowRoot.get() : nullptr;
   }
 
+  const Maybe<float> GetLastRememberedBSize() const {
+    const nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots();
+    return slots ? slots->mLastRememberedBSize : Nothing();
+  }
+  const Maybe<float> GetLastRememberedISize() const {
+    const nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots();
+    return slots ? slots->mLastRememberedISize : Nothing();
+  }
+  bool HasLastRememberedBSize() const {
+    return GetLastRememberedBSize().isSome();
+  }
+  bool HasLastRememberedISize() const {
+    return GetLastRememberedISize().isSome();
+  }
+
+  // https://drafts.csswg.org/cssom-view-1/#dom-element-checkvisibility
+  MOZ_CAN_RUN_SCRIPT bool CheckVisibility(const CheckVisibilityOptions&);
+
  private:
+  // DO NOT USE THIS FUNCTION directly in C++. This function is supposed to be
+  // called from JS. Use PresShell::ScrollContentIntoView instead.
   MOZ_CAN_RUN_SCRIPT void ScrollIntoView(const ScrollIntoViewOptions& aOptions);
 
  public:
   MOZ_CAN_RUN_SCRIPT
+  // DO NOT USE THIS FUNCTION directly in C++. This function is supposed to be
+  // called from JS. Use PresShell::ScrollContentIntoView instead.
   void ScrollIntoView(const BooleanOrScrollIntoViewOptions& aObject);
   MOZ_CAN_RUN_SCRIPT void Scroll(double aXScroll, double aYScroll);
   MOZ_CAN_RUN_SCRIPT void Scroll(const ScrollToOptions& aOptions);

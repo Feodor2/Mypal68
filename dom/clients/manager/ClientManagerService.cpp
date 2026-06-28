@@ -4,6 +4,7 @@
 
 #include "ClientManagerService.h"
 
+#include "ClientHandleParent.h"
 #include "ClientManagerParent.h"
 #include "ClientNavigateOpParent.h"
 #include "ClientOpenWindowOpParent.h"
@@ -26,8 +27,7 @@
 #include "nsIXULRuntime.h"
 #include "nsProxyRelease.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using mozilla::ipc::AssertIsOnBackgroundThread;
 using mozilla::ipc::PrincipalInfo;
@@ -268,6 +268,19 @@ RefPtr<ClientOpPromise> ClientManagerService::Navigate(
   if (!source) {
     CopyableErrorResult rv;
     rv.ThrowInvalidStateError("Unknown client");
+    return ClientOpPromise::CreateAndReject(rv, __func__);
+  }
+
+  const IPCServiceWorkerDescriptor& serviceWorker = aArgs.serviceWorker();
+
+  // Per https://w3c.github.io/ServiceWorker/#dom-windowclient-navigate step 4,
+  // if the service worker does not control the client, reject with a TypeError.
+  const Maybe<ServiceWorkerDescriptor>& controller = source->GetController();
+  if (controller.isNothing() ||
+      controller.ref().Scope() != serviceWorker.scope() ||
+      controller.ref().Id() != serviceWorker.id()) {
+    CopyableErrorResult rv;
+    rv.ThrowTypeError("Client is not controlled by this Service Worker");
     return ClientOpPromise::CreateAndReject(rv, __func__);
   }
 
@@ -674,5 +687,4 @@ bool ClientManagerService::HasWindow(
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

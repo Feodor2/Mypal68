@@ -395,15 +395,13 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   // WebIDL interface.
   already_AddRefed<nsPIDOMWindowOuter> IndexedGetter(uint32_t aIndex);
 
-  static bool IsPrivilegedChromeWindow(JSContext* /* unused */, JSObject* aObj);
+  static bool IsPrivilegedChromeWindow(JSContext*, JSObject* aObj);
 
-  static bool IsRequestIdleCallbackEnabled(JSContext* aCx,
-                                           JSObject* /* unused */);
+  static bool IsRequestIdleCallbackEnabled(JSContext* aCx, JSObject*);
 
-  static bool RegisterProtocolHandlerAllowedForContext(JSContext* /* unused */,
-                                                       JSObject* aObj);
+  static bool DeviceSensorsEnabled(JSContext*, JSObject*);
 
-  static bool DeviceSensorsEnabled(JSContext* /* unused */, JSObject* aObj);
+  static bool ContentPropertyEnabled(JSContext* aCx, JSObject*);
 
   bool DoResolve(
       JSContext* aCx, JS::Handle<JSObject*> aObj, JS::Handle<jsid> aId,
@@ -484,6 +482,10 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 #endif
 
   void AddSizeOfIncludingThis(nsWindowSizes& aWindowSizes) const;
+
+  void CollectDOMSizesForDataDocuments(nsWindowSizes&) const;
+  void RegisterDataDocumentForMemoryReporting(Document*);
+  void UnregisterDataDocumentForMemoryReporting(Document*);
 
   enum SlowScriptResponse {
     ContinueSlowScript = 0,
@@ -655,8 +657,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   // https://w3c.github.io/webappsec-secure-contexts/#dom-window-issecurecontext
   bool IsSecureContext() const;
 
-  void GetSidebar(mozilla::dom::OwningExternalOrWindowProxy& aResult,
-                  mozilla::ErrorResult& aRv);
   mozilla::dom::External* GetExternal(mozilla::ErrorResult& aRv);
 
   mozilla::dom::Worklet* GetPaintWorklet(mozilla::ErrorResult& aRv);
@@ -727,6 +727,12 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   MOZ_CAN_RUN_SCRIPT
   void ClearInterval(int32_t aHandle);
   void GetOrigin(nsAString& aOrigin);
+
+  MOZ_CAN_RUN_SCRIPT
+  void ReportError(JSContext* aCx, JS::Handle<JS::Value> aError,
+                   mozilla::dom::CallerType aCallerType,
+                   mozilla::ErrorResult& aRv);
+
   void Atob(const nsAString& aAsciiBase64String, nsAString& aBinaryData,
             mozilla::ErrorResult& aError);
   void Btoa(const nsAString& aBinaryData, nsAString& aAsciiBase64String,
@@ -1334,11 +1340,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   RefPtr<mozilla::dom::cache::CacheStorage> mCacheStorage;
   RefPtr<mozilla::dom::Console> mConsole;
   RefPtr<mozilla::dom::Worklet> mPaintWorklet;
-  // We need to store an nsISupports pointer to this object because the
-  // mozilla::dom::External class doesn't exist on b2g and using the type
-  // forward declared here means that ~nsGlobalWindow wouldn't compile because
-  // it wouldn't see the ~External function's declaration.
-  nsCOMPtr<nsISupports> mExternal;
+  RefPtr<mozilla::dom::External> mExternal;
   RefPtr<mozilla::dom::InstallTriggerImpl> mInstallTrigger;
 
   RefPtr<mozilla::dom::Storage> mLocalStorage;
@@ -1442,6 +1444,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   nsTArray<mozilla::UniquePtr<PromiseDocumentFlushedResolver>>
       mDocumentFlushedResolvers;
+
+  nsTArray<nsWeakPtr> mDataDocumentsForMemoryReporting;
 
   class DeprioritizedLoadRunner
       : public mozilla::Runnable,

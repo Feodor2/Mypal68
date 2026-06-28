@@ -50,7 +50,7 @@ class PluginLibrary {
  public:
   typedef mozilla::gfx::DrawTarget DrawTarget;
 
-  virtual ~PluginLibrary() {}
+  virtual ~PluginLibrary() = default;
 
   /**
    * Inform this library about the nsNPAPIPlugin which owns it. This

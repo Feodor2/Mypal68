@@ -123,8 +123,6 @@ void MP4Metadata::UpdateCrypto() {
   if (info.data.length == 0) {
     return;
   }
-
-  mCrypto.Update(info.data.data, info.data.length);
 }
 
 bool TrackTypeEqual(TrackInfo::TrackType aLHS, Mp4parseTrackType aRHS) {
@@ -423,10 +421,6 @@ MP4Metadata::ResultAndTrackInfo MP4Metadata::GetTrackInfo(
 }
 
 bool MP4Metadata::CanSeek() const { return true; }
-
-MP4Metadata::ResultAndCryptoFile MP4Metadata::Crypto() const {
-  return {NS_OK, &mCrypto};
-}
 
 MP4Metadata::ResultAndIndice MP4Metadata::GetTrackIndice(uint32_t aTrackId) {
   Mp4parseByteData indiceRawData = {};

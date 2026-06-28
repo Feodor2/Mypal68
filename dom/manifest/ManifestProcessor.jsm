@@ -58,7 +58,6 @@ const domBundle = Services.strings.createBundle(
 );
 
 var ManifestProcessor = {
-  // jshint ignore:line
   get defaultDisplayMode() {
     return "browser";
   },
@@ -308,4 +307,4 @@ var ManifestProcessor = {
     }
   },
 };
-var EXPORTED_SYMBOLS = ["ManifestProcessor"]; // jshint ignore:line
+var EXPORTED_SYMBOLS = ["ManifestProcessor"];

@@ -189,7 +189,7 @@ class TimeUnit final {
 
   bool IsValid() const { return mValue.isValid(); }
 
-  constexpr TimeUnit() : mValue(CheckedInt64(0)) {}
+  constexpr TimeUnit() = default;
 
   TimeUnit(const TimeUnit&) = default;
 

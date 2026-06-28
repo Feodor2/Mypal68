@@ -528,7 +528,7 @@ nsDOMWindowUtils::SetDisplayPortMarginsForElement(
 
   DisplayPortUtils::SetDisplayPortMargins(
       aElement, presShell,
-      DisplayPortMargins::WithNoAdjustment(displayportMargins), aPriority);
+      DisplayPortMargins::ForContent(aElement, displayportMargins), aPriority);
 
   return NS_OK;
 }
@@ -1764,6 +1764,19 @@ nsDOMWindowUtils::GetScreenPixelsPerCSSPixel(float* aScreenPixels) {
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
   *aScreenPixels = window->GetDevicePixelRatio(CallerType::System);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetScreenPixelsPerCSSPixelNoOverride(float* aScreenPixels) {
+  nsPresContext* presContext = GetPresContext();
+  if (!presContext) {
+    *aScreenPixels = 1.0;
+    return NS_OK;
+  }
+
+  *aScreenPixels =
+      float(AppUnitsPerCSSPixel()) / float(presContext->AppUnitsPerDevPixel());
   return NS_OK;
 }
 
@@ -3055,32 +3068,20 @@ nsDOMWindowUtils::GetFilePath(JS::Handle<JS::Value> aFile, JSContext* aCx,
 
 NS_IMETHODIMP
 nsDOMWindowUtils::GetFileReferences(const nsAString& aDatabaseName, int64_t aId,
-                                    JS::Handle<JS::Value> aOptions,
                                     int32_t* aRefCnt, int32_t* aDBRefCnt,
-                                    JSContext* aCx, bool* aResult) {
+                                    bool* aResult) {
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
   nsCString origin;
   MOZ_TRY_VAR(origin, quota::QuotaManager::GetOriginFromWindow(window));
 
-  IDBOpenDBOptions options;
-  JS::Rooted<JS::Value> optionsVal(aCx, aOptions);
-  if (!options.Init(aCx, optionsVal)) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  const quota::PersistenceType persistenceType =
-      options.mStorage.WasPassed()
-          ? quota::PersistenceTypeFromStorageType(options.mStorage.Value())
-          : quota::PERSISTENCE_TYPE_DEFAULT;
-
   RefPtr<IndexedDatabaseManager> mgr = IndexedDatabaseManager::Get();
 
   if (mgr) {
-    nsresult rv =
-        mgr->BlockAndGetFileReferences(persistenceType, origin, aDatabaseName,
-                                       aId, aRefCnt, aDBRefCnt, aResult);
+    nsresult rv = mgr->BlockAndGetFileReferences(
+        quota::PERSISTENCE_TYPE_DEFAULT, origin, aDatabaseName, aId, aRefCnt,
+        aDBRefCnt, aResult);
     NS_ENSURE_SUCCESS(rv, rv);
   } else {
     *aRefCnt = *aDBRefCnt = -1;
@@ -3501,9 +3502,9 @@ nsDOMWindowUtils::IsNodeDisabledForEvents(nsINode* aNode, bool* aRetVal) {
   nsINode* node = aNode;
   while (node) {
     if (node->IsNodeOfType(nsINode::eHTML_FORM_CONTROL)) {
-      nsCOMPtr<nsIFormControl> fc = do_QueryInterface(node);
+      nsGenericHTMLElement* element = nsGenericHTMLElement::FromNode(node);
       WidgetEvent event(true, eVoidEvent);
-      if (fc && fc->IsDisabledForEvents(&event)) {
+      if (element && element->IsDisabledForEvents(&event)) {
         *aRetVal = true;
         break;
       }

@@ -5,6 +5,8 @@
 #include "gtest/gtest.h"
 #include "BufferReader.h"
 
+using namespace mozilla;
+
 TEST(BufferReader, ReaderCursor)
 {
   // Allocate a buffer and create a BufferReader.

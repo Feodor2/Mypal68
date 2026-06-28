@@ -6,6 +6,7 @@
 #define AllocationPolicy_h_
 
 #include <queue>
+
 #include "MediaInfo.h"
 #include "PlatformDecoderModule.h"
 #include "TimeUnits.h"
@@ -49,8 +50,7 @@ class AllocPolicy {
  */
 class GlobalAllocPolicy {
  public:
-  // Get the singleton for the given track type. Thread-safe.
-  static NotNull<AllocPolicy*> Instance(TrackInfo::TrackType aTrack);
+  static NotNull<AllocPolicy*> Instance();
 
  private:
   // Protect access to Instance().
@@ -99,7 +99,7 @@ class SingleAllocPolicy : public AllocPolicyImpl {
 
  public:
   SingleAllocPolicy(TrackType aTrack, TaskQueue* aOwnerThread)
-      : AllocPolicyImpl(1), mTrack(aTrack), mOwnerThread(aOwnerThread) {}
+      : AllocPolicyImpl(1), mOwnerThread(aOwnerThread) {}
 
   RefPtr<Promise> Alloc() override;
 
@@ -111,7 +111,6 @@ class SingleAllocPolicy : public AllocPolicyImpl {
   class AutoDeallocCombinedToken;
   virtual ~SingleAllocPolicy();
 
-  const TrackType mTrack;
   RefPtr<TaskQueue> mOwnerThread;
   MozPromiseHolder<Promise> mPendingPromise;
   MozPromiseRequestHolder<Promise> mTokenRequest;
@@ -129,6 +128,11 @@ class AllocationWrapper : public MediaDataDecoder {
   RefPtr<DecodePromise> Decode(MediaRawData* aSample) override {
     return mDecoder->Decode(aSample);
   }
+  bool CanDecodeBatch() const override { return mDecoder->CanDecodeBatch(); }
+  RefPtr<DecodePromise> DecodeBatch(
+      nsTArray<RefPtr<MediaRawData>>&& aSamples) override {
+    return mDecoder->DecodeBatch(std::move(aSamples));
+  }
   RefPtr<DecodePromise> Drain() override { return mDecoder->Drain(); }
   RefPtr<FlushPromise> Flush() override { return mDecoder->Flush(); }
   bool IsHardwareAccelerated(nsACString& aFailureReason) const override {
@@ -144,6 +148,9 @@ class AllocationWrapper : public MediaDataDecoder {
     return mDecoder->SupportDecoderRecycling();
   }
   RefPtr<ShutdownPromise> Shutdown() override;
+  ConversionRequired NeedsConversion() const override {
+    return mDecoder->NeedsConversion();
+  }
 
   typedef MozPromise<RefPtr<MediaDataDecoder>, MediaResult,
                      /* IsExclusive = */ true>

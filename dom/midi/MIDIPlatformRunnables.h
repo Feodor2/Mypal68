@@ -10,6 +10,9 @@
 namespace mozilla {
 namespace dom {
 
+enum class MIDIPortConnectionState : uint8_t;
+enum class MIDIPortDeviceState : uint8_t;
+
 class MIDIPortParent;
 class MIDIMessage;
 class MIDIPortInfo;

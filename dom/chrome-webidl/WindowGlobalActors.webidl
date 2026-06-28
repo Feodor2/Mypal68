@@ -40,7 +40,7 @@ interface WindowGlobalParent {
   [Throws]
   JSWindowActorParent getActor(UTF8String name);
 
-  [Throws]
+  [NewObject]
   Promise<RemoteTab> changeFrameRemoteness(
     BrowsingContext? bc, UTF8String remoteType,
     unsigned long long pendingSwitchId);
@@ -54,7 +54,7 @@ interface WindowGlobalParent {
    * This returns a Promise which resolves to an nsITransportSecurity
    * object with certificate data or undefined if no security info is available.
    */
-  [Throws]
+  [NewObject]
   Promise<nsITransportSecurityInfo> getSecurityInfo();
 };
 

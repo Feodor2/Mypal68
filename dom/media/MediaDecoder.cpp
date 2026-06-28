@@ -12,6 +12,7 @@
 #include "MediaFormatReader.h"
 #include "MediaResource.h"
 #include "MediaShutdownManager.h"
+#include "MediaTrackGraph.h"
 #include "VideoFrameContainer.h"
 #include "VideoUtils.h"
 #include "mozilla/AbstractThread.h"
@@ -1236,8 +1237,7 @@ MediaMemoryTracker::CollectReports(nsIHandleReportCallback* aHandleReport,
       AbstractThread::MainThread(), __func__,
       [handleReport, data](size_t size) {
         handleReport->Callback(
-            EmptyCString(), "explicit/media/resources"_ns, KIND_HEAP,
-            UNITS_BYTES, size,
+            ""_ns, "explicit/media/resources"_ns, KIND_HEAP, UNITS_BYTES, size,
             nsLiteralCString("Memory used by media resources including "
                              "streaming buffers, caches, etc."),
             data);
@@ -1356,7 +1356,7 @@ void MediaDecoder::NotifyAudibleStateChanged() {
   GetOwner()->SetAudibleState(mIsAudioDataAudible);
 }
 
-MediaMemoryTracker::MediaMemoryTracker() {}
+MediaMemoryTracker::MediaMemoryTracker() = default;
 
 void MediaMemoryTracker::InitMemoryReporter() {
   RegisterWeakAsyncMemoryReporter(this);

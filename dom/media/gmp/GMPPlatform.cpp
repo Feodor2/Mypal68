@@ -14,8 +14,7 @@
 
 #include <ctime>
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 static MessageLoop* sMainLoop = nullptr;
 static GMPChild* sChild = nullptr;
@@ -270,5 +269,4 @@ GMPTask* NewGMPTask(std::function<void()>&& aFunction) {
   return new Task(std::move(aFunction));
 }
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp

@@ -20,6 +20,7 @@
 #include "mozilla/dom/cache/ReadStream.h"
 #include "mozilla/dom/cache/TypeUtils.h"
 #include "mozilla/dom/quota/QuotaManager.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundUtils.h"
@@ -73,8 +74,8 @@ bool IsTrusted(const PrincipalInfo& aPrincipalInfo, bool aTestingPrefEnabled) {
   }
 
   // Require a ContentPrincipal to avoid null principal, etc.
-  CACHE_TRY(OkIf(aPrincipalInfo.type() == PrincipalInfo::TContentPrincipalInfo),
-            false);
+  QM_TRY(OkIf(aPrincipalInfo.type() == PrincipalInfo::TContentPrincipalInfo),
+         false);
 
   // If we're in testing mode, then don't do any more work to determine if
   // the origin is trusted.  We have to run some tests as http.
@@ -100,10 +101,10 @@ bool IsTrusted(const PrincipalInfo& aPrincipalInfo, bool aTestingPrefEnabled) {
   int32_t schemeLen;
   uint32_t authPos;
   int32_t authLen;
-  CACHE_TRY(
-      urlParser->ParseURL(url, flatURL.Length(), &schemePos, &schemeLen,
-                          &authPos, &authLen, nullptr, nullptr),  // ignore path
-      false);
+  QM_TRY(MOZ_TO_RESULT(urlParser->ParseURL(url, flatURL.Length(), &schemePos,
+                                           &schemeLen, &authPos, &authLen,
+                                           nullptr, nullptr)),  // ignore path
+         false);
 
   const nsAutoCString scheme(Substring(flatURL, schemePos, schemeLen));
   if (scheme.LowerCaseEqualsLiteral("https") ||
@@ -113,12 +114,13 @@ bool IsTrusted(const PrincipalInfo& aPrincipalInfo, bool aTestingPrefEnabled) {
 
   uint32_t hostPos;
   int32_t hostLen;
-  CACHE_TRY(urlParser->ParseAuthority(url + authPos, authLen, nullptr,
-                                      nullptr,           // ignore username
-                                      nullptr, nullptr,  // ignore password
-                                      &hostPos, &hostLen,
-                                      nullptr),  // ignore port
-            false);
+  QM_TRY(MOZ_TO_RESULT(
+             urlParser->ParseAuthority(url + authPos, authLen, nullptr,
+                                       nullptr,           // ignore username
+                                       nullptr, nullptr,  // ignore password
+                                       &hostPos, &hostLen,
+                                       nullptr)),  // ignore port
+         false);
 
   return nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackHost(
       nsDependentCSubstring(url + authPos + hostPos, hostLen));
@@ -135,14 +137,14 @@ already_AddRefed<CacheStorage> CacheStorage::CreateOnMainThread(
   MOZ_ASSERT(NS_IsMainThread());
 
   PrincipalInfo principalInfo;
-  CACHE_TRY(PrincipalToPrincipalInfo(aPrincipal, &principalInfo), nullptr,
-            [&aRv](const nsresult rv) { aRv.Throw(rv); });
+  QM_TRY(MOZ_TO_RESULT(PrincipalToPrincipalInfo(aPrincipal, &principalInfo)),
+         nullptr, [&aRv](const nsresult rv) { aRv.Throw(rv); });
 
-  CACHE_TRY(OkIf(QuotaManager::IsPrincipalInfoValid(principalInfo)),
-            RefPtr{new CacheStorage(NS_ERROR_DOM_SECURITY_ERR)}.forget(),
-            [](const auto) {
-              NS_WARNING("CacheStorage not supported on invalid origins.");
-            });
+  QM_TRY(OkIf(QuotaManager::IsPrincipalInfoValid(principalInfo)),
+         RefPtr{new CacheStorage(NS_ERROR_DOM_SECURITY_ERR)}.forget(),
+         [](const auto) {
+           NS_WARNING("CacheStorage not supported on invalid origins.");
+         });
 
   const bool testingEnabled =
       aForceTrustedOrigin ||
@@ -185,8 +187,8 @@ already_AddRefed<CacheStorage> CacheStorage::CreateOnWorker(
   const PrincipalInfo& principalInfo =
       aWorkerPrivate->GetEffectiveStoragePrincipalInfo();
 
-  CACHE_TRY(OkIf(QuotaManager::IsPrincipalInfoValid(principalInfo)), nullptr,
-            [&aRv](const auto) { aRv.Throw(NS_ERROR_FAILURE); });
+  QM_TRY(OkIf(QuotaManager::IsPrincipalInfoValid(principalInfo)), nullptr,
+         [&aRv](const auto) { aRv.Throw(NS_ERROR_FAILURE); });
 
   // We have a number of cases where we want to skip the https scheme
   // validation:

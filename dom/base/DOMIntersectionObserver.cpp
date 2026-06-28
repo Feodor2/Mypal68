@@ -523,19 +523,18 @@ void DOMIntersectionObserver::QueueIntersectionObserverEntry(
     bool aIsIntersecting, double aIntersectionRatio) {
   RefPtr<DOMRect> rootBounds;
   if (aRootRect.isSome()) {
-    rootBounds = new DOMRect(this);
+    rootBounds = new DOMRect(mOwner);
     rootBounds->SetLayoutRect(aRootRect.value());
   }
-  RefPtr<DOMRect> boundingClientRect = new DOMRect(this);
+  RefPtr<DOMRect> boundingClientRect = new DOMRect(mOwner);
   boundingClientRect->SetLayoutRect(aTargetRect);
-  RefPtr<DOMRect> intersectionRect = new DOMRect(this);
+  RefPtr<DOMRect> intersectionRect = new DOMRect(mOwner);
   if (aIntersectionRect.isSome()) {
     intersectionRect->SetLayoutRect(aIntersectionRect.value());
   }
   RefPtr<DOMIntersectionObserverEntry> entry = new DOMIntersectionObserverEntry(
-      this, time, rootBounds.forget(), boundingClientRect.forget(),
-      intersectionRect.forget(), aIsIntersecting, aTarget,
-      aIntersectionRatio);
+      mOwner, time, rootBounds.forget(), boundingClientRect.forget(),
+      intersectionRect.forget(), aIsIntersecting, aTarget, aIntersectionRatio);
   mQueuedEntries.AppendElement(entry.forget());
 }
 

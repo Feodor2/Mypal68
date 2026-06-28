@@ -46,11 +46,12 @@ NS_IMPL_ADDREF_INHERITED(ShadowRoot, DocumentFragment)
 NS_IMPL_RELEASE_INHERITED(ShadowRoot, DocumentFragment)
 
 ShadowRoot::ShadowRoot(Element* aElement, ShadowRootMode aMode,
-                       SlotAssignmentMode aSlotAssignment,
+                       bool aDelegatesFocus, SlotAssignmentMode aSlotAssignment,
                        already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
     : DocumentFragment(std::move(aNodeInfo)),
       DocumentOrShadowRoot(this),
       mMode(aMode),
+      mDelegatesFocus(aDelegatesFocus),
       mSlotAssignment(aSlotAssignment),
       mIsUAWidget(false),
       mIsAvailableToElementInternals(false) {
@@ -744,6 +745,36 @@ void ShadowRoot::MaybeUnslotHostChild(nsIContent& aChild) {
 
   slot->RemoveAssignedNode(aChild);
   slot->EnqueueSlotChangeEvent();
+}
+
+// Use aParent as the root element and loop through this tree (including slot
+// assigned elements, nested shadow trees) to find the first focusable
+// element.
+static Element* GetFirstFocusableForParent(nsIContent* aParent,
+                                           bool aWithMouse) {
+  FlattenedChildIterator iter(aParent);
+
+  for (nsIContent* child = iter.GetNextChild(); child;
+       child = iter.GetNextChild()) {
+    if (child->IsElement()) {
+      if (nsIFrame* frame = child->GetPrimaryFrame()) {
+        if (frame->IsFocusable(aWithMouse)) {
+          return child->AsElement();
+        }
+      }
+    }
+
+    if (Element* firstFocusable =
+            GetFirstFocusableForParent(child, aWithMouse)) {
+      return firstFocusable;
+    }
+  }
+
+  return nullptr;
+}
+
+Element* ShadowRoot::GetFirstFocusable(bool aWithMouse) const {
+  return GetFirstFocusableForParent(Host(), aWithMouse);
 }
 
 void ShadowRoot::MaybeSlotHostChild(nsIContent& aChild) {

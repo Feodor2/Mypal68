@@ -7,8 +7,7 @@
 #include "nsContentUtils.h"
 
 // C++ file contents
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // Keep an internal ID that we can use for passing information about specific
 // MIDI ports back and forth to the Rust libraries.
@@ -104,5 +103,4 @@ MIDIPortParent::MIDIPortParent(const MIDIPortInfo& aPortInfo,
   MIDIPlatformService::Get()->AddPort(this);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

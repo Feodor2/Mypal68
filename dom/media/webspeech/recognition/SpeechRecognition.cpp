@@ -14,6 +14,7 @@
 #include "mozilla/dom/MediaStreamTrackBinding.h"
 #include "mozilla/dom/MediaStreamError.h"
 #include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/SpeechGrammar.h"
 #include "mozilla/MediaManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
@@ -42,8 +43,7 @@
 #  undef GetMessage
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 #define PREFERENCE_DEFAULT_RECOGNITION_SERVICE "media.webspeech.service.default"
 #define DEFAULT_RECOGNITION_SERVICE_PREFIX "pocketsphinx-"
@@ -555,9 +555,9 @@ SpeechRecognition::StartRecording(RefPtr<AudioStreamTrack>& aTrack) {
   mTrack->AddListener(mSpeechListener);
 
   mShutdownBlocker = MakeAndAddRef<SpeechRecognitionShutdownBlocker>(this);
-  RefPtr<nsIAsyncShutdownClient> shutdown = media::GetShutdownBarrier();
-  shutdown->AddBlocker(mShutdownBlocker, NS_LITERAL_STRING(__FILE__), __LINE__,
-                       u"SpeechRecognition shutdown"_ns);
+  media::GetShutdownBarrier()->AddBlocker(
+      mShutdownBlocker, NS_LITERAL_STRING_FROM_CSTRING(__FILE__), __LINE__,
+      u"SpeechRecognition shutdown"_ns);
 
   mEndpointer.StartSession();
 
@@ -574,8 +574,7 @@ SpeechRecognition::StopRecording() {
     mSpeechListener->mRemovedPromise->Then(
         GetCurrentSerialEventTarget(), __func__,
         [blocker = std::move(mShutdownBlocker)] {
-          RefPtr<nsIAsyncShutdownClient> shutdown = media::GetShutdownBarrier();
-          nsresult rv = shutdown->RemoveBlocker(blocker);
+          nsresult rv = media::GetShutdownBarrier()->RemoveBlocker(blocker);
           MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
           Unused << rv;
         });
@@ -603,7 +602,7 @@ SpeechRecognition::Observe(nsISupports* aSubject, const char* aTopic,
       StateBetween(STATE_IDLE, STATE_WAITING_FOR_SPEECH)) {
     DispatchError(SpeechRecognition::EVENT_AUDIO_ERROR,
                   SpeechRecognitionErrorCode::No_speech,
-                  u"No speech detected (timeout)"_ns);
+                  "No speech detected (timeout)");
   } else if (!strcmp(aTopic, SPEECH_RECOGNITION_TEST_END_TOPIC)) {
     nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
     obs->RemoveObserver(this, SPEECH_RECOGNITION_TEST_EVENT_REQUEST_TOPIC);
@@ -624,7 +623,7 @@ void SpeechRecognition::ProcessTestEventRequest(nsISupports* aSubject,
     DispatchError(
         SpeechRecognition::EVENT_AUDIO_ERROR,
         SpeechRecognitionErrorCode::Audio_capture,  // TODO different codes?
-        u"AUDIO_ERROR test event"_ns);
+        "AUDIO_ERROR test event");
   } else {
     NS_ASSERTION(StaticPrefs::media_webspeech_test_fake_recognition_service(),
                  "Got request for fake recognition service event, but "
@@ -711,10 +710,15 @@ void SpeechRecognition::Start(const Optional<NonNull<DOMMediaStream>>& aStream,
       }
     }
   } else {
+    nsPIDOMWindowInner* win = GetOwner();
+    if (!win || !win->IsFullyActive()) {
+      aRv.ThrowInvalidStateError("The document is not fully active.");
+      return;
+    }
     AutoNoJSAPI nojsapi;
     RefPtr<SpeechRecognition> self(this);
     MediaManager::Get()
-        ->GetUserMedia(GetOwner(), constraints, aCallerType)
+        ->GetUserMedia(win, constraints, aCallerType)
         ->Then(
             GetCurrentSerialEventTarget(), __func__,
             [this, self](RefPtr<DOMMediaStream>&& aStream) {
@@ -849,7 +853,7 @@ void SpeechRecognition::NotifyTrackAdded(
 
 void SpeechRecognition::DispatchError(EventType aErrorType,
                                       SpeechRecognitionErrorCode aErrorCode,
-                                      const nsAString& aMessage) {
+                                      const nsACString& aMessage) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aErrorType == EVENT_RECOGNITIONSERVICE_ERROR ||
                  aErrorType == EVENT_AUDIO_ERROR,
@@ -900,8 +904,9 @@ uint32_t SpeechRecognition::SplitSamplesBuffer(
   uint32_t chunkStart = 0;
 
   while (chunkStart + mAudioSamplesPerChunk <= aSampleCount) {
-    RefPtr<SharedBuffer> chunk =
-        SharedBuffer::Create(mAudioSamplesPerChunk * sizeof(int16_t));
+    CheckedInt<size_t> bufferSize(sizeof(int16_t));
+    bufferSize *= mAudioSamplesPerChunk;
+    RefPtr<SharedBuffer> chunk = SharedBuffer::Create(bufferSize);
 
     memcpy(chunk->Data(), aSamplesBuffer + chunkStart,
            mAudioSamplesPerChunk * sizeof(int16_t));
@@ -968,8 +973,9 @@ void SpeechRecognition::FeedAudioData(already_AddRefed<SharedBuffer> aSamples,
   // buffer remaining samples
   if (samplesIndex < aDuration) {
     mBufferedSamples = 0;
-    mAudioSamplesBuffer =
-        SharedBuffer::Create(mAudioSamplesPerChunk * sizeof(int16_t));
+    CheckedInt<size_t> bufferSize(sizeof(int16_t));
+    bufferSize *= mAudioSamplesPerChunk;
+    mAudioSamplesBuffer = SharedBuffer::Create(bufferSize);
 
     FillSamplesBuffer(samples + samplesIndex, aDuration - samplesIndex);
   }
@@ -1027,5 +1033,4 @@ SpeechEvent::Run() {
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

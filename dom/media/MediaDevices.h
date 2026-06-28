@@ -6,10 +6,10 @@
 #define mozilla_dom_MediaDevices_h
 
 #include "js/RootingAPI.h"
+#include "MediaEventSource.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/media/DeviceChangeCallback.h"
 #include "nsCOMPtr.h"
 #include "nsID.h"
 #include "nsISupports.h"
@@ -22,6 +22,7 @@ class Promise;
 struct MediaStreamConstraints;
 struct DisplayMediaStreamConstraints;
 struct MediaTrackSupportedConstraints;
+struct AudioOutputOptions;
 
 #define MOZILLA_DOM_MEDIADEVICES_IMPLEMENTATION_IID  \
   {                                                  \
@@ -30,8 +31,7 @@ struct MediaTrackSupportedConstraints;
     }                                                \
   }
 
-class MediaDevices final : public DOMEventTargetHelper,
-                           public DeviceChangeCallback {
+class MediaDevices final : public DOMEventTargetHelper {
  public:
   explicit MediaDevices(nsPIDOMWindowInner* aWindow)
       : DOMEventTargetHelper(aWindow) {}
@@ -56,10 +56,16 @@ class MediaDevices final : public DOMEventTargetHelper,
       const DisplayMediaStreamConstraints& aConstraints, CallerType aCallerType,
       ErrorResult& aRv);
 
-  virtual void OnDeviceChange() override;
+  already_AddRefed<Promise> SelectAudioOutput(
+      const AudioOutputOptions& aOptions, CallerType aCallerType,
+      ErrorResult& aRv);
+
+  // Called when MediaManager encountered a change in its device lists.
+  void OnDeviceChange();
+
+  void SetupDeviceChangeListener();
 
   mozilla::dom::EventHandlerNonNull* GetOndevicechange();
-
   void SetOndevicechange(mozilla::dom::EventHandlerNonNull* aCallback);
 
   void EventListenerAdded(nsAtom* aType) override;
@@ -72,6 +78,10 @@ class MediaDevices final : public DOMEventTargetHelper,
 
   virtual ~MediaDevices();
   nsCOMPtr<nsITimer> mFuzzTimer;
+
+  // Connect/Disconnect on main thread only
+  MediaEventListener mDeviceChangeListener;
+  bool mIsDeviceChangeListenerSetUp = false;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(MediaDevices,

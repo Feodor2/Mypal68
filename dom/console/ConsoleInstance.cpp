@@ -7,9 +7,9 @@
 #include "mozilla/Preferences.h"
 #include "ConsoleCommon.h"
 #include "ConsoleUtils.h"
+#include "nsContentUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(ConsoleInstance, mConsole)
 
@@ -225,5 +225,4 @@ void ConsoleInstance::ReportForServiceWorkerScope(const nsAString& aScope,
       WebIDLevelToConsoleUtilsLevel(aLevel));
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

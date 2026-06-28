@@ -19,8 +19,7 @@
 #define CHANNELS 1
 #define SAMPLERATE 1600
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 StaticRefPtr<nsFakeSynthServices> nsFakeSynthServices::sSingleton;
 
@@ -283,5 +282,4 @@ nsFakeSynthServices::GetInstanceForService() {
   return picoService.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

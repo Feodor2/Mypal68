@@ -14,8 +14,7 @@ namespace mozilla {
 namespace ipc {
 class PBackgroundParent;
 }  // namespace ipc
-namespace dom {
-namespace cache {
+namespace dom::cache {
 
 class CacheOpParent final : public PCacheOpParent,
                             public PrincipalVerifier::Listener,
@@ -63,8 +62,7 @@ class CacheOpParent final : public PCacheOpParent,
   NS_DECL_OWNINGTHREAD
 };
 
-}  // namespace cache
-}  // namespace dom
+}  // namespace dom::cache
 }  // namespace mozilla
 
 #endif  // mozilla_dom_cache_CacheOpParent_h

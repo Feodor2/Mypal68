@@ -3,7 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  *
  * The origin of this IDL file is
- * https://dvcs.w3.org/hg/IndexedDB/raw-file/tip/Overview.html#idl-def-IDBObjectStoreParameters
+ * https://w3c.github.io/IndexedDB/#database-interface
  *
  * Copyright © 2012 W3C® (MIT, ERCIM, Keio), All Rights Reserved. W3C
  * liability, trademark and document use rules apply.
@@ -11,22 +11,21 @@
 
 [Exposed=(Window,Worker)]
 interface IDBDatabase : EventTarget {
-    readonly    attribute DOMString          name;
+    [Constant] readonly attribute DOMString name;
     readonly    attribute unsigned long long version;
 
     readonly    attribute DOMStringList      objectStoreNames;
 
+    [NewObject, Throws]
+    IDBTransaction transaction((DOMString or sequence<DOMString>) storeNames,
+                               optional IDBTransactionMode mode = "readonly");
+    [NewObject, Throws]
+    IDBObjectStore createObjectStore(
+        DOMString name,
+        optional IDBObjectStoreParameters options = {});
     [Throws]
-    IDBObjectStore createObjectStore (DOMString name, optional IDBObjectStoreParameters optionalParameters = {});
-
-    [Throws]
-    void           deleteObjectStore (DOMString name);
-
-    [Throws]
-    IDBTransaction transaction ((DOMString or sequence<DOMString>) storeNames,
-                                optional IDBTransactionMode mode = "readonly");
-
-    void           close ();
+    undefined      deleteObjectStore (DOMString name);
+    undefined      close ();
 
                 attribute EventHandler       onabort;
                 attribute EventHandler       onclose;
@@ -35,9 +34,7 @@ interface IDBDatabase : EventTarget {
 };
 
 partial interface IDBDatabase {
-    [Func="mozilla::dom::IndexedDatabaseManager::ExperimentalFeaturesEnabled"]
-    readonly    attribute StorageType        storage;
-
-    [Exposed=Window, Throws]
+    [Exposed=Window, Throws,
+     Pref="dom.fileHandle.enabled"]
     IDBRequest createMutableFile (DOMString name, optional DOMString type);
 };

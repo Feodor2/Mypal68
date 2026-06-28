@@ -4,6 +4,7 @@
 
 #include "gtest/gtest.h"
 #include "DriftCompensation.h"
+#include "mozilla/SpinEventLoopUntil.h"
 
 using namespace mozilla;
 

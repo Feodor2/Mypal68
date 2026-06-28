@@ -207,10 +207,6 @@ already_AddRefed<EventTarget> MouseEvent::GetRelatedTarget() {
 
 void MouseEvent::GetRegion(nsAString& aRegion) {
   SetDOMStringToNull(aRegion);
-  WidgetMouseEventBase* mouseEventBase = mEvent->AsMouseEventBase();
-  if (mouseEventBase) {
-    aRegion = mouseEventBase->mRegion;
-  }
 }
 
 int32_t MouseEvent::ScreenX(CallerType aCallerType) {

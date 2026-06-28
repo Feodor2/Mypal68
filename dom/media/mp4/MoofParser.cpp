@@ -331,90 +331,21 @@ void MoofParser::ParseStbl(Box& aBox) {
   LOG_DEBUG(Stbl, "Starting.");
   for (Box box = aBox.FirstChild(); box.IsAvailable(); box = box.Next()) {
     if (box.IsType("stsd")) {
-      ParseStsd(box);
     } else if (box.IsType("sgpd")) {
       Sgpd sgpd(box);
       if (sgpd.IsValid() && sgpd.mGroupingType == "seig") {
-        mTrackSampleEncryptionInfoEntries.Clear();
-        if (!mTrackSampleEncryptionInfoEntries.AppendElements(
-                sgpd.mEntries, mozilla::fallible)) {
-          LOG_ERROR(Stbl, "OOM");
-          return;
-        }
+        LOG_ERROR(Stbl, "OOM");
+        return;
       }
     } else if (box.IsType("sbgp")) {
       Sbgp sbgp(box);
       if (sbgp.IsValid() && sbgp.mGroupingType == "seig") {
-        mTrackSampleToGroupEntries.Clear();
-        if (!mTrackSampleToGroupEntries.AppendElements(sbgp.mEntries,
-                                                       mozilla::fallible)) {
-          LOG_ERROR(Stbl, "OOM");
-          return;
-        }
+        LOG_ERROR(Stbl, "OOM");
+        return;
       }
     }
   }
   LOG_DEBUG(Stbl, "Done.");
-}
-
-void MoofParser::ParseStsd(Box& aBox) {
-  LOG_DEBUG(Stsd, "Starting.");
-  if (mTrackParseMode.is<ParseAllTracks>()) {
-    // It is not a sane operation to try and map sample description boxes from
-    // multiple tracks onto the parser, which is modeled around storing metadata
-    // for a single track.
-    LOG_DEBUG(Stsd, "Early return due to multitrack parser.");
-    return;
-  }
-  MOZ_ASSERT(
-      mSampleDescriptions.IsEmpty(),
-      "Shouldn't have any sample descriptions yet when starting to parse stsd");
-  uint32_t numberEncryptedEntries = 0;
-  for (Box box = aBox.FirstChild(); box.IsAvailable(); box = box.Next()) {
-    SampleDescriptionEntry sampleDescriptionEntry{false};
-    if (box.IsType("encv") || box.IsType("enca")) {
-      ParseEncrypted(box);
-      sampleDescriptionEntry.mIsEncryptedEntry = true;
-      numberEncryptedEntries++;
-    }
-    if (!mSampleDescriptions.AppendElement(sampleDescriptionEntry,
-                                           mozilla::fallible)) {
-      LOG_ERROR(Stsd, "OOM");
-      return;
-    }
-  }
-  if (mSampleDescriptions.IsEmpty()) {
-    LOG_WARN(Stsd,
-             "No sample description entries found while parsing Stsd! This "
-             "shouldn't happen, as the spec requires one for each track!");
-  }
-  if (numberEncryptedEntries > 1) {
-    LOG_WARN(Stsd,
-             "More than one encrypted sample description entry found while "
-             "parsing track! We don't expect this, and it will likely break "
-             "during fragment look up!");
-  }
-  LOG_DEBUG(Stsd,
-            "Done, numberEncryptedEntries=%" PRIu32
-            ", mSampleDescriptions.Length=%zu",
-            numberEncryptedEntries, mSampleDescriptions.Length());
-}
-
-void MoofParser::ParseEncrypted(Box& aBox) {
-  LOG_DEBUG(Moof, "Starting.");
-  for (Box box = aBox.FirstChild(); box.IsAvailable(); box = box.Next()) {
-    // Some MP4 files have been found to have multiple sinf boxes in the same
-    // enc* box. This does not match spec anyway, so just choose the first
-    // one that parses properly.
-    if (box.IsType("sinf")) {
-      mSinf = Sinf(box);
-
-      if (mSinf.IsValid()) {
-        break;
-      }
-    }
-  }
-  LOG_DEBUG(Moof, "Done.");
 }
 
 class CtsComparator {
@@ -665,12 +596,8 @@ void Moof::ParseTraf(Box& aBox, const TrackParseMode& aTrackParseMode,
       } else if (box.IsType("sgpd")) {
         Sgpd sgpd(box);
         if (sgpd.IsValid() && sgpd.mGroupingType == "seig") {
-          mFragmentSampleEncryptionInfoEntries.Clear();
-          if (!mFragmentSampleEncryptionInfoEntries.AppendElements(
-                  sgpd.mEntries, mozilla::fallible)) {
-            LOG_ERROR(Moof, "OOM");
-            return;
-          }
+          LOG_ERROR(Moof, "OOM");
+          return;
         }
       } else if (box.IsType("sbgp")) {
         Sbgp sbgp(box);
@@ -1205,67 +1132,7 @@ Result<Ok, nsresult> Sgpd::Parse(Box& aBox) {
         return Err(NS_ERROR_FAILURE);
       }
     }
-
-    CencSampleEncryptionInfoEntry entry;
-    bool valid = entry.Init(reader).isOk();
-    if (!valid) {
-      return Err(NS_ERROR_FAILURE);
-    }
-    if (!mEntries.AppendElement(entry, mozilla::fallible)) {
-      LOG_ERROR(Sgpd, "OOM");
-      return Err(NS_ERROR_FAILURE);
-    }
   }
-  return Ok();
-}
-
-Result<Ok, nsresult> CencSampleEncryptionInfoEntry::Init(BoxReader& aReader) {
-  // Skip a reserved byte.
-  MOZ_TRY(aReader->ReadU8());
-
-  uint8_t pattern;
-  MOZ_TRY_VAR(pattern, aReader->ReadU8());
-  mCryptByteBlock = pattern >> 4;
-  mSkipByteBlock = pattern & 0x0f;
-
-  uint8_t isEncrypted;
-  MOZ_TRY_VAR(isEncrypted, aReader->ReadU8());
-  mIsEncrypted = isEncrypted != 0;
-
-  MOZ_TRY_VAR(mIVSize, aReader->ReadU8());
-
-  // Read the key id.
-  if (!mKeyId.SetLength(kKeyIdSize, fallible)) {
-    LOG_ERROR(CencSampleEncryptionInfoEntry, "OOM");
-    return Err(NS_ERROR_FAILURE);
-  }
-  for (uint32_t i = 0; i < kKeyIdSize; ++i) {
-    MOZ_TRY_VAR(mKeyId.ElementAt(i), aReader->ReadU8());
-  }
-
-  if (mIsEncrypted) {
-    if (mIVSize != 8 && mIVSize != 16) {
-      return Err(NS_ERROR_FAILURE);
-    }
-  } else if (mIVSize != 0) {
-    // Protected content with 0 sized IV indicates a constant IV is present.
-    // This is used for the cbcs scheme.
-    uint8_t constantIVSize;
-    MOZ_TRY_VAR(constantIVSize, aReader->ReadU8());
-    if (constantIVSize != 8 && constantIVSize != 16) {
-      LOG_WARN(CencSampleEncryptionInfoEntry,
-               "Unexpected constantIVSize: %" PRIu8, constantIVSize);
-      return Err(NS_ERROR_FAILURE);
-    }
-    if (!mConsantIV.SetLength(constantIVSize, mozilla::fallible)) {
-      LOG_ERROR(CencSampleEncryptionInfoEntry, "OOM");
-      return Err(NS_ERROR_FAILURE);
-    }
-    for (uint32_t i = 0; i < constantIVSize; ++i) {
-      MOZ_TRY_VAR(mConsantIV.ElementAt(i), aReader->ReadU8());
-    }
-  }
-
   return Ok();
 }
 }  // namespace mozilla

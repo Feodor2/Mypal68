@@ -91,8 +91,6 @@ class nsContentSink : public nsICSSLoaderObserver,
   NS_IMETHOD StyleSheetLoaded(mozilla::StyleSheet* aSheet, bool aWasDeferred,
                               nsresult aStatus) override;
 
-  virtual nsresult ProcessMETATag(nsIContent* aContent);
-
   // nsIContentSink implementation helpers
   nsresult WillParseImpl(void);
   nsresult WillInterruptImpl(void);
@@ -145,8 +143,6 @@ class nsContentSink : public nsICSSLoaderObserver,
                 nsIChannel* aChannel);
 
   nsresult ProcessHTTPHeaders(nsIChannel* aChannel);
-  nsresult ProcessHeaderData(nsAtom* aHeader, const nsAString& aValue,
-                             nsIContent* aContent = nullptr);
   nsresult ProcessLinkHeader(const nsAString& aLinkData);
   nsresult ProcessLinkFromHeader(
       const nsAString& aAnchor, const nsAString& aHref, const nsAString& aRel,

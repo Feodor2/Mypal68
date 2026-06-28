@@ -5,6 +5,8 @@
 #if !defined(PlatformDecoderModule_h_)
 #  define PlatformDecoderModule_h_
 
+#  include <queue>
+
 #  include "DecoderDoctorLogger.h"
 #  include "GMPCrashHelper.h"
 #  include "MediaEventSource.h"
@@ -18,7 +20,6 @@
 #  include "mozilla/layers/KnowsCompositor.h"
 #  include "mozilla/layers/LayersTypes.h"
 #  include "nsTArray.h"
-#  include <queue>
 
 namespace mozilla {
 class TrackInfo;
@@ -34,7 +35,6 @@ class ImageContainer;
 class GpuDecoderModule;
 class MediaDataDecoder;
 class RemoteDecoderModule;
-class TaskQueue;
 class CDMProxy;
 
 static LazyLogModule sPDMLog("PlatformDecoderModule");
@@ -51,6 +51,8 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
                                   // initialization data are dropped. Pass this
                                   // option to raise an error if frames are
                                   // delivered before initialization data.
+    DefaultPlaybackDeviceMono,    // Currently only used by Opus on RDD to avoid
+                                  // initialization of audio backends on RDD
 
     SENTINEL  // one past the last valid value
   };
@@ -100,7 +102,6 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
   }
 
   const TrackInfo& mConfig;
-  TaskQueue* mTaskQueue = nullptr;
   DecoderDoctorDiagnostics* mDiagnostics = nullptr;
   layers::ImageContainer* mImageContainer = nullptr;
   MediaResult* mError = nullptr;
@@ -108,12 +109,10 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
   RefPtr<GMPCrashHelper> mCrashHelper;
   UseNullDecoder mUseNullDecoder;
   NoWrapper mNoWrapper;
-  TrackInfo::TrackType mType = TrackInfo::kUndefinedTrack;
   OptionSet mOptions = OptionSet(Option::Default);
   VideoFrameRate mRate;
 
  private:
-  void Set(TaskQueue* aTaskQueue) { mTaskQueue = aTaskQueue; }
   void Set(DecoderDoctorDiagnostics* aDiagnostics) {
     mDiagnostics = aDiagnostics;
   }
@@ -134,7 +133,6 @@ struct MOZ_STACK_CLASS CreateDecoderParams final {
       MOZ_ASSERT(aKnowsCompositor->IsThreadSafe());
     }
   }
-  void Set(TrackInfo::TrackType aType) { mType = aType; }
   template <typename T1, typename T2, typename... Ts>
   void Set(T1&& a1, T2&& a2, Ts&&... args) {
     Set(std::forward<T1>(a1));
@@ -272,6 +270,8 @@ class MediaDataDecoder : public DecoderDoctorLifeLogger<MediaDataDecoder> {
   // it can call Shutdown() to cancel this operation. Any initialization
   // that requires blocking the calling thread in this function *must*
   // be done here so that it can be canceled by calling Shutdown()!
+  // Methods Decode, DecodeBatch, Drain, Flush, Shutdown are guaranteed to be
+  // called on the thread where Init() first ran.
   virtual RefPtr<InitPromise> Init() = 0;
 
   // Inserts a sample into the decoder's decode pipeline. The DecodePromise will
@@ -279,6 +279,23 @@ class MediaDataDecoder : public DecoderDoctorLifeLogger<MediaDataDecoder> {
   // input, the DecodePromise may be resolved with an empty array of samples to
   // indicate that Decode should be called again before a MediaData is returned.
   virtual RefPtr<DecodePromise> Decode(MediaRawData* aSample) = 0;
+
+  // This could probably be implemented as a wrapper that takes a
+  // generic MediaDataDecoder and manages batching as needed.  For now
+  // only AudioTrimmer with RemoteMediaDataDecoder supports batch
+  // decoding.
+  // Inserts an array of samples into the decoder's decode pipeline. The
+  // DecodePromise will be resolved with the decoded MediaData. In case
+  // the decoder needs more input, the DecodePromise may be resolved
+  // with an empty array of samples to indicate that Decode should be
+  // called again before a MediaData is returned.
+  virtual bool CanDecodeBatch() const { return false; }
+  virtual RefPtr<DecodePromise> DecodeBatch(
+      nsTArray<RefPtr<MediaRawData>>&& aSamples) {
+    MOZ_CRASH("DecodeBatch not implemented yet");
+    return MediaDataDecoder::DecodePromise::CreateAndReject(
+        NS_ERROR_DOM_MEDIA_DECODE_ERR, __func__);
+  }
 
   // Causes all complete samples in the pipeline that can be decoded to be
   // output. If the decoder can't produce samples from the current output,

@@ -12,7 +12,7 @@ interface GamepadServiceTest
   readonly attribute GamepadHand leftHand;
   readonly attribute GamepadHand rightHand;
 
-  [Throws]
+  [NewObject]
   Promise<unsigned long> addGamepad(DOMString id,
                                     GamepadMappingType mapping,
                                     GamepadHand hand,

@@ -8,6 +8,7 @@
 #include "RemoteDataDecoder.h"
 #include "VPXDecoder.h"
 #include "VorbisDecoder.h"
+#include "mozilla/Components.h"
 
 #include "nsIGfxInfo.h"
 #include "nsPromiseFlatString.h"
@@ -45,7 +46,7 @@ const nsCString TranslateMimeType(const nsACString& aMimeType) {
 }
 
 static bool GetFeatureStatus(int32_t aFeature) {
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
   int32_t status = nsIGfxInfo::FEATURE_STATUS_UNKNOWN;
   nsCString discardFailureId;
   if (!gfxInfo || NS_FAILED(gfxInfo->GetFeatureStatus(
@@ -74,6 +75,7 @@ bool AndroidDecoderModule::SupportsMimeType(const nsACString& aMimeType) {
   // To avoid this we check for wav types here.
   if (aMimeType.EqualsLiteral("audio/x-wav") ||
       aMimeType.EqualsLiteral("audio/wave; codecs=1") ||
+      aMimeType.EqualsLiteral("audio/wave; codecs=3") ||
       aMimeType.EqualsLiteral("audio/wave; codecs=6") ||
       aMimeType.EqualsLiteral("audio/wave; codecs=7") ||
       aMimeType.EqualsLiteral("audio/wave; codecs=65534")) {

@@ -26,7 +26,7 @@
 #include "nsPrintfCString.h"
 #include "nsThreadUtils.h"
 
-#ifndef CLSID_VideoProcessorMFT
+#ifdef THE_WIN8SDK
 const CLSID CLSID_VideoProcessorMFT = {
     0x88753b26,
     0x5b24,

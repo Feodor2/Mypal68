@@ -119,8 +119,8 @@ namespace ChromeUtils {
    *
    * Crash report will be augmented with the current JS stack information.
    */
-  void releaseAssert(boolean condition,
-                     optional DOMString message = "<no message>");
+  undefined releaseAssert(boolean condition,
+                          optional DOMString message = "<no message>");
 
 #ifdef NIGHTLY_BUILD
 
@@ -153,7 +153,7 @@ namespace ChromeUtils {
   /**
    * Reset `recentJSDevError` to `undefined` for the current JSRuntime.
    */
-  void clearRecentJSDevError();
+  undefined clearRecentJSDevError();
 #endif // NIGHTLY_BUILD
 
   /**
@@ -168,9 +168,9 @@ namespace ChromeUtils {
    *                          In JS modules, use `Cu.now()` to get a timestamp.
    * @param text              Text to associate with the marker.
    */
-  void addProfilerMarker(UTF8String name,
-                         optional DOMHighResTimeStamp startTime,
-                         optional UTF8String text);
+  undefined addProfilerMarker(UTF8String name,
+                              optional DOMHighResTimeStamp startTime,
+                              optional UTF8String text);
 
   /**
    * IF YOU ADD NEW METHODS HERE, MAKE SURE THEY ARE THREAD-SAFE.
@@ -295,8 +295,8 @@ partial namespace ChromeUtils {
    * particular DOM windw.
    */
   [Throws]
-  void idleDispatch(IdleRequestCallback callback,
-                    optional IdleRequestOptions options = {});
+  undefined idleDispatch(IdleRequestCallback callback,
+                         optional IdleRequestOptions options = {});
 
   /**
    * Synchronously loads and evaluates the js file located at
@@ -364,7 +364,7 @@ partial namespace ChromeUtils {
    *                    ChromeUtils.import.
    */
   [Throws]
-  void defineModuleGetter(object target, DOMString id, DOMString resourceURI);
+  undefined defineModuleGetter(object target, DOMString id, DOMString resourceURI);
 
   /**
    * Returns the scripted location of the first ancestor stack frame with a
@@ -385,19 +385,19 @@ partial namespace ChromeUtils {
   /**
    * Request performance metrics to the current process & all content processes.
    */
-  [Throws]
+  [NewObject]
   Promise<sequence<PerformanceInfoDictionary>> requestPerformanceMetrics();
 
   /**
   * Returns a Promise containing a sequence of I/O activities
   */
-  [Throws]
+  [NewObject]
   Promise<sequence<IOActivityDataDictionary>> requestIOActivity();
 
   /**
   * Returns a Promise containing all processes info
   */
-  [Throws]
+  [NewObject]
   Promise<ParentProcInfoDictionary> requestProcInfo();
 
   //[ChromeOnly, Throws]
@@ -418,8 +418,10 @@ partial namespace ChromeUtils {
   /**
    * For testing purpose we need to reset this value.
    */
+#ifdef ENABLE_TESTS
   [ChromeOnly]
-  void resetLastExternalProtocolIframeAllowed();
+  undefined resetLastExternalProtocolIframeAllowed();
+#endif
 
   /**
    * Register a new toplevel window global actor. This method may only be
@@ -428,10 +430,10 @@ partial namespace ChromeUtils {
    * See JSWindowActor.webidl for WindowActorOptions fields documentation.
    */
   [ChromeOnly, Throws]
-  void registerWindowActor(UTF8String aName, optional WindowActorOptions aOptions = {});
+  undefined registerWindowActor(UTF8String aName, optional WindowActorOptions aOptions = {});
 
   [ChromeOnly]
-  void unregisterWindowActor(UTF8String aName);
+  undefined unregisterWindowActor(UTF8String aName);
 
   [ChromeOnly]
   // aError should a nsresult.

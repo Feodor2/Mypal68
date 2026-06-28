@@ -4,9 +4,14 @@
 
 #include "MediaFormatReader.h"
 
+#include <algorithm>
+#include <map>
+#include <queue>
+
 #include "AllocationPolicy.h"
 #include "GeckoProfiler.h"
 #include "MediaData.h"
+#include "MediaDataDecoderProxy.h"
 #include "MediaInfo.h"
 #include "VideoFrameContainer.h"
 #include "VideoUtils.h"
@@ -21,10 +26,6 @@
 #include "nsContentUtils.h"
 #include "nsPrintfCString.h"
 #include "nsTHashSet.h"
-
-#include <algorithm>
-#include <map>
-#include <queue>
 
 using namespace mozilla::media;
 
@@ -321,8 +322,7 @@ void MediaFormatReader::DecoderFactory::RunStage(Data& aData) {
 MediaResult MediaFormatReader::DecoderFactory::DoCreateDecoder(Data& aData) {
   auto& ownerData = aData.mOwnerData;
   auto& decoder = mOwner->GetDecoderData(aData.mTrack);
-  auto& platform =
-      decoder.IsEncrypted() ? mOwner->mEncryptedPlatform : mOwner->mPlatform;
+  auto& platform = mOwner->mPlatform;
 
   if (!platform) {
     platform = new PDMFactory();
@@ -337,11 +337,16 @@ MediaResult MediaFormatReader::DecoderFactory::DoCreateDecoder(Data& aData) {
 
   switch (aData.mTrack) {
     case TrackInfo::kAudioTrack: {
-      aData.mDecoder = platform->CreateDecoder(
-          {*ownerData.GetCurrentInfo()->GetAsAudioInfo(), ownerData.mTaskQueue,
-           mOwner->mCrashHelper,
+      RefPtr<MediaDataDecoder> decoder = platform->CreateDecoder(
+          {*ownerData.GetCurrentInfo()->GetAsAudioInfo(), mOwner->mCrashHelper,
            CreateDecoderParams::UseNullDecoder(ownerData.mIsNullDecode),
-           &result, TrackInfo::kAudioTrack});
+           &result});
+      if (!decoder) {
+        aData.mDecoder = nullptr;
+        break;
+      }
+      aData.mDecoder = new MediaDataDecoderProxy(
+          decoder.forget(), do_AddRef(ownerData.mTaskQueue.get()));
       break;
     }
 
@@ -351,16 +356,22 @@ MediaResult MediaFormatReader::DecoderFactory::DoCreateDecoder(Data& aData) {
       using Option = CreateDecoderParams::Option;
       using OptionSet = CreateDecoderParams::OptionSet;
 
-      aData.mDecoder = platform->CreateDecoder(
-          {*ownerData.GetCurrentInfo()->GetAsVideoInfo(), ownerData.mTaskQueue,
+      RefPtr<MediaDataDecoder> decoder = platform->CreateDecoder(
+          {*ownerData.GetCurrentInfo()->GetAsVideoInfo(),
            mOwner->mKnowsCompositor, mOwner->GetImageContainer(),
            mOwner->mCrashHelper,
            CreateDecoderParams::UseNullDecoder(ownerData.mIsNullDecode),
-           &result, TrackType::kVideoTrack,
+           &result,
            CreateDecoderParams::VideoFrameRate(ownerData.mMeanRate.Mean()),
            OptionSet(ownerData.mHardwareDecodingDisabled
                          ? Option::HardwareDecoderNotAllowed
                          : Option::Default)});
+      if (!decoder) {
+        aData.mDecoder = nullptr;
+        break;
+      }
+      aData.mDecoder = new MediaDataDecoderProxy(
+          decoder.forget(), do_AddRef(ownerData.mTaskQueue.get()));
       break;
     }
 
@@ -486,17 +497,6 @@ class MediaFormatReader::DemuxerProxy {
     return mData->mSeekableOnlyInBufferedRange;
   }
 
-  UniquePtr<EncryptionInfo> GetCrypto() const {
-    MOZ_RELEASE_ASSERT(mData && mData->mInitDone);
-
-    if (!mData->mCrypto) {
-      return nullptr;
-    }
-    auto crypto = MakeUnique<EncryptionInfo>();
-    *crypto = *mData->mCrypto;
-    return crypto;
-  }
-
   RefPtr<NotifyDataArrivedPromise> NotifyDataArrived();
 
   bool ShouldComputeStartTime() const {
@@ -525,7 +525,6 @@ class MediaFormatReader::DemuxerProxy {
     bool mSeekable = false;
     bool mSeekableOnlyInBufferedRange = false;
     bool mShouldComputeStartTime = true;
-    UniquePtr<EncryptionInfo> mCrypto;
 
    private:
     ~Data() = default;
@@ -737,7 +736,6 @@ RefPtr<MediaDataDemuxer::InitPromise> MediaFormatReader::DemuxerProxy::Init() {
                     wrapper.get());
               }
             }
-            data->mCrypto = data->mDemuxer->GetCrypto();
             data->mSeekable = data->mDemuxer->IsSeekable();
             data->mSeekableOnlyInBufferedRange =
                 data->mDemuxer->IsSeekableOnlyInBufferedRanges();
@@ -773,7 +771,7 @@ MediaFormatReader::DemuxerProxy::NotifyDataArrived() {
 
 MediaFormatReader::MediaFormatReader(MediaFormatReaderInit& aInit,
                                      MediaDataDemuxer* aDemuxer)
-    : mTaskQueue(new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK),
+    : mTaskQueue(new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER),
                                "MediaFormatReader::mTaskQueue",
                                /* aSupportsTailDispatch = */ true)),
       mAudio(this, MediaData::Type::AUDIO_DATA,
@@ -885,7 +883,6 @@ RefPtr<ShutdownPromise> MediaFormatReader::TearDownDecoders() {
 
   mDecoderFactory = nullptr;
   mPlatform = nullptr;
-  mEncryptedPlatform = nullptr;
   mVideoFrameContainer = nullptr;
 
   ReleaseResources();
@@ -1080,11 +1077,6 @@ void MediaFormatReader::MaybeResolveMetadataPromise() {
   UpdateBuffered();
 
   mMetadataPromise.Resolve(std::move(metadata), __func__);
-}
-
-bool MediaFormatReader::IsEncrypted() const {
-  return (HasAudio() && mAudio.GetCurrentInfo()->mCrypto.IsEncrypted()) ||
-         (HasVideo() && mVideo.GetCurrentInfo()->mCrypto.IsEncrypted());
 }
 
 void MediaFormatReader::OnDemuxerInitFailed(const MediaResult& aError) {
@@ -1658,8 +1650,6 @@ void MediaFormatReader::HandleDemuxedSamples(
       bool recyclable =
           StaticPrefs::media_decoder_recycle_enabled() &&
           decoder.mDecoder->SupportDecoderRecycling() &&
-          (*info)->mCrypto.mCryptoScheme ==
-              decoder.GetCurrentInfo()->mCrypto.mCryptoScheme &&
           (*info)->mMimeType == decoder.GetCurrentInfo()->mMimeType;
       if (!recyclable && decoder.mTimeThreshold.isNothing() &&
           (decoder.mNextStreamSourceID.isNothing() ||

@@ -7,8 +7,7 @@
 #include "mozilla/Base64.h"
 #include "mozilla/dom/UnionTypes.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 uint8_t* CryptoBuffer::Assign(const CryptoBuffer& aData) {
   // Same as in nsTArray_Impl::operator=, but return the value
@@ -167,5 +166,4 @@ bool CryptoBuffer::GetBigIntValue(unsigned long& aRetVal) {
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

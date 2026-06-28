@@ -1,4 +1,3 @@
-/* jshint moz:true, browser:true */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -434,6 +433,7 @@ class RTCPeerConnection {
 
     this._pc = new this._win.PeerConnectionImpl();
     this._operations = [];
+    this._updateNegotiationNeededOnEmptyChain = false;
 
     this.__DOM_IMPL__._innerObject = this;
     const observer = new this._win.PeerConnectionObserver(this.__DOM_IMPL__);
@@ -514,6 +514,9 @@ class RTCPeerConnection {
         this._operations.shift();
         if (this._operations.length) {
           this._operations[0]();
+        } else if (this._updateNegotiationNeededOnEmptyChain) {
+          this._updateNegotiationNeededOnEmptyChain = false;
+          this.updateNegotiationNeeded();
         }
       };
       p.then(doNextOperation, doNextOperation);
@@ -628,7 +631,10 @@ class RTCPeerConnection {
         return Services.io.newURI(uriStr);
       } catch (e) {
         if (e.result == Cr.NS_ERROR_MALFORMED_URI) {
-          throw new this._win.SyntaxError(`${msg} - malformed URI: ${uriStr}`);
+          throw new this._win.DOMException(
+            `${msg} - malformed URI: ${uriStr}`,
+            "SyntaxError"
+          );
         }
         throw e;
       }
@@ -644,7 +650,10 @@ class RTCPeerConnection {
         );
       }
       if (urls.length == 0) {
-        throw new this._win.SyntaxError(`${msg} - urls is empty`);
+        throw new this._win.DOMException(
+          `${msg} - urls is empty`,
+          "SyntaxError"
+        );
       }
       urls
         .map(url => nicerNewURI(url))
@@ -681,8 +690,9 @@ class RTCPeerConnection {
             this._hasStunServer = true;
             stunServers += 1;
           } else {
-            throw new this._win.SyntaxError(
-              `${msg} - improper scheme: ${scheme}`
+            throw new this._win.DOMException(
+              `${msg} - improper scheme: ${scheme}`,
+              "SyntaxError"
             );
           }
           if (scheme in { stuns: 1 }) {
@@ -780,7 +790,7 @@ class RTCPeerConnection {
         return this.getEH(name);
       },
       set(h) {
-        return this.setEH(name, h);
+        this.setEH(name, h);
       },
     });
   }
@@ -792,7 +802,7 @@ class RTCPeerConnection {
       },
       set(h) {
         this.logWarning(name + " is deprecated! " + msg);
-        return this.setEH(name, h);
+        this.setEH(name, h);
       },
     });
   }
@@ -1037,18 +1047,20 @@ class RTCPeerConnection {
     // avoid problems with the fact that identity validation doesn't block the
     // resolution of setRemoteDescription().
     const validate = async () => {
+      // Access this._impl synchronously in case pc is closed later
+      const identity = this._impl.peerIdentity;
       await this._lastIdentityValidation;
       const msg = await this._remoteIdp.verifyIdentityFromSDP(sdp, origin);
       // If this pc has an identity already, then the identity in sdp must match
-      if (
-        this._impl.peerIdentity &&
-        (!msg || msg.identity !== this._impl.peerIdentity)
-      ) {
+      if (identity && (!msg || msg.identity !== identity)) {
         throw new this._win.DOMException(
-          "Peer Identity mismatch, expected: " + this._impl.peerIdentity,
-          "OperationError");
+          "Peer Identity mismatch, expected: " + identity,
+          "OperationError"
+        );
       }
-
+      if (this._closed) {
+        return;
+      }
       if (msg) {
         // Set new identity and generate an event.
         this._impl.peerIdentity = msg.identity;
@@ -1073,6 +1085,9 @@ class RTCPeerConnection {
     // interfere with the validation chain itself, even if the catch function
     // throws.
     haveValidation.catch(e => {
+      if (this._closed) {
+        return;
+      }
       this._rejectPeerIdentity(e);
 
       // If we don't expect a specific peer identity, failure to get a valid
@@ -1083,6 +1098,9 @@ class RTCPeerConnection {
       }
     });
 
+    if (this._closed) {
+      return;
+    }
     // Only wait for IdP validation if we need identity matching
     if (this._impl.peerIdentity) {
       await haveValidation;
@@ -1119,6 +1137,9 @@ class RTCPeerConnection {
           });
           this._transceivers = this._transceivers.filter(t => !t.shouldRemove);
           this._updateCanTrickle();
+          if (this._closed) {
+            return;
+          }
         }
         this._sanityCheckSdp(sdp);
         const p = this._getPermission();
@@ -1137,6 +1158,9 @@ class RTCPeerConnection {
         await this._validateIdentity(sdp);
       }
       await haveSetRemote;
+      if (this._closed) {
+        return;
+      }
       this._negotiationNeeded = false;
       if (type == "answer") {
         if (this._localUfragsToReplace.size > 0) {
@@ -1231,7 +1255,16 @@ class RTCPeerConnection {
     usernameFragment,
   }) {
     this._checkClosed();
-    return this._chain(() => {
+    return this._chain(async () => {
+      if (
+        !this._impl.pendingRemoteDescription.length &&
+        !this._impl.currentRemoteDescription.length
+      ) {
+        throw new this._win.DOMException(
+          "No remoteDescription.",
+          "InvalidStateError"
+        );
+      }
       return new Promise((resolve, reject) => {
         this._onAddIceCandidateSuccess = resolve;
         this._onAddIceCandidateError = reject;
@@ -1246,6 +1279,9 @@ class RTCPeerConnection {
   }
 
   restartIce() {
+    if (this._closed) {
+      return;
+    }
     this._localUfragsToReplace = new Set([
       ...this._getUfragsWithPwds(this._impl.currentLocalDescription),
       ...this._getUfragsWithPwds(this._impl.pendingLocalDescription),
@@ -1391,27 +1427,33 @@ class RTCPeerConnection {
   }
 
   updateNegotiationNeeded() {
+    if (this._operations.length) {
+      this._updateNegotiationNeededOnEmptyChain = true;
+      return;
+    }
     this._queueTaskWithClosedCheck(() => {
-      this._chain(async () => {
-        if (this._closed || this.signalingState != "stable") {
-          return;
-        }
+      if (this._operations.length) {
+        this._updateNegotiationNeededOnEmptyChain = true;
+        return;
+      }
+      if (this.signalingState != "stable") {
+        return;
+      }
 
-        let negotiationNeeded =
-          this._impl.checkNegotiationNeeded() ||
-          this._localUfragsToReplace.size > 0;
-        if (!negotiationNeeded) {
-          this._negotiationNeeded = false;
-          return;
-        }
+      const negotiationNeeded =
+        this._impl.checkNegotiationNeeded() ||
+        this._localUfragsToReplace.size > 0;
+      if (!negotiationNeeded) {
+        this._negotiationNeeded = false;
+        return;
+      }
 
-        if (this._negotiationNeeded) {
-          return;
-        }
+      if (this._negotiationNeeded) {
+        return;
+      }
 
-        this._negotiationNeeded = true;
-        this.dispatchEvent(new this._win.Event("negotiationneeded"));
-      });
+      this._negotiationNeeded = true;
+      this.dispatchEvent(new this._win.Event("negotiationneeded"));
     });
   }
 
@@ -1563,8 +1605,11 @@ class RTCPeerConnection {
     _globalPCList.notifyLifecycleObservers(this, "icegatheringstatechange");
     this.dispatchEvent(new this._win.Event("icegatheringstatechange"));
     if (this.iceGatheringState === "complete") {
-      this.dispatchEvent(new this._win.RTCPeerConnectionIceEvent(
-        "icecandidate", { candidate: null }));
+      this.dispatchEvent(
+        new this._win.RTCPeerConnectionIceEvent("icecandidate", {
+          candidate: null,
+        })
+      );
     }
   }
 
@@ -1572,7 +1617,9 @@ class RTCPeerConnection {
     if (state != this._iceConnectionState) {
       this._iceConnectionState = state;
       _globalPCList.notifyLifecycleObservers(this, "iceconnectionstatechange");
-      this.dispatchEvent(new this._win.Event("iceconnectionstatechange"));
+      if (!this._closed) {
+        this.dispatchEvent(new this._win.Event("iceconnectionstatechange"));
+      }
     }
   }
 
@@ -1668,16 +1715,27 @@ class RTCPeerConnection {
       type = Ci.IPeerConnection.kDataChannelReliable;
     }
     // Synchronous since it doesn't block.
-    let dataChannel = this._impl.createDataChannel(
-      label,
-      protocol,
-      type,
-      ordered,
-      maxPacketLifeTime,
-      maxRetransmits,
-      negotiated,
-      id
-    );
+    let dataChannel;
+    try {
+      dataChannel = this._impl.createDataChannel(
+        label,
+        protocol,
+        type,
+        ordered,
+        maxPacketLifeTime,
+        maxRetransmits,
+        negotiated,
+        id
+      );
+    } catch (e) {
+      if (e.result != Cr.NS_ERROR_NOT_AVAILABLE) {
+        throw e;
+      }
+
+      const msg =
+        id === null ? "No available id could be generated" : "Id is in use";
+      throw new this._win.DOMException(msg, "OperationError");
+    }
 
     // Spec says to only do this if this is the first DataChannel created,
     // but the c++ code that does the "is negotiation needed" checking will
@@ -2041,6 +2099,10 @@ class RTCRtpSender {
   setTrack(track) {
     this._pc._replaceTrackNoRenegotiation(this._transceiverImpl, track);
     this.track = track;
+  }
+
+  get transport() {
+    return this._transceiverImpl.dtlsTransport;
   }
 
   getStats() {

@@ -77,6 +77,7 @@
 #include "mozilla/dom/FromParser.h"
 #include "mozilla/dom/Grid.h"
 #include "mozilla/dom/HTMLDivElement.h"
+#include "mozilla/dom/HTMLElement.h"
 #include "mozilla/dom/HTMLParagraphElement.h"
 #include "mozilla/dom/HTMLPreElement.h"
 #include "mozilla/dom/HTMLSpanElement.h"
@@ -218,6 +219,7 @@ namespace mozilla::dom {
 // bucket sizes.
 ASSERT_NODE_SIZE(Element, 128, 80);
 ASSERT_NODE_SIZE(HTMLDivElement, 128, 80);
+ASSERT_NODE_SIZE(HTMLElement, 128, 80);
 ASSERT_NODE_SIZE(HTMLParagraphElement, 128, 80);
 ASSERT_NODE_SIZE(HTMLPreElement, 128, 80);
 ASSERT_NODE_SIZE(HTMLSpanElement, 128, 80);
@@ -469,6 +471,26 @@ void Element::SetShadowRoot(ShadowRoot* aShadowRoot) {
   slots->mShadowRoot = aShadowRoot;
 }
 
+void Element::SetLastRememberedBSize(float aBSize) {
+  ExtendedDOMSlots()->mLastRememberedBSize = Some(aBSize);
+}
+
+void Element::SetLastRememberedISize(float aISize) {
+  ExtendedDOMSlots()->mLastRememberedISize = Some(aISize);
+}
+
+void Element::RemoveLastRememberedBSize() {
+  if (nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots()) {
+    slots->mLastRememberedBSize.reset();
+  }
+}
+
+void Element::RemoveLastRememberedISize() {
+  if (nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots()) {
+    slots->mLastRememberedISize.reset();
+  }
+}
+
 void Element::Blur(mozilla::ErrorResult& aError) {
   if (!ShouldBlur(this)) {
     return;
@@ -655,6 +677,37 @@ nsIScrollableFrame* Element::GetScrollFrame(nsIFrame** aFrame,
   return nullptr;
 }
 
+bool Element::CheckVisibility(const CheckVisibilityOptions& aOptions) {
+  nsIFrame* f =
+      GetPrimaryFrame(aOptions.mFlush ? FlushType::Frames : FlushType::None);
+  if (!f) {
+    // 1. If this does not have an associated box, return false.
+    return false;
+  }
+
+  if (f->AncestorHidesContent()) {
+    // 2. If a shadow-including ancestor of this has content-visibility: hidden,
+    // return false.
+    return false;
+  }
+
+  if (aOptions.mCheckOpacity && f->Style()->IsInOpacityZeroSubtree()) {
+    // 3. If the checkOpacity dictionary member of options is true, and this, or
+    // a shadow-including ancestor of this, has a computed opacity value of 0,
+    // return false.
+    return false;
+  }
+
+  if (aOptions.mCheckVisibilityCSS && !f->StyleVisibility()->IsVisible()) {
+    // 4. If the checkVisibilityCSS dictionary member of options is true, and
+    // this is invisible, return false.
+    return false;
+  }
+
+  // 5. Return true
+  return true;
+}
+
 void Element::ScrollIntoView(const BooleanOrScrollIntoViewOptions& aObject) {
   if (aObject.IsScrollIntoViewOptions()) {
     return ScrollIntoView(aObject.GetAsScrollIntoViewOptions());
@@ -721,8 +774,9 @@ void Element::ScrollIntoView(const ScrollIntoViewOptions& aOptions) {
       MOZ_ASSERT_UNREACHABLE("Unexpected ScrollLogicalPosition value");
   }
 
-  ScrollFlags scrollFlags =
-      ScrollFlags::ScrollOverflowHidden | ScrollFlags::ScrollSnap;
+  ScrollFlags scrollFlags = ScrollFlags::ScrollOverflowHidden |
+                            ScrollFlags::ScrollSnap |
+                            ScrollFlags::TriggeredByScript;
   if (aOptions.mBehavior == ScrollBehavior::Smooth) {
     scrollFlags |= ScrollFlags::ScrollSmooth;
   } else if (aOptions.mBehavior == ScrollBehavior::Auto) {
@@ -799,8 +853,7 @@ void Element::ScrollBy(const ScrollToOptions& aOptions) {
                                 ? ScrollMode::SmoothMsd
                                 : ScrollMode::Instant;
 
-    sf->ScrollByCSSPixels(scrollDelta, scrollMode,
-                          mozilla::ScrollOrigin::Relative);
+    sf->ScrollByCSSPixels(scrollDelta, scrollMode);
   }
 }
 
@@ -941,25 +994,22 @@ nsRect Element::GetClientAreaRect() {
   nsPresContext* presContext = doc->GetPresContext();
 
   // We can avoid a layout flush if this is the scrolling element of the
-  // document, we have overlay scrollbars, and we aren't embedded in another
-  // document
+  // document, we have overlay scrollbars, and we can't synchronously observe
+  // our parent document, so the implicit flush in the GetScrollFrame call below
+  // will not flush our parent document.
   bool overlayScrollbars =
       LookAndFeel::GetInt(LookAndFeel::IntID::UseOverlayScrollbars) != 0;
-  bool rootContentDocument =
-      presContext && presContext->IsRootContentDocument();
-  if (overlayScrollbars && rootContentDocument &&
+  if (overlayScrollbars &&
+      !doc->StyleOrLayoutObservablyDependsOnParentDocumentLayout() &&
       doc->IsScrollingElement(this)) {
-    // We will always have a pres shell if we have a pres context, and we will
-    // only get here if we have a pres context from the root content document
-    // check
-    PresShell* presShell = doc->GetPresShell();
-
-    // Ensure up to date dimensions, but don't reflow
-    RefPtr<nsViewManager> viewManager = presShell->GetViewManager();
-    if (viewManager) {
-      viewManager->FlushDelayedResize(false);
+    if (PresShell* presShell = doc->GetPresShell()) {
+      // Ensure up to date dimensions, but don't reflow
+      RefPtr<nsViewManager> viewManager = presShell->GetViewManager();
+      if (viewManager) {
+        viewManager->FlushDelayedResize(false);
+      }
+      return nsRect(nsPoint(), presContext->GetVisibleArea().Size());
     }
-    return nsRect(nsPoint(), presContext->GetVisibleArea().Size());
   }
 
   nsIFrame* frame;
@@ -989,7 +1039,7 @@ nsRect Element::GetClientAreaRect() {
 }
 
 already_AddRefed<DOMRect> Element::GetBoundingClientRect() {
-  RefPtr<DOMRect> rect = new DOMRect(this);
+  RefPtr<DOMRect> rect = new DOMRect(ToSupports(OwnerDoc()));
 
   nsIFrame* frame = GetPrimaryFrame(FlushType::Layout);
   if (!frame) {
@@ -1163,11 +1213,13 @@ already_AddRefed<ShadowRoot> Element::AttachShadow(const ShadowRootInit& aInit,
     OwnerDoc()->ReportShadowDOMUsage();
   }
 
-  return AttachShadowWithoutNameChecks(aInit.mMode, aInit.mSlotAssignment);
+  return AttachShadowWithoutNameChecks(aInit.mMode, aInit.mDelegatesFocus,
+                                       aInit.mSlotAssignment);
 }
 
 already_AddRefed<ShadowRoot> Element::AttachShadowWithoutNameChecks(
-    ShadowRootMode aMode, SlotAssignmentMode aSlotAssignment) {
+    ShadowRootMode aMode, bool aDelegatesFocus,
+    SlotAssignmentMode aSlotAssignment) {
   nsAutoScriptBlocker scriptBlocker;
 
   RefPtr<mozilla::dom::NodeInfo> nodeInfo =
@@ -1195,8 +1247,8 @@ already_AddRefed<ShadowRoot> Element::AttachShadowWithoutNameChecks(
    *    and mode is init's mode.
    */
   auto* nim = nodeInfo->NodeInfoManager();
-  RefPtr<ShadowRoot> shadowRoot =
-      new (nim) ShadowRoot(this, aMode, aSlotAssignment, nodeInfo.forget());
+  RefPtr<ShadowRoot> shadowRoot = new (nim) ShadowRoot(
+      this, aMode, aDelegatesFocus, aSlotAssignment, nodeInfo.forget());
 
   if (NodeOrAncestorHasDirAuto()) {
     shadowRoot->SetAncestorHasDirAuto();
@@ -1447,7 +1499,7 @@ already_AddRefed<Attr> Element::RemoveAttributeNode(Attr& aAttribute,
 
 void Element::GetAttributeNS(const nsAString& aNamespaceURI,
                              const nsAString& aLocalName, nsAString& aReturn) {
-  int32_t nsid = nsContentUtils::NameSpaceManager()->GetNameSpaceID(
+  int32_t nsid = nsNameSpaceManager::GetInstance()->GetNameSpaceID(
       aNamespaceURI, nsContentUtils::IsChromeDoc(OwnerDoc()));
 
   if (nsid == kNameSpaceID_Unknown) {
@@ -1480,11 +1532,47 @@ void Element::SetAttributeNS(const nsAString& aNamespaceURI,
                    aValue, aTriggeringPrincipal, true);
 }
 
+already_AddRefed<nsIPrincipal> Element::CreateDevtoolsPrincipal() {
+  // Return an ExpandedPrincipal that subsumes this Element's Principal,
+  // and expands this Element's CSP to allow the actions that devtools
+  // needs to perform.
+  AutoTArray<nsCOMPtr<nsIPrincipal>, 1> allowList = {NodePrincipal()};
+  RefPtr<ExpandedPrincipal> dtPrincipal = ExpandedPrincipal::Create(
+      allowList, NodePrincipal()->OriginAttributesRef());
+
+  if (nsIContentSecurityPolicy* csp = GetCsp()) {
+    RefPtr<nsCSPContext> dtCsp = new nsCSPContext();
+    dtCsp->InitFromOther(static_cast<nsCSPContext*>(csp));
+    dtCsp->SetSkipAllowInlineStyleCheck(true);
+
+    dtPrincipal->SetCsp(dtCsp);
+  }
+
+  return dtPrincipal.forget();
+}
+
+void Element::SetAttributeDevtools(const nsAString& aName,
+                                   const nsAString& aValue,
+                                   ErrorResult& aError) {
+  // Run this through SetAttribute with a devtools-ready principal.
+  RefPtr<nsIPrincipal> dtPrincipal = CreateDevtoolsPrincipal();
+  SetAttribute(aName, aValue, dtPrincipal, aError);
+}
+
+void Element::SetAttributeDevtoolsNS(const nsAString& aNamespaceURI,
+                                     const nsAString& aLocalName,
+                                     const nsAString& aValue,
+                                     ErrorResult& aError) {
+  // Run this through SetAttributeNS with a devtools-ready principal.
+  RefPtr<nsIPrincipal> dtPrincipal = CreateDevtoolsPrincipal();
+  SetAttributeNS(aNamespaceURI, aLocalName, aValue, dtPrincipal, aError);
+}
+
 void Element::RemoveAttributeNS(const nsAString& aNamespaceURI,
                                 const nsAString& aLocalName,
                                 ErrorResult& aError) {
   RefPtr<nsAtom> name = NS_AtomizeMainThread(aLocalName);
-  int32_t nsid = nsContentUtils::NameSpaceManager()->GetNameSpaceID(
+  int32_t nsid = nsNameSpaceManager::GetInstance()->GetNameSpaceID(
       aNamespaceURI, nsContentUtils::IsChromeDoc(OwnerDoc()));
 
   if (nsid == kNameSpaceID_Unknown) {
@@ -1518,8 +1606,8 @@ already_AddRefed<nsIHTMLCollection> Element::GetElementsByTagNameNS(
   int32_t nameSpaceId = kNameSpaceID_Wildcard;
 
   if (!aNamespaceURI.EqualsLiteral("*")) {
-    aError = nsContentUtils::NameSpaceManager()->RegisterNameSpace(
-        aNamespaceURI, nameSpaceId);
+    aError = nsNameSpaceManager::GetInstance()->RegisterNameSpace(aNamespaceURI,
+                                                                  nameSpaceId);
     if (aError.Failed()) {
       return nullptr;
     }
@@ -1532,7 +1620,7 @@ already_AddRefed<nsIHTMLCollection> Element::GetElementsByTagNameNS(
 
 bool Element::HasAttributeNS(const nsAString& aNamespaceURI,
                              const nsAString& aLocalName) const {
-  int32_t nsid = nsContentUtils::NameSpaceManager()->GetNameSpaceID(
+  int32_t nsid = nsNameSpaceManager::GetInstance()->GetNameSpaceID(
       aNamespaceURI, nsContentUtils::IsChromeDoc(OwnerDoc()));
 
   if (nsid == kNameSpaceID_Unknown) {
@@ -1600,6 +1688,9 @@ nsresult Element::BindToTree(BindContext& aContext, nsINode& aParent) {
   if (IsRootOfNativeAnonymousSubtree()) {
     aParent.SetMayHaveAnonymousChildren();
   }
+  if (aParent.HasFlag(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR)) {
+    SetFlags(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR);
+  }
 
   // Now set the parent.
   mParent = &aParent;
@@ -1641,7 +1732,7 @@ nsresult Element::BindToTree(BindContext& aContext, nsINode& aParent) {
     if (CustomElementData* data = GetCustomElementData()) {
       if (data->mState == CustomElementData::State::eCustom) {
         nsContentUtils::EnqueueLifecycleCallback(
-            ElementCallbackType::eConnected, this);
+            ElementCallbackType::eConnected, this, {});
       } else {
         // Step 7.7.2.2 https://dom.spec.whatwg.org/#concept-node-insert
         nsContentUtils::TryToUpgradeElement(this);
@@ -1743,6 +1834,19 @@ bool WillDetachFromShadowOnUnbind(const Element& aElement, bool aNullParent) {
 
 void Element::UnbindFromTree(bool aNullParent) {
   HandleShadowDOMRelatedRemovalSteps(aNullParent);
+
+  if (HasFlag(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR) &&
+      !IsHTMLElement(nsGkAtoms::datalist)) {
+    if (aNullParent) {
+      UnsetFlags(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR);
+    } else {
+      nsIContent* parent = GetParent();
+      MOZ_ASSERT(parent);
+      if (!parent->HasFlag(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR)) {
+        UnsetFlags(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR);
+      }
+    }
+  }
 
   const bool detachingFromShadow =
       WillDetachFromShadowOnUnbind(*this, aNullParent);
@@ -1874,7 +1978,7 @@ void Element::UnbindFromTree(bool aNullParent) {
     if (data) {
       if (data->mState == CustomElementData::State::eCustom) {
         nsContentUtils::EnqueueLifecycleCallback(
-            ElementCallbackType::eDisconnected, this);
+            ElementCallbackType::eDisconnected, this, {});
       } else {
         // Remove an unresolved custom element that is a candidate for upgrade
         // when a custom element is disconnected.
@@ -2419,18 +2523,18 @@ nsresult Element::SetAttrAndNotify(
       }
       RefPtr<nsAtom> newValueAtom = valueForAfterSetAttr.GetAsAtom();
       nsAutoString ns;
-      nsContentUtils::NameSpaceManager()->GetNameSpaceURI(aNamespaceID, ns);
+      nsNameSpaceManager::GetInstance()->GetNameSpaceURI(aNamespaceID, ns);
 
-      LifecycleCallbackArgs args = {nsDependentAtomString(aName),
-                                    aModType == MutationEvent_Binding::ADDITION
-                                        ? VoidString()
-                                        : nsDependentAtomString(oldValueAtom),
-                                    nsDependentAtomString(newValueAtom),
-                                    (ns.IsEmpty() ? VoidString() : ns)};
+      LifecycleCallbackArgs args;
+      args.mName = nsDependentAtomString(aName);
+      args.mOldValue = (aModType == MutationEvent_Binding::ADDITION
+                            ? VoidString()
+                            : nsDependentAtomString(oldValueAtom));
+      args.mNewValue = nsDependentAtomString(newValueAtom);
+      args.mNamespaceURI = (ns.IsEmpty() ? VoidString() : ns);
 
       nsContentUtils::EnqueueLifecycleCallback(
-          ElementCallbackType::eAttributeChanged, this, &args, nullptr,
-          definition);
+          ElementCallbackType::eAttributeChanged, this, args, definition);
     }
   }
 
@@ -2460,7 +2564,7 @@ nsresult Element::SetAttrAndNotify(
     InternalMutationEvent mutation(true, eLegacyAttrModified);
 
     nsAutoString ns;
-    nsContentUtils::NameSpaceManager()->GetNameSpaceURI(aNamespaceID, ns);
+    nsNameSpaceManager::GetInstance()->GetNameSpaceURI(aNamespaceID, ns);
     Attr* attrNode =
         GetAttributeNodeNSInternal(ns, nsDependentAtomString(aName));
     mutation.mRelatedNode = attrNode;
@@ -2605,15 +2709,17 @@ nsresult Element::OnAttrSetButNotChanged(int32_t aNamespaceID, nsAtom* aName,
 
     if (definition->IsInObservedAttributeList(aName)) {
       nsAutoString ns;
-      nsContentUtils::NameSpaceManager()->GetNameSpaceURI(aNamespaceID, ns);
+      nsNameSpaceManager::GetInstance()->GetNameSpaceURI(aNamespaceID, ns);
 
       nsAutoString value(aValue.String());
-      LifecycleCallbackArgs args = {nsDependentAtomString(aName), value, value,
-                                    (ns.IsEmpty() ? VoidString() : ns)};
+      LifecycleCallbackArgs args;
+      args.mName = nsDependentAtomString(aName);
+      args.mOldValue = value;
+      args.mNewValue = value;
+      args.mNamespaceURI = (ns.IsEmpty() ? VoidString() : ns);
 
       nsContentUtils::EnqueueLifecycleCallback(
-          ElementCallbackType::eAttributeChanged, this, &args, nullptr,
-          definition);
+          ElementCallbackType::eAttributeChanged, this, args, definition);
     }
   }
 
@@ -2682,7 +2788,7 @@ nsresult Element::UnsetAttr(int32_t aNameSpaceID, nsAtom* aName, bool aNotify) {
   RefPtr<Attr> attrNode;
   if (hasMutationListeners) {
     nsAutoString ns;
-    nsContentUtils::NameSpaceManager()->GetNameSpaceURI(aNameSpaceID, ns);
+    nsNameSpaceManager::GetInstance()->GetNameSpaceURI(aNameSpaceID, ns);
     attrNode = GetAttributeNodeNSInternal(ns, nsDependentAtomString(aName));
   }
 
@@ -2717,16 +2823,17 @@ nsresult Element::UnsetAttr(int32_t aNameSpaceID, nsAtom* aName, bool aNotify) {
 
     if (definition->IsInObservedAttributeList(aName)) {
       nsAutoString ns;
-      nsContentUtils::NameSpaceManager()->GetNameSpaceURI(aNameSpaceID, ns);
+      nsNameSpaceManager::GetInstance()->GetNameSpaceURI(aNameSpaceID, ns);
 
       RefPtr<nsAtom> oldValueAtom = oldValue.GetAsAtom();
-      LifecycleCallbackArgs args = {
-          nsDependentAtomString(aName), nsDependentAtomString(oldValueAtom),
-          VoidString(), (ns.IsEmpty() ? VoidString() : ns)};
+      LifecycleCallbackArgs args;
+      args.mName = nsDependentAtomString(aName);
+      args.mOldValue = nsDependentAtomString(oldValueAtom);
+      args.mNewValue = VoidString();
+      args.mNamespaceURI = (ns.IsEmpty() ? VoidString() : ns);
 
       nsContentUtils::EnqueueLifecycleCallback(
-          ElementCallbackType::eAttributeChanged, this, &args, nullptr,
-          definition);
+          ElementCallbackType::eAttributeChanged, this, args, definition);
     }
   }
 

@@ -37,8 +37,6 @@ class MediaSourceDemuxer : public MediaDataDemuxer,
 
   bool IsSeekable() const override;
 
-  UniquePtr<EncryptionInfo> GetCrypto() override;
-
   bool ShouldComputeStartTime() const override { return false; }
 
   /* interface for TrackBuffersManager */

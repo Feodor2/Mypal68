@@ -14,10 +14,12 @@
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/StyleSheetList.h"
 #include "nsTHashtable.h"
+#include "nsContentUtils.h"
 #include "nsFocusManager.h"
 #include "nsIRadioVisitor.h"
 #include "nsIFormControl.h"
 #include "nsLayoutUtils.h"
+#include "nsNameSpaceManager.h"
 #include "nsWindowSizes.h"
 
 namespace mozilla::dom {
@@ -53,7 +55,7 @@ void DocumentOrShadowRoot::AddSizeOfOwnedSheetArrayExcludingThis(
 
 void DocumentOrShadowRoot::AddSizeOfExcludingThis(nsWindowSizes& aSizes) const {
   AddSizeOfOwnedSheetArrayExcludingThis(aSizes, mStyleSheets);
-  aSizes.mDOMOtherSize +=
+  aSizes.mDOMSizes.mDOMOtherSize +=
       mIdentifierMap.SizeOfExcludingThis(aSizes.mState.mMallocSizeOf);
 }
 
@@ -253,7 +255,7 @@ already_AddRefed<nsContentList> DocumentOrShadowRoot::GetElementsByTagNameNS(
   int32_t nameSpaceId = kNameSpaceID_Wildcard;
 
   if (!aNamespaceURI.EqualsLiteral("*")) {
-    aResult = nsContentUtils::NameSpaceManager()->RegisterNameSpace(
+    aResult = nsNameSpaceManager::GetInstance()->RegisterNameSpace(
         aNamespaceURI, nameSpaceId);
     if (aResult.Failed()) {
       return nullptr;

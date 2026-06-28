@@ -653,6 +653,12 @@ void nsINode::LastRelease() {
       }
     }
 
+    if (Element* element = Element::FromNode(this)) {
+      if (CustomElementData* data = element->GetCustomElementData()) {
+        data->Unlink();
+      }
+    }
+
     delete slots;
     mSlots = nullptr;
   }
@@ -672,16 +678,16 @@ void nsINode::LastRelease() {
       document->RemoveAllPropertiesFor(this);
     }
 
-    // I wonder whether it's faster to do the HasFlag check first....
-    if (IsNodeOfType(nsINode::eHTML_FORM_CONTROL) && HasFlag(ADDED_TO_FORM)) {
-      // Tell the form (if any) this node is going away.  Don't
-      // notify, since we're being destroyed in any case.
-      static_cast<nsGenericHTMLFormElement*>(this)->ClearForm(true, true);
-    }
-
-    if (IsHTMLElement(nsGkAtoms::img) && HasFlag(ADDED_TO_FORM)) {
-      HTMLImageElement* imageElem = static_cast<HTMLImageElement*>(this);
-      imageElem->ClearForm(true);
+    if (HasFlag(ADDED_TO_FORM)) {
+      if (nsGenericHTMLFormControlElement* formControl =
+              nsGenericHTMLFormControlElement::FromNode(this)) {
+        // Tell the form (if any) this node is going away.  Don't
+        // notify, since we're being destroyed in any case.
+        formControl->ClearForm(true, true);
+      } else if (HTMLImageElement* imageElem =
+                     HTMLImageElement::FromNode(this)) {
+        imageElem->ClearForm(true);
+      }
     }
   }
   UnsetFlags(NODE_HAS_PROPERTIES);
@@ -2050,7 +2056,7 @@ already_AddRefed<nsIHTMLCollection> nsINode::GetElementsByAttributeNS(
 
   int32_t nameSpaceId = kNameSpaceID_Wildcard;
   if (!aNamespaceURI.EqualsLiteral("*")) {
-    nsresult rv = nsContentUtils::NameSpaceManager()->RegisterNameSpace(
+    nsresult rv = nsNameSpaceManager::GetInstance()->RegisterNameSpace(
         aNamespaceURI, nameSpaceId);
     if (NS_FAILED(rv)) {
       aRv.Throw(rv);
@@ -2095,11 +2101,19 @@ void nsINode::ReplaceChildren(const Sequence<OwningNodeOrString>& aNodes,
   if (aRv.Failed()) {
     return;
   }
+  MOZ_ASSERT(node);
+  return ReplaceChildren(node, aRv);
+}
 
-  EnsurePreInsertionValidity(*node, nullptr, aRv);
-  if (aRv.Failed()) {
-    return;
+void nsINode::ReplaceChildren(nsINode* aNode, ErrorResult& aRv) {
+  if (aNode) {
+    EnsurePreInsertionValidity(*aNode, nullptr, aRv);
+    if (aRv.Failed()) {
+      return;
+    }
   }
+
+  nsCOMPtr<nsINode> node = aNode;
 
   // Batch possible DOMSubtreeModified events.
   mozAutoSubtreeModified subtree(OwnerDoc(), nullptr);
@@ -2117,7 +2131,7 @@ void nsINode::ReplaceChildren(const Sequence<OwningNodeOrString>& aNodes,
   }
 
   // Needed when used in combination with contenteditable (maybe)
-  mozAutoDocUpdate updateBatch(doc, true);
+  mozAutoDocUpdate updateBatch(OwnerDoc(), true);
 
   nsAutoMutationBatch mb(this, true, true);
 
@@ -2130,8 +2144,10 @@ void nsINode::ReplaceChildren(const Sequence<OwningNodeOrString>& aNodes,
   }
   mb.RemovalDone();
 
-  AppendChild(*node, aRv);
-  mb.NodesAdded();
+  if (aNode) {
+    AppendChild(*aNode, aRv);
+    mb.NodesAdded();
+  }
 }
 
 void nsINode::RemoveChildNode(nsIContent* aKid, bool aNotify) {
@@ -3235,9 +3251,12 @@ already_AddRefed<nsINode> nsINode::CloneAndAdopt(
       // shadow-including inclusive descendants that is custom.
       CustomElementData* data = elem->GetCustomElementData();
       if (data && data->mState == CustomElementData::State::eCustom) {
-        LifecycleAdoptedCallbackArgs args = {oldDoc, newDoc};
+        LifecycleCallbackArgs args;
+        args.mOldDocument = oldDoc;
+        args.mNewDocument = newDoc;
+
         nsContentUtils::EnqueueLifecycleCallback(ElementCallbackType::eAdopted,
-                                                 elem, nullptr, &args);
+                                                 elem, args);
       }
     }
 

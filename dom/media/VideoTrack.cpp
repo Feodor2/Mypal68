@@ -8,8 +8,7 @@
 #include "mozilla/dom/VideoTrackBinding.h"
 #include "mozilla/dom/VideoTrackList.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 VideoTrack::VideoTrack(nsIGlobalObject* aOwnerGlobal, const nsAString& aId,
                        const nsAString& aKind, const nsAString& aLabel,
@@ -88,5 +87,4 @@ void VideoTrack::SetEnabledInternal(bool aEnabled, int aFlags) {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

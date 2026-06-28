@@ -7,19 +7,21 @@ include('/media/webrtc/webrtc.mozbuild')
 DEFINES['ENABLE_SET_CUBEB_BACKEND'] = True
 
 LOCAL_INCLUDES += [
-    '/media/webrtc/signaling/src/common',
+    '/dom/media/webrtc/common',
     '/media/webrtc/trunk',
     '/media/webrtc/trunk/webrtc'
 ]
 
 UNIFIED_SOURCES += [
-    'AudioGenerator.cpp',
+    "MockCubeb.cpp",
     'MockMediaResource.cpp',
     'TestAudioBuffers.cpp',
     'TestAudioCallbackDriver.cpp',
     'TestAudioCompactor.cpp',
+    'TestAudioDriftCorrection.cpp',
     'TestAudioMixer.cpp',
     'TestAudioPacketizer.cpp',
+    'TestAudioRingBuffer.cpp',
     'TestAudioSegment.cpp',
     'TestAudioTrackEncoder.cpp',
     'TestAudioTrackGraph.cpp',
@@ -28,6 +30,7 @@ UNIFIED_SOURCES += [
     'TestBufferReader.cpp',
     'TestDataMutex.cpp',
     'TestDriftCompensation.cpp',
+    'TestDynamicResampler.cpp',
     'TestGMPUtils.cpp',
     'TestGroupId.cpp',
     'TestIntervalSet.cpp',
@@ -104,6 +107,7 @@ LOCAL_INCLUDES += [
     '/dom/media/mp4',
     '/dom/media/platforms',
     '/dom/media/platforms/agnostic',
+    '/dom/media/webrtc',
     '/security/certverifier',
 ]
 

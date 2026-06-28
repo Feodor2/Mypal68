@@ -178,8 +178,6 @@ static const TestFileData testFiles[] = {
      0, false, false, 2},
     {"test_case_1181215.mp4", true, 0, false, -1, 0, 0, 0, -1, false, 0, false,
      false, 0},
-    {"test_case_1181220.mp4", false, 0, false, -1, 0, 0, 0, -1, false, 0, false,
-     false, 0},  // invalid audio 'sinf' box
     {"test_case_1181223.mp4", false, 0, false, 416666, 320, 240, 0, -1, false,
      0, false, false, 0},
     {"test_case_1181719.mp4", false, 0, false, -1, 0, 0, 0, -1, false, 0, false,
@@ -405,6 +403,7 @@ TEST(MP4Metadata, test_case_mp4_subsets) {
 }
 #endif
 
+#if !defined(XP_WIN) || !defined(MOZ_ASAN)  // OOMs on Windows ASan
 TEST(MoofParser, test_case_mp4)
 {
   const TestFileData* tests = nullptr;
@@ -478,22 +477,9 @@ TEST(MoofParser, test_case_sample_description_entries)
         MediaByteRange(0, int64_t(buffer.Length())));
     EXPECT_EQ(tests[test].mValidMoof, parser.RebuildFragmentedIndex(byteRanges))
         << tests[test].mFilename;
-
-    // We only care about crypto data from the samples descriptions right now.
-    // This test should be expanded should we read further information.
-    if (tests[test].mHasCrypto) {
-      uint32_t numEncryptedEntries = 0;
-      // It's possible to have multiple sample description entries, but we only
-      // expect one to carry crypto info for encrypted tracks.
-      for (SampleDescriptionEntry entry : parser.mSampleDescriptions) {
-        if (entry.mIsEncryptedEntry) {
-          numEncryptedEntries++;
-        }
-      }
-      EXPECT_EQ(1u, numEncryptedEntries) << tests[test].mFilename;
-    }
   }
 }
+#endif  // !defined(XP_WIN) || !defined(MOZ_ASAN)
 
 // We should gracefully handle track_id 0 since Bug 1519617. We'd previously
 // used id 0 to trigger special handling in the MoofParser to read multiple

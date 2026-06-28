@@ -27,18 +27,20 @@ class PromiseNativeThenHandlerBase : public PromiseNativeHandler {
   virtual bool HasResolvedCallback() = 0;
   virtual bool HasRejectedCallback() = 0;
 
-  void ResolvedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
-                        ErrorResult& aRv) override;
+  MOZ_CAN_RUN_SCRIPT void ResolvedCallback(JSContext* aCx,
+                                           JS::Handle<JS::Value> aValue,
+                                           ErrorResult& aRv) override;
 
-  void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue,
-                        ErrorResult& aRv) override;
+  MOZ_CAN_RUN_SCRIPT void RejectedCallback(JSContext* aCx,
+                                           JS::Handle<JS::Value> aValue,
+                                           ErrorResult& aRv) override;
 
  protected:
   virtual ~PromiseNativeThenHandlerBase() = default;
 
-  virtual already_AddRefed<Promise> CallResolveCallback(
+  MOZ_CAN_RUN_SCRIPT virtual already_AddRefed<Promise> CallResolveCallback(
       JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv) = 0;
-  virtual already_AddRefed<Promise> CallRejectCallback(
+  MOZ_CAN_RUN_SCRIPT virtual already_AddRefed<Promise> CallRejectCallback(
       JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv) = 0;
 
   virtual void Traverse(nsCycleCollectionTraversalCallback&) = 0;
@@ -177,40 +179,37 @@ class NativeThenHandler<ResolveCallback, RejectCallback, std::tuple<Args...>,
   bool HasResolvedCallback() override { return mOnResolve.isSome(); }
   bool HasRejectedCallback() override { return mOnReject.isSome(); }
 
-  already_AddRefed<Promise> CallResolveCallback(JSContext* aCx,
-                                                JS::Handle<JS::Value> aValue,
-                                                ErrorResult& aRv) override {
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> CallResolveCallback(
+      JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv) override {
     return CallCallback(aCx, *mOnResolve, aValue, aRv);
   }
-  already_AddRefed<Promise> CallRejectCallback(JSContext* aCx,
-                                               JS::Handle<JS::Value> aValue,
-                                               ErrorResult& aRv) override {
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> CallRejectCallback(
+      JSContext* aCx, JS::Handle<JS::Value> aValue, ErrorResult& aRv) override {
     return CallCallback(aCx, *mOnReject, aValue, aRv);
   }
 
   // mJSArgs are marked with Trace() above, so they can be safely converted to
-  // Handles.
+  // Handles. But we should not circumvent the read barrier, so call
+  // exposeToActiveJS explicitly.
   template <typename T>
-  static JS::Handle<T> GetJSArgHandle(JS::Heap<T>& aArg) {
+  static JS::Handle<T> GetJSArgHandleForCall(JS::Heap<T>& aArg) {
+    aArg.exposeToActiveJS();
     return JS::Handle<T>::fromMarkedLocation(aArg.address());
   }
 
   template <typename TCallback, size_t... Indices, size_t... JSIndices>
-  already_AddRefed<Promise> CallCallback(JSContext* aCx,
-                                         const TCallback& aHandler,
-                                         JS::Handle<JS::Value> aValue,
-                                         ErrorResult& aRv,
-                                         std::index_sequence<Indices...>,
-                                         std::index_sequence<JSIndices...>) {
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> CallCallback(
+      JSContext* aCx, const TCallback& aHandler, JS::Handle<JS::Value> aValue,
+      ErrorResult& aRv, std::index_sequence<Indices...>,
+      std::index_sequence<JSIndices...>) {
     return aHandler(aCx, aValue, aRv, ArgType(std::get<Indices>(mArgs))...,
-                    GetJSArgHandle(std::get<JSIndices>(mJSArgs))...);
+                    GetJSArgHandleForCall(std::get<JSIndices>(mJSArgs))...);
   }
 
   template <typename TCallback>
-  already_AddRefed<Promise> CallCallback(JSContext* aCx,
-                                         const TCallback& aHandler,
-                                         JS::Handle<JS::Value> aValue,
-                                         ErrorResult& aRv) {
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Promise> CallCallback(
+      JSContext* aCx, const TCallback& aHandler, JS::Handle<JS::Value> aValue,
+      ErrorResult& aRv) {
     return CallCallback(aCx, aHandler, aValue, aRv,
                         std::index_sequence_for<Args...>{},
                         std::index_sequence_for<JSArgs...>{});

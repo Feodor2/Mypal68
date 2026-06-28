@@ -5,8 +5,7 @@
 #include "AudioParamMap.h"
 #include "mozilla/dom/AudioParamMapBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(AudioParamMap, mParent)
 
@@ -20,5 +19,4 @@ JSObject* AudioParamMap::WrapObject(JSContext* aCx,
   return AudioParamMap_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

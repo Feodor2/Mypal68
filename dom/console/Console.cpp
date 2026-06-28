@@ -21,7 +21,6 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/ToJSValue.h"
-#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/WorkletGlobalScope.h"
@@ -74,8 +73,7 @@
 
 using namespace mozilla::dom::exceptions;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 struct ConsoleStructuredCloneData {
   nsCOMPtr<nsIGlobalObject> mGlobal;
@@ -2940,5 +2938,4 @@ bool Console::ArgumentData::PopulateArgumentsSequence(
   return true;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

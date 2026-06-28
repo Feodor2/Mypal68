@@ -3,14 +3,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TheoraDecoder.h"
+
+#include <algorithm>
+
+#include "ImageContainer.h"
 #include "TimeUnits.h"
 #include "XiphExtradata.h"
 #include "gfx2DGlue.h"
 #include "mozilla/PodOperations.h"
+#include "mozilla/TaskQueue.h"
 #include "nsError.h"
-#include "ImageContainer.h"
-
-#include <algorithm>
 
 #undef LOG
 #define LOG(arg, ...)                                                 \
@@ -40,7 +42,9 @@ ogg_packet InitTheoraPacket(const unsigned char* aData, size_t aLength,
 TheoraDecoder::TheoraDecoder(const CreateDecoderParams& aParams)
     : mImageAllocator(aParams.mKnowsCompositor),
       mImageContainer(aParams.mImageContainer),
-      mTaskQueue(aParams.mTaskQueue),
+      mTaskQueue(
+          new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
+                        "TheoraDecoder")),
       mTheoraInfo{},
       mTheoraComment{},
       mTheoraSetupInfo(nullptr),
@@ -64,7 +68,7 @@ RefPtr<ShutdownPromise> TheoraDecoder::Shutdown() {
       th_decode_free(mTheoraDecoderContext);
       mTheoraDecoderContext = nullptr;
     }
-    return ShutdownPromise::CreateAndResolve(true, __func__);
+    return mTaskQueue->BeginShutdown();
   });
 }
 

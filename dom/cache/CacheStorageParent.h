@@ -9,9 +9,7 @@
 #include "mozilla/dom/cache/PrincipalVerifier.h"
 #include "mozilla/dom/cache/Types.h"
 
-namespace mozilla {
-namespace dom {
-namespace cache {
+namespace mozilla::dom::cache {
 
 class ManagerId;
 
@@ -47,8 +45,6 @@ class CacheStorageParent final : public PCacheStorageParent,
   SafeRefPtr<ManagerId> mManagerId;
 };
 
-}  // namespace cache
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::cache
 
 #endif  // mozilla_dom_cache_CacheStorageParent_h

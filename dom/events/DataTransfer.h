@@ -219,13 +219,6 @@ class DataTransfer final : public nsISupports, public nsWrapperCache {
    */
   already_AddRefed<FileList> GetFiles(nsIPrincipal& aSubjectPrincipal);
 
-  already_AddRefed<Promise> GetFilesAndDirectories(
-      nsIPrincipal& aSubjectPrincipal, mozilla::ErrorResult& aRv);
-
-  already_AddRefed<Promise> GetFiles(bool aRecursiveFlag,
-                                     nsIPrincipal& aSubjectPrincipal,
-                                     ErrorResult& aRv);
-
   void AddElement(Element& aElement, mozilla::ErrorResult& aRv);
 
   uint32_t MozItemCount() const;
@@ -240,20 +233,18 @@ class DataTransfer final : public nsISupports, public nsWrapperCache {
   void SetMozCursor(const nsAString& aCursor);
 
   already_AddRefed<DOMStringList> MozTypesAt(uint32_t aIndex,
-                                             CallerType aCallerType,
                                              mozilla::ErrorResult& aRv) const;
 
   void MozClearDataAt(const nsAString& aFormat, uint32_t aIndex,
-                      nsIPrincipal& aSubjectPrincipal,
                       mozilla::ErrorResult& aRv);
 
   void MozSetDataAt(JSContext* aCx, const nsAString& aFormat,
                     JS::Handle<JS::Value> aData, uint32_t aIndex,
-                    nsIPrincipal& aSubjectPrincipal, mozilla::ErrorResult& aRv);
+                    mozilla::ErrorResult& aRv);
 
   void MozGetDataAt(JSContext* aCx, const nsAString& aFormat, uint32_t aIndex,
                     JS::MutableHandle<JS::Value> aRetval,
-                    nsIPrincipal& aSubjectPrincipal, mozilla::ErrorResult& aRv);
+                    mozilla::ErrorResult& aRv);
 
   bool MozUserCancelled() const { return mUserCancelled; }
 
@@ -391,12 +382,6 @@ class DataTransfer final : public nsISupports, public nsWrapperCache {
   static void GetExternalTransferableFormats(nsITransferable* aTransferable,
                                              bool aPlainTextOnly,
                                              nsTArray<nsCString>* aResult);
-
-  // Returns true if moz* APIs should be exposed (true for chrome code or if
-  // dom.datatransfer.moz pref is enabled).
-  // The affected moz* APIs are mozItemCount, mozTypesAt, mozClearDataAt,
-  // mozSetDataAt, mozGetDataAt
-  static bool MozAtAPIsEnabled(JSContext* cx, JSObject* obj);
 
  protected:
   // caches text and uri-list data formats that exist in the drag service or

@@ -11,15 +11,16 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/HTMLLinkElementBinding.h"
+#include "mozilla/dom/HTMLDNSPrefetch.h"
 #include "nsContentUtils.h"
 #include "nsDOMTokenList.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
-#include "nsHTMLDNSPrefetch.h"
 #include "nsIContentInlines.h"
 #include "mozilla/dom/Document.h"
 #include "nsINode.h"
@@ -38,22 +39,6 @@
 #include "MediaList.h"
 #include "nsAttrValueInlines.h"
 
-#define LINK_ELEMENT_FLAG_BIT(n_) \
-  NODE_FLAG_BIT(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + (n_))
-
-// Link element specific bits
-enum {
-  // Indicates that a DNS Prefetch has been requested from this Link element.
-  HTML_LINK_DNS_PREFETCH_REQUESTED = LINK_ELEMENT_FLAG_BIT(0),
-
-  // Indicates that a DNS Prefetch was added to the deferral queue
-  HTML_LINK_DNS_PREFETCH_DEFERRED = LINK_ELEMENT_FLAG_BIT(1)
-};
-
-#undef LINK_ELEMENT_FLAG_BIT
-
-ASSERT_NODE_FLAGS_SPACE(ELEMENT_TYPE_SPECIFIC_BITS_OFFSET + 2);
-
 NS_IMPL_NS_NEW_HTML_ELEMENT(Link)
 
 namespace mozilla::dom {
@@ -62,7 +47,9 @@ HTMLLinkElement::HTMLLinkElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)), Link(this) {}
 
-HTMLLinkElement::~HTMLLinkElement() = default;
+HTMLLinkElement::~HTMLLinkElement() {
+  SupportsDNSPrefetch::Destroyed(*this);
+}
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLLinkElement)
 
@@ -100,20 +87,6 @@ void HTMLLinkElement::SetDisabled(bool aDisabled, ErrorResult& aRv) {
   if (StyleSheet* ss = GetSheet()) {
     ss->SetDisabled(aDisabled);
   }
-}
-
-void HTMLLinkElement::OnDNSPrefetchRequested() {
-  UnsetFlags(HTML_LINK_DNS_PREFETCH_DEFERRED);
-  SetFlags(HTML_LINK_DNS_PREFETCH_REQUESTED);
-}
-
-void HTMLLinkElement::OnDNSPrefetchDeferred() {
-  UnsetFlags(HTML_LINK_DNS_PREFETCH_REQUESTED);
-  SetFlags(HTML_LINK_DNS_PREFETCH_DEFERRED);
-}
-
-bool HTMLLinkElement::HasDeferredDNSPrefetchRequest() {
-  return HasFlag(HTML_LINK_DNS_PREFETCH_DEFERRED);
 }
 
 nsresult HTMLLinkElement::BindToTree(BindContext& aContext, nsINode& aParent) {
@@ -156,8 +129,7 @@ void HTMLLinkElement::UnbindFromTree(bool aNullParent) {
   // Cancel any DNS prefetches
   // Note: Must come before ResetLinkState.  If called after, it will recreate
   // mCachedURI based on data that is invalid - due to a call to GetHostname.
-  CancelDNSPrefetch(HTML_LINK_DNS_PREFETCH_DEFERRED,
-                    HTML_LINK_DNS_PREFETCH_REQUESTED);
+  CancelDNSPrefetch(*this);
   CancelPrefetchOrPreload();
 
   // Without removing the link state we risk a dangling pointer
@@ -246,8 +218,7 @@ nsresult HTMLLinkElement::BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                         bool aNotify) {
   if (aNameSpaceID == kNameSpaceID_None &&
       (aName == nsGkAtoms::href || aName == nsGkAtoms::rel)) {
-    CancelDNSPrefetch(HTML_LINK_DNS_PREFETCH_DEFERRED,
-                      HTML_LINK_DNS_PREFETCH_REQUESTED);
+    CancelDNSPrefetch(*this);
     CancelPrefetchOrPreload();
   }
 
@@ -654,9 +625,7 @@ void HTMLLinkElement::
   }
 
   if (linkTypes & eDNS_PREFETCH) {
-    if (nsHTMLDNSPrefetch::IsAllowed(OwnerDoc())) {
-      nsHTMLDNSPrefetch::Prefetch(this, nsHTMLDNSPrefetch::Priority::Low);
-    }
+    TryDNSPrefetch(*this);
   }
 }
 

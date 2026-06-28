@@ -9,8 +9,7 @@
 #include "nsFocusManager.h"
 #include "nsIDocShell.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(CredentialsContainer, mParent, mManager)
 NS_IMPL_CYCLE_COLLECTING_ADDREF(CredentialsContainer)
@@ -144,7 +143,7 @@ already_AddRefed<Promise> CredentialsContainer::Get(
   }
 
   EnsureWebAuthnManager();
-  return mManager->GetAssertion(aOptions.mPublicKey, aOptions.mSignal);
+  return mManager->GetAssertion(aOptions.mPublicKey, aOptions.mSignal, aRv);
 }
 
 already_AddRefed<Promise> CredentialsContainer::Create(
@@ -154,7 +153,7 @@ already_AddRefed<Promise> CredentialsContainer::Create(
   }
 
   EnsureWebAuthnManager();
-  return mManager->MakeCredential(aOptions.mPublicKey, aOptions.mSignal);
+  return mManager->MakeCredential(aOptions.mPublicKey, aOptions.mSignal, aRv);
 }
 
 already_AddRefed<Promise> CredentialsContainer::Store(
@@ -164,7 +163,7 @@ already_AddRefed<Promise> CredentialsContainer::Store(
   }
 
   EnsureWebAuthnManager();
-  return mManager->Store(aCredential);
+  return mManager->Store(aCredential, aRv);
 }
 
 already_AddRefed<Promise> CredentialsContainer::PreventSilentAccess(
@@ -184,5 +183,4 @@ already_AddRefed<Promise> CredentialsContainer::PreventSilentAccess(
   return promise.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

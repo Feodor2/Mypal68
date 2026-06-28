@@ -48,7 +48,7 @@
 #include "secmodt.h"
 #include "secoid.h"
 #include "secoidt.h"
-#include "mtransport/dtlsidentity.h"
+#include "transport/dtlsidentity.h"
 #include "xpcpublic.h"
 
 namespace mozilla::dom {

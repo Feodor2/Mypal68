@@ -225,19 +225,6 @@ RefPtr<MP4Demuxer::InitPromise> MP4Demuxer::Init() {
       mVideoDemuxers.AppendElement(std::move(demuxer));
     }
   }
-
-  MP4Metadata::ResultAndCryptoFile cryptoFile = metadata.Crypto();
-  if (NS_FAILED(cryptoFile.Result()) && result == NS_OK) {
-    result = std::move(cryptoFile.Result());
-  }
-  MOZ_ASSERT(cryptoFile.Ref());
-  if (cryptoFile.Ref()->valid) {
-    const nsTArray<PsshInfo>& psshs = cryptoFile.Ref()->pssh;
-    for (uint32_t i = 0; i < psshs.Length(); i++) {
-      mCryptoInitData.AppendElements(psshs[i].data);
-    }
-  }
-
   mIsSeekable = metadata.CanSeek();
 
   return InitPromise::CreateAndResolve(result, __func__);
@@ -290,15 +277,6 @@ void MP4Demuxer::NotifyDataRemoved() {
   for (auto& dmx : mVideoDemuxers) {
     dmx->NotifyDataRemoved();
   }
-}
-
-UniquePtr<EncryptionInfo> MP4Demuxer::GetCrypto() {
-  UniquePtr<EncryptionInfo> crypto;
-  if (!mCryptoInitData.IsEmpty()) {
-    crypto.reset(new EncryptionInfo{});
-    crypto->AddInitData(u"cenc"_ns, mCryptoInitData);
-  }
-  return crypto;
 }
 
 MP4TrackDemuxer::MP4TrackDemuxer(MediaResource* aResource,
@@ -385,54 +363,6 @@ already_AddRefed<MediaRawData> MP4TrackDemuxer::GetNextSample() {
   }
   if (mInfo->GetAsVideoInfo()) {
     sample->mExtraData = mInfo->GetAsVideoInfo()->mExtraData;
-    if (mType == kH264 && !sample->mCrypto.IsEncrypted()) {
-      H264::FrameType type = H264::GetFrameType(sample);
-      switch (type) {
-        case H264::FrameType::I_FRAME:
-          [[fallthrough]];
-        case H264::FrameType::OTHER: {
-          bool keyframe = type == H264::FrameType::I_FRAME;
-          if (sample->mKeyframe != keyframe) {
-            NS_WARNING(nsPrintfCString("Frame incorrectly marked as %skeyframe "
-                                       "@ pts:%" PRId64 " dur:%" PRId64
-                                       " dts:%" PRId64,
-                                       keyframe ? "" : "non-",
-                                       sample->mTime.ToMicroseconds(),
-                                       sample->mDuration.ToMicroseconds(),
-                                       sample->mTimecode.ToMicroseconds())
-                           .get());
-            sample->mKeyframe = keyframe;
-          }
-          break;
-        }
-        case H264::FrameType::INVALID:
-          NS_WARNING(nsPrintfCString("Invalid H264 frame @ pts:%" PRId64
-                                     " dur:%" PRId64 " dts:%" PRId64,
-                                     sample->mTime.ToMicroseconds(),
-                                     sample->mDuration.ToMicroseconds(),
-                                     sample->mTimecode.ToMicroseconds())
-                         .get());
-          // We could reject the sample now, however demuxer errors are fatal.
-          // So we keep the invalid frame, relying on the H264 decoder to
-          // handle the error later.
-          // TODO: make demuxer errors non-fatal.
-          break;
-      }
-    } else if (mType == kVP9 && !sample->mCrypto.IsEncrypted()) {
-      bool keyframe = VPXDecoder::IsKeyframe(
-          Span<const uint8_t>(sample->Data(), sample->Size()),
-          VPXDecoder::Codec::VP9);
-      if (sample->mKeyframe != keyframe) {
-        NS_WARNING(nsPrintfCString(
-                       "Frame incorrectly marked as %skeyframe "
-                       "@ pts:%" PRId64 " dur:%" PRId64 " dts:%" PRId64,
-                       keyframe ? "" : "non-", sample->mTime.ToMicroseconds(),
-                       sample->mDuration.ToMicroseconds(),
-                       sample->mTimecode.ToMicroseconds())
-                       .get());
-        sample->mKeyframe = keyframe;
-      }
-    }
   }
 
   return sample.forget();

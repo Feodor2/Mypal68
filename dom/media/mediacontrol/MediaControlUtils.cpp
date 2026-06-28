@@ -8,8 +8,7 @@
 
 mozilla::LazyLogModule gMediaControlLog("MediaControl");
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 BrowsingContext* GetAliveTopBrowsingContext(BrowsingContext* aBC) {
   if (!aBC) {
@@ -22,5 +21,4 @@ BrowsingContext* GetAliveTopBrowsingContext(BrowsingContext* aBC) {
   return aBC;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

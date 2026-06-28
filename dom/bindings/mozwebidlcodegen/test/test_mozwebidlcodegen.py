@@ -5,6 +5,7 @@
 from __future__ import unicode_literals
 
 import imp
+import io
 import json
 import os
 import shutil
@@ -93,7 +94,7 @@ class TestWebIDLCodegenManager(unittest.TestCase):
 
         p = args["state_path"]
 
-        with open(p, "wb") as fh:
+        with io.open(p, "w", newline="\n") as fh:
             json.dump(
                 {
                     "version": WebIDLCodegenManagerState.VERSION + 1,
@@ -139,7 +140,7 @@ class TestWebIDLCodegenManager(unittest.TestCase):
 
         self.assertTrue(os.path.isfile(manager._state_path))
 
-        with open(manager._state_path, "rb") as fh:
+        with io.open(manager._state_path, "r") as fh:
             state = json.load(fh)
             self.assertEqual(state["version"], 3)
             self.assertIn("webidls", state)
@@ -147,7 +148,7 @@ class TestWebIDLCodegenManager(unittest.TestCase):
             child = state["webidls"]["Child.webidl"]
             self.assertEqual(len(child["inputs"]), 2)
             self.assertEqual(len(child["outputs"]), 2)
-            self.assertEqual(child["sha1"], "c41527cad3bc161fa6e7909e48fa11f9eca0468b")
+            self.assertEqual(child["sha1"], "c34c40b0fa0ac57c2834ee282efe0681e4dacc35")
 
     def test_generate_build_files_load_state(self):
         """State should be equivalent when instantiating a new instance."""
@@ -205,7 +206,7 @@ class TestWebIDLCodegenManager(unittest.TestCase):
                 break
 
         self.assertIsNotNone(child_path)
-        child_content = open(child_path, "rb").read()
+        parent_content = io.open(parent_path, "r").read()
 
         with MockedOpen({child_path: child_content + "\n/* */"}):
             m2 = WebIDLCodegenManager(**args)
@@ -229,7 +230,7 @@ class TestWebIDLCodegenManager(unittest.TestCase):
                 child_path = p
 
         self.assertIsNotNone(parent_path)
-        parent_content = open(parent_path, "rb").read()
+        parent_content = io.open(parent_path, "r").read()
 
         with MockedOpen({parent_path: parent_content + "\n/* */"}):
             m2 = WebIDLCodegenManager(**args)
@@ -263,7 +264,7 @@ class TestWebIDLCodegenManager(unittest.TestCase):
                     result = m1.generate_build_files()
                     l = len(result.inputs)
 
-                    with open(fake_path, "wt") as fh:
+                    with io.open(fake_path, "wt", newline="\n") as fh:
                         fh.write("# Modified content")
 
                     m2 = WebIDLCodegenManager(**args)

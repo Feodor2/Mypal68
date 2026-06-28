@@ -37,27 +37,30 @@ interface SourceBuffer : EventTarget {
   attribute EventHandler onerror;
   attribute EventHandler onabort;
   [Throws]
-  void appendBuffer(ArrayBuffer data);
+  undefined appendBuffer(ArrayBuffer data);
   [Throws]
-  void appendBuffer(ArrayBufferView data);
-  // Experimental function as proposed in:
-  // https://github.com/w3c/media-source/issues/100 for promise proposal.
-  [Throws, Pref="media.mediasource.experimental.enabled"]
-  Promise<void> appendBufferAsync(ArrayBuffer data);
-  [Throws, Pref="media.mediasource.experimental.enabled"]
-  Promise<void> appendBufferAsync(ArrayBufferView data);
+  undefined appendBuffer(ArrayBufferView data);
   //[Throws]
-  //void appendStream(Stream stream, [EnforceRange] optional unsigned long long maxSize);
+  //undefined appendStream(Stream stream, [EnforceRange] optional unsigned long long maxSize);
   [Throws]
-  void abort();
+  undefined abort();
   [Throws]
-  void remove(double start, unrestricted double end);
+  undefined remove(double start, unrestricted double end);
+};
+
+// Mozilla extensions for experimental features
+partial interface SourceBuffer {
   // Experimental function as proposed in:
   // https://github.com/w3c/media-source/issues/100 for promise proposal.
-  [Throws, Pref="media.mediasource.experimental.enabled"]
-  Promise<void> removeAsync(double start, unrestricted double end);
+  [NewObject, Pref="media.mediasource.experimental.enabled"]
+  Promise<undefined> appendBufferAsync(ArrayBuffer data);
+  [NewObject, Pref="media.mediasource.experimental.enabled"]
+  Promise<undefined> appendBufferAsync(ArrayBufferView data);
+  [NewObject, Pref="media.mediasource.experimental.enabled"]
+  Promise<undefined> removeAsync(double start, unrestricted double end);
+
   // Experimental function as proposed in:
   // https://github.com/w3c/media-source/issues/155
   [Throws]
-  void changeType(DOMString type);
+  undefined changeType(DOMString type);
 };

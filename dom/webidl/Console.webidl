@@ -15,37 +15,37 @@ namespace console {
   // interface as well!
 
   // Logging
-  void assert(optional boolean condition = false, any... data);
-  void clear();
-  void count(optional DOMString label = "default");
-  void countReset(optional DOMString label = "default");
-  void debug(any... data);
-  void error(any... data);
-  void info(any... data);
-  void log(any... data);
-  void table(any... data); // FIXME: The spec is still unclear about this.
-  void trace(any... data);
-  void warn(any... data);
-  void dir(any... data); // FIXME: This doesn't follow the spec yet.
-  void dirxml(any... data);
+  undefined assert(optional boolean condition = false, any... data);
+  undefined clear();
+  undefined count(optional DOMString label = "default");
+  undefined countReset(optional DOMString label = "default");
+  undefined debug(any... data);
+  undefined error(any... data);
+  undefined info(any... data);
+  undefined log(any... data);
+  undefined table(any... data); // FIXME: The spec is still unclear about this.
+  undefined trace(any... data);
+  undefined warn(any... data);
+  undefined dir(any... data); // FIXME: This doesn't follow the spec yet.
+  undefined dirxml(any... data);
 
   // Grouping
-  void group(any... data);
-  void groupCollapsed(any... data);
-  void groupEnd();
+  undefined group(any... data);
+  undefined groupCollapsed(any... data);
+  undefined groupEnd();
 
   // Timing
-  void time(optional DOMString label = "default");
-  void timeLog(optional DOMString label = "default", any... data);
-  void timeEnd(optional DOMString label = "default");
+  undefined time(optional DOMString label = "default");
+  undefined timeLog(optional DOMString label = "default", any... data);
+  undefined timeEnd(optional DOMString label = "default");
 
   // Mozilla only or Webcompat methods
 
-  void _exception(any... data);
-  void timeStamp(optional any data);
+  undefined _exception(any... data);
+  undefined timeStamp(optional any data);
 
-  void profile(any... data);
-  void profileEnd(any... data);
+  undefined profile(any... data);
+  undefined profileEnd(any... data);
 
   [ChromeOnly]
   const boolean IS_NATIVE_CONSOLE = true;
@@ -141,40 +141,40 @@ dictionary ConsoleCounterError {
 // This is basically a copy of the console namespace.
 interface ConsoleInstance {
   // Logging
-  void assert(optional boolean condition = false, any... data);
-  void clear();
-  void count(optional DOMString label = "default");
-  void countReset(optional DOMString label = "default");
-  void debug(any... data);
-  void error(any... data);
-  void info(any... data);
-  void log(any... data);
-  void table(any... data); // FIXME: The spec is still unclear about this.
-  void trace(any... data);
-  void warn(any... data);
-  void dir(any... data); // FIXME: This doesn't follow the spec yet.
-  void dirxml(any... data);
+  undefined assert(optional boolean condition = false, any... data);
+  undefined clear();
+  undefined count(optional DOMString label = "default");
+  undefined countReset(optional DOMString label = "default");
+  undefined debug(any... data);
+  undefined error(any... data);
+  undefined info(any... data);
+  undefined log(any... data);
+  undefined table(any... data); // FIXME: The spec is still unclear about this.
+  undefined trace(any... data);
+  undefined warn(any... data);
+  undefined dir(any... data); // FIXME: This doesn't follow the spec yet.
+  undefined dirxml(any... data);
 
   // Grouping
-  void group(any... data);
-  void groupCollapsed(any... data);
-  void groupEnd();
+  undefined group(any... data);
+  undefined groupCollapsed(any... data);
+  undefined groupEnd();
 
   // Timing
-  void time(optional DOMString label = "default");
-  void timeLog(optional DOMString label = "default", any... data);
-  void timeEnd(optional DOMString label = "default");
+  undefined time(optional DOMString label = "default");
+  undefined timeLog(optional DOMString label = "default", any... data);
+  undefined timeEnd(optional DOMString label = "default");
 
   // Mozilla only or Webcompat methods
 
-  void _exception(any... data);
-  void timeStamp(optional any data);
+  undefined _exception(any... data);
+  undefined timeStamp(optional any data);
 
-  void profile(any... data);
-  void profileEnd(any... data);
+  undefined profile(any... data);
+  undefined profileEnd(any... data);
 };
 
-callback ConsoleInstanceDumpCallback = void (DOMString message);
+callback ConsoleInstanceDumpCallback = undefined (DOMString message);
 
 enum ConsoleLogLevel {
   "All", "Debug", "Log", "Info", "Clear", "Trace", "TimeLog", "TimeEnd", "Time",
@@ -213,8 +213,8 @@ enum ConsoleLevel { "log", "warning", "error" };
 // this interface is just for testing
 partial interface ConsoleInstance {
   [ChromeOnly]
-  void reportForServiceWorkerScope(DOMString scope, DOMString message,
-                                   DOMString filename, unsigned long lineNumber,
-                                   unsigned long columnNumber,
-                                   ConsoleLevel level);
+  undefined reportForServiceWorkerScope(DOMString scope, DOMString message,
+                                        DOMString filename, unsigned long lineNumber,
+                                        unsigned long columnNumber,
+                                        ConsoleLevel level);
 };

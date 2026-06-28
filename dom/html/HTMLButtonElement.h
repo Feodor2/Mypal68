@@ -6,25 +6,26 @@
 #define mozilla_dom_HTMLButtonElement_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/dom/ConstraintValidation.h"
 #include "nsGenericHTMLElement.h"
-#include "nsIConstraintValidation.h"
 
 namespace mozilla {
 class EventChainPostVisitor;
 class EventChainPreVisitor;
 namespace dom {
+class FormData;
 
-class HTMLButtonElement final : public nsGenericHTMLFormElementWithState,
-                                public nsIConstraintValidation {
+class HTMLButtonElement final : public nsGenericHTMLFormControlElementWithState,
+                                public ConstraintValidation {
  public:
-  using nsIConstraintValidation::GetValidationMessage;
+  using ConstraintValidation::GetValidationMessage;
 
   explicit HTMLButtonElement(
       already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
       FromParser aFromParser = NOT_FROM_PARSER);
 
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLButtonElement,
-                                           nsGenericHTMLFormElementWithState)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(
+      HTMLButtonElement, nsGenericHTMLFormControlElementWithState)
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
@@ -36,12 +37,13 @@ class HTMLButtonElement final : public nsGenericHTMLFormElementWithState,
   // Element
   virtual bool IsInteractiveHTMLContent() const override { return true; }
 
+  // nsGenericHTMLFormElement
+  void SaveState() override;
+  bool RestoreState(PresState* aState) override;
+
   // overriden nsIFormControl methods
   NS_IMETHOD Reset() override;
-  NS_IMETHOD SubmitNamesValues(HTMLFormSubmission* aFormSubmission) override;
-  NS_IMETHOD SaveState() override;
-  bool RestoreState(PresState* aState) override;
-  virtual bool IsDisabledForEvents(WidgetEvent* aEvent) override;
+  NS_IMETHOD SubmitNamesValues(FormData* aFormData) override;
 
   virtual void FieldSetDisabledChanged(bool aNotify) override;
 
@@ -85,6 +87,7 @@ class HTMLButtonElement final : public nsGenericHTMLFormElementWithState,
   // nsGenericHTMLElement
   virtual bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                                int32_t* aTabIndex) override;
+  virtual bool IsDisabledForEvents(WidgetEvent* aEvent) override;
 
   // WebIDL
   bool Autofocus() const { return GetBoolAttr(nsGkAtoms::autofocus); }
@@ -95,8 +98,6 @@ class HTMLButtonElement final : public nsGenericHTMLFormElementWithState,
   void SetDisabled(bool aDisabled, ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::disabled, aDisabled, aError);
   }
-  // nsGenericHTMLFormElement::GetForm is fine.
-  using nsGenericHTMLFormElement::GetForm;
   // GetFormAction implemented in superclass
   void SetFormAction(const nsAString& aFormAction, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::formaction, aFormAction, aRv);

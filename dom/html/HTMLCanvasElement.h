@@ -187,10 +187,6 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
 
     SetHTMLBoolAttr(nsGkAtoms::moz_opaque, aValue, aRv);
   }
-  already_AddRefed<File> MozGetAsFile(const nsAString& aName,
-                                      const nsAString& aType,
-                                      nsIPrincipal& aSubjectPrincipal,
-                                      ErrorResult& aRv);
   already_AddRefed<nsISupports> MozGetIPCContext(const nsAString& aContextId,
                                                  ErrorResult& aRv);
   PrintCallback* GetMozPrintCallback() const;
@@ -232,12 +228,9 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
    */
   void InvalidateCanvas();
 
-  /*
-   * Get the number of contexts in this canvas, and request a context at
-   * an index.
-   */
-  int32_t CountContexts();
-  nsICanvasRenderingContextInternal* GetContextAtIndex(int32_t index);
+  nsICanvasRenderingContextInternal* GetCurrentContext() {
+    return mCurrentContext;
+  }
 
   /*
    * Returns true if the canvas context content is guaranteed to be opaque
@@ -291,8 +284,6 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
   nsresult CopyInnerTo(HTMLCanvasElement* aDest);
-
-  void GetEventTargetParent(EventChainPreVisitor& aVisitor) override;
 
   static void MapAttributesIntoRule(const nsMappedAttributes* aAttributes,
                                     MappedDeclarations&);
@@ -362,8 +353,6 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   nsresult ToDataURLImpl(JSContext* aCx, nsIPrincipal& aSubjectPrincipal,
                          const nsAString& aMimeType,
                          const JS::Value& aEncoderOptions, nsAString& aDataURL);
-  nsresult MozGetAsFileImpl(const nsAString& aName, const nsAString& aType,
-                            nsIPrincipal& aSubjectPrincipal, File** aResult);
   MOZ_CAN_RUN_SCRIPT void CallPrintCallback();
 
   virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,

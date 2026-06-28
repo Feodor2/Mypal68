@@ -4,7 +4,7 @@
   <title>Test MediaRecorder recording a constructed MediaStream</title>
   <script src="/tests/SimpleTest/SimpleTest.js"></script>
   <script src="/tests/dom/canvas/test/captureStream_common.js"></script>
-  <script src="/tests/dom/media/tests/mochitest/head.js"></script>
+  <script src="/tests/dom/media/webrtc/tests/mochitests/head.js"></script>
   <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
 </head>
 <body>
@@ -12,6 +12,8 @@
 <div id="content">
 </div>
 <script>
+/* import-globals-from ../../canvas/test/captureStream_common.js */
+/* import-globals-from ../tests/mochitest/head.js */
 SimpleTest.waitForExplicitFinish();
 runTestWhenReady(async () => {
   const canvas = document.createElement("canvas");
@@ -33,7 +35,7 @@ runTestWhenReady(async () => {
 
   const blobs = [];
 
-  mediaRecorder = new MediaRecorder(stream);
+  let mediaRecorder = new MediaRecorder(stream);
   is(mediaRecorder.stream, stream,
      "Media recorder stream = constructed stream at the start of recording");
 

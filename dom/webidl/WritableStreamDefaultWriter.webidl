@@ -6,24 +6,23 @@
  * https://streams.spec.whatwg.org/#default-writer-class-definition
  */
 
-[Exposed=*, Pref="dom.streams.writable_streams.enabled"]
+[Exposed=*]
 interface WritableStreamDefaultWriter {
   [Throws]
   constructor(WritableStream stream);
 
-  readonly attribute Promise<void> closed;
+  readonly attribute Promise<undefined> closed;
   [Throws] readonly attribute unrestricted double? desiredSize;
-  readonly attribute Promise<void> ready;
+  readonly attribute Promise<undefined> ready;
 
   [Throws]
-  Promise<void> abort(optional any reason);
+  Promise<undefined> abort(optional any reason);
 
-  [Throws]
-  Promise<void> close();
+  [NewObject]
+  Promise<undefined> close();
 
-  [Throws]
-  void releaseLock();
+  undefined releaseLock();
 
-  [Throws]
-  Promise<void> write(optional any chunk);
+  [NewObject]
+  Promise<undefined> write(optional any chunk);
 };

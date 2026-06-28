@@ -5,6 +5,8 @@
 #include "ClientNavigateOpChild.h"
 
 #include "ClientState.h"
+#include "ClientSource.h"
+#include "ClientSourceChild.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/Unused.h"
 #include "nsIDocShell.h"
@@ -17,8 +19,7 @@
 #include "nsURLHelper.h"
 #include "ReferrerInfo.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -322,5 +323,4 @@ void ClientNavigateOpChild::Init(const ClientNavigateOpConstructorArgs& aArgs) {
       ->Track(mPromiseRequestHolder);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

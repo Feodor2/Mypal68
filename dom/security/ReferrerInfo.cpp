@@ -24,6 +24,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StyleSheet.h"
+#include "nsIWebProgressListener.h"
 
 static mozilla::LazyLogModule gReferrerInfoLog("ReferrerInfo");
 #define LOG(msg) MOZ_LOG(gReferrerInfoLog, mozilla::LogLevel::Debug, msg)
@@ -187,24 +188,21 @@ ReferrerPolicy ReferrerInfo::GetDefaultReferrerPolicy(nsIHttpChannel* aChannel,
                                                       nsIURI* aURI,
                                                       bool privateBrowsing) {
   bool thirdPartyTrackerIsolated = false;
-  nsCOMPtr<nsILoadInfo> loadInfo;
-  if (aChannel) {
-    loadInfo = aChannel->LoadInfo();
-  }
-  nsCOMPtr<nsICookieJarSettings> cs;
-  if (loadInfo) {
-    Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cs));
-  }
-  if (!cs) {
-    cs = net::CookieJarSettings::Create();
-  }
-  if (aChannel && aURI && cs->GetRejectThirdPartyTrackers()) {
-    uint32_t rejectedReason = 0;
-    thirdPartyTrackerIsolated =
-        !ContentBlocking::ShouldAllowAccessFor(aChannel, aURI, &rejectedReason);
-    // Here we intentionally do not notify about the rejection reason, if any
-    // in order to avoid this check to have any visible side-effects (e.g. a
-    // web console report.)
+  if (aChannel && aURI) {
+    nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+    nsCOMPtr<nsICookieJarSettings> cjs;
+    Unused << loadInfo->GetCookieJarSettings(getter_AddRefs(cjs));
+    if (!cjs) {
+      cjs = net::CookieJarSettings::Create();
+    }
+    if (cjs->GetRejectThirdPartyContexts()) {
+      uint32_t rejectedReason = 0;
+      thirdPartyTrackerIsolated = !ContentBlocking::ShouldAllowAccessFor(
+          aChannel, aURI, &rejectedReason);
+      // Here we intentionally do not notify about the rejection reason, if any
+      // in order to avoid this check to have any visible side-effects (e.g. a
+      // web console report.)
+    }
   }
 
   uint32_t defaultToUse;

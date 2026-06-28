@@ -17,7 +17,6 @@
 namespace mozilla {
 class IndiceWrapper;
 struct Sample;
-struct CencSampleEncryptionInfoEntry;
 
 class Index;
 
@@ -33,19 +32,6 @@ class SampleIterator {
 
  private:
   Sample* Get();
-
-  // Gets the sample description entry for the current moof, or nullptr if
-  // called without a valid current moof.
-  SampleDescriptionEntry* GetSampleDescriptionEntry();
-  CencSampleEncryptionInfoEntry* GetSampleEncryptionEntry();
-
-  // Determines the encryption scheme in use for the current sample. If the
-  // the scheme cannot be unambiguously determined, will return an error with
-  // the reason.
-  //
-  // Returns: Ok(CryptoScheme) if a crypto scheme, including None, can be
-  // determined, or Err(nsCString) if there is an issue determining the scheme.
-  Result<CryptoScheme, nsCString> GetEncryptionScheme();
 
   void Next();
   RefPtr<Index> mIndex;

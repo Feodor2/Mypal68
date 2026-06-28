@@ -23,6 +23,7 @@ static mozilla::LazyLogModule gMediaManagerLog("MediaManager");
 
 namespace mozilla {
 
+using dom::CallerType;
 using dom::ConstrainBooleanParameters;
 
 template <class ValueType>
@@ -332,7 +333,8 @@ bool MediaConstraintsHelper::SomeSettingsFit(
 
   MOZ_ASSERT(!aDevices.IsEmpty());
   for (auto& device : aDevices) {
-    if (device->GetBestFitnessDistance(sets, false) != UINT32_MAX) {
+    auto distance = device->GetBestFitnessDistance(sets, CallerType::NonSystem);
+    if (distance != UINT32_MAX) {
       return true;
     }
   }
@@ -358,7 +360,7 @@ uint32_t MediaConstraintsHelper::FitnessDistance(
 
 /* static */ const char* MediaConstraintsHelper::SelectSettings(
     const NormalizedConstraints& aConstraints,
-    nsTArray<RefPtr<MediaDevice>>& aDevices, bool aIsChrome) {
+    nsTArray<RefPtr<MediaDevice>>& aDevices, CallerType aCallerType) {
   auto& c = aConstraints;
   LogConstraints(c);
 
@@ -375,7 +377,7 @@ uint32_t MediaConstraintsHelper::FitnessDistance(
 
   for (uint32_t i = 0; i < aDevices.Length();) {
     uint32_t distance =
-        aDevices[i]->GetBestFitnessDistance(aggregateConstraints, aIsChrome);
+        aDevices[i]->GetBestFitnessDistance(aggregateConstraints, aCallerType);
     if (distance == UINT32_MAX) {
       unsatisfactory.AppendElement(std::move(aDevices[i]));
       aDevices.RemoveElementAt(i);
@@ -400,8 +402,8 @@ uint32_t MediaConstraintsHelper::FitnessDistance(
     aggregateConstraints.AppendElement(&advanced);
     nsTArray<RefPtr<MediaDevice>> rejects;
     for (uint32_t j = 0; j < aDevices.Length();) {
-      uint32_t distance =
-          aDevices[j]->GetBestFitnessDistance(aggregateConstraints, aIsChrome);
+      uint32_t distance = aDevices[j]->GetBestFitnessDistance(
+          aggregateConstraints, aCallerType);
       if (distance == UINT32_MAX) {
         rejects.AppendElement(std::move(aDevices[j]));
         aDevices.RemoveElementAt(j);

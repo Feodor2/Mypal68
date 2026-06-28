@@ -11,8 +11,7 @@
 #include "nsContentUtils.h"
 #include "nsIScriptError.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(MediaStreamTrackAudioSourceNode)
 
@@ -193,5 +192,4 @@ JSObject* MediaStreamTrackAudioSourceNode::WrapObject(
   return MediaStreamTrackAudioSourceNode_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -13,8 +13,7 @@
 #include "mozilla/Unused.h"
 #include "base/task.h"
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 static const char* GetBoolString(bool aBool) {
   return aBool ? "true" : "false";
@@ -39,22 +38,10 @@ GMPContentParent::~GMPContentParent() {
       GetBoolString(mVideoEncoders.IsEmpty()), mCloseBlockerCount);
 }
 
-class ReleaseGMPContentParent : public Runnable {
- public:
-  explicit ReleaseGMPContentParent(GMPContentParent* aToRelease)
-      : Runnable("gmp::ReleaseGMPContentParent"), mToRelease(aToRelease) {}
-
-  NS_IMETHOD Run() override { return NS_OK; }
-
- private:
-  RefPtr<GMPContentParent> mToRelease;
-};
-
 void GMPContentParent::ActorDestroy(ActorDestroyReason aWhy) {
   GMP_LOG_DEBUG("GMPContentParent::ActorDestroy(this=%p, aWhy=%d)", this,
                 static_cast<int>(aWhy));
   MOZ_ASSERT(mVideoDecoders.IsEmpty() && mVideoEncoders.IsEmpty());
-  NS_DispatchToCurrentThread(new ReleaseGMPContentParent(this));
 }
 
 void GMPContentParent::CheckThread() {
@@ -100,6 +87,7 @@ void GMPContentParent::RemoveCloseBlocker() {
 }
 
 void GMPContentParent::CloseIfUnused() {
+  MOZ_ASSERT(GMPEventTarget()->IsOnCurrentThread());
   GMP_LOG_DEBUG(
       "GMPContentParent::CloseIfUnused(this=%p) mVideoDecoders.IsEmpty=%s, "
       "mVideoEncoders.IsEmpty=%s, "
@@ -181,5 +169,4 @@ nsresult GMPContentParent::GetGMPVideoEncoder(GMPVideoEncoderParent** aGMPVE) {
   return NS_OK;
 }
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp

@@ -19,7 +19,10 @@ typedef (BufferSource or Blob or USVString or WriteParams) FileSystemWriteChunkT
 
 [Exposed=(Window,Worker), SecureContext, Pref="dom.fs.enabled"]
 interface FileSystemWritableFileStream : WritableStream {
-  Promise<void> write(FileSystemWriteChunkType data);
-  Promise<void> seek(unsigned long long position);
-  Promise<void> truncate(unsigned long long size);
+  [NewObject]
+  Promise<undefined> write(FileSystemWriteChunkType data);
+  [NewObject]
+  Promise<undefined> seek(unsigned long long position);
+  [NewObject]
+  Promise<undefined> truncate(unsigned long long size);
 };

@@ -16,13 +16,15 @@ using namespace mozilla::dom;
 
 FormData::FormData(nsISupports* aOwner, NotNull<const Encoding*> aEncoding,
                    Element* aSubmitter)
-    : HTMLFormSubmission(nullptr, u""_ns, aEncoding, aSubmitter),
-      mOwner(aOwner) {}
+    : HTMLFormSubmission(nullptr, u""_ns, aEncoding),
+      mOwner(aOwner),
+      mSubmitter(aSubmitter) {}
 
 FormData::FormData(const FormData& aFormData)
     : HTMLFormSubmission(aFormData.mActionURL, aFormData.mTarget,
-                         aFormData.mEncoding, aFormData.mSubmitter) {
+                         aFormData.mEncoding) {
   mOwner = aFormData.mOwner;
+  mSubmitter = aFormData.mSubmitter;
   mFormData = aFormData.mFormData;
 }
 
@@ -69,6 +71,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(FormData)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FormData)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mOwner)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mSubmitter)
 
   for (uint32_t i = 0, len = tmp->mFormData.Length(); i < len; ++i) {
     ImplCycleCollectionUnlink(tmp->mFormData[i].value);
@@ -79,6 +82,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(FormData)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOwner)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSubmitter)
 
   for (uint32_t i = 0, len = tmp->mFormData.Length(); i < len; ++i) {
     ImplCycleCollectionTraverse(cb, tmp->mFormData[i].value,
@@ -123,6 +127,12 @@ void FormData::Append(const nsAString& aName, Blob& aBlob,
 
 void FormData::Append(const nsAString& aName, Directory* aDirectory) {
   AddNameDirectoryPair(aName, aDirectory);
+}
+
+void FormData::Append(const FormData& aFormData) {
+  for (uint32_t i = 0; i < aFormData.mFormData.Length(); ++i) {
+    mFormData.AppendElement(aFormData.mFormData[i]);
+  }
 }
 
 void FormData::Delete(const nsAString& aName) {
@@ -291,9 +301,7 @@ already_AddRefed<FormData> FormData::Constructor(
 
     // Step 9. Return a shallow clone of entry list.
     // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-form-data-set
-    if (StaticPrefs::dom_formdata_event_enabled()) {
-      formData = formData->Clone();
-    }
+    formData = formData->Clone();
   }
 
   return formData.forget();

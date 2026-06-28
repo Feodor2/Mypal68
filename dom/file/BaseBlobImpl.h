@@ -8,8 +8,7 @@
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/ErrorResult.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class FileBlobImpl;
 
@@ -57,13 +56,13 @@ class BaseBlobImpl : public BlobImpl {
 
   void GetName(nsAString& aName) const override;
 
-  void GetDOMPath(nsAString& aName) const override;
+  void GetDOMPath(nsAString& aPath) const override;
 
-  void SetDOMPath(const nsAString& aName) override;
+  void SetDOMPath(const nsAString& aPath) override;
 
   int64_t GetLastModified(ErrorResult& aRv) override;
 
-  void GetMozFullPath(nsAString& aName, SystemCallerGuarantee /* unused */,
+  void GetMozFullPath(nsAString& aFileName, SystemCallerGuarantee /* unused */,
                       ErrorResult& aRv) override;
 
   void GetMozFullPathInternal(nsAString& aFileName, ErrorResult& aRv) override;
@@ -83,7 +82,7 @@ class BaseBlobImpl : public BlobImpl {
 
   already_AddRefed<BlobImpl> CreateSlice(uint64_t aStart, uint64_t aLength,
                                          const nsAString& aContentType,
-                                         ErrorResult& aRv) override {
+                                         ErrorResult& aRv) const override {
     return nullptr;
   }
 
@@ -91,11 +90,12 @@ class BaseBlobImpl : public BlobImpl {
     return nullptr;
   }
 
-  void CreateInputStream(nsIInputStream** aStream, ErrorResult& aRv) override {
+  void CreateInputStream(nsIInputStream** aStream,
+                         ErrorResult& aRv) const override {
     aRv.Throw(NS_ERROR_NOT_IMPLEMENTED);
   }
 
-  int64_t GetFileId() override;
+  int64_t GetFileId() const override;
 
   void SetLazyData(const nsAString& aName, const nsAString& aContentType,
                    uint64_t aLength, int64_t aLastModifiedDate) override {
@@ -138,7 +138,6 @@ class BaseBlobImpl : public BlobImpl {
   const uint64_t mSerialNumber;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_BaseBlobImpl_h

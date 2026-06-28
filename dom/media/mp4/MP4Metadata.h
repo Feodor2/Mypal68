@@ -106,7 +106,6 @@ class MP4Metadata : public DecoderDoctorLifeLogger<MP4Metadata> {
   Maybe<uint32_t> TrackTypeToGlobalTrackIndex(
       mozilla::TrackInfo::TrackType aType, size_t aTrackNumber) const;
 
-  CryptoFile mCrypto;
   RefPtr<ByteStream> mSource;
   StreamAdaptor mSourceAdaptor;
   mozilla::UniquePtr<Mp4parseParser, FreeMP4Parser> mParser;

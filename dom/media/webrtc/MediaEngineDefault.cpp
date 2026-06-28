@@ -223,13 +223,14 @@ static void ReleaseFrame(layers::PlanarYCbCrData& aData) {
 }
 
 void MediaEngineDefaultVideoSource::SetTrack(
-    const RefPtr<SourceMediaTrack>& aTrack, const PrincipalHandle& aPrincipal) {
+    const RefPtr<MediaTrack>& aTrack, const PrincipalHandle& aPrincipal) {
   AssertIsOnOwningThread();
 
   MOZ_ASSERT(mState == kAllocated);
   MOZ_ASSERT(!mTrack);
+  MOZ_ASSERT(aTrack->AsSourceTrack());
 
-  mTrack = aTrack;
+  mTrack = aTrack->AsSourceTrack();
   mPrincipalHandle = aPrincipal;
 }
 
@@ -239,7 +240,7 @@ nsresult MediaEngineDefaultVideoSource::Start() {
   MOZ_ASSERT(mState == kAllocated || mState == kStopped);
   MOZ_ASSERT(mTrack, "SetTrack() must happen before Start()");
 
-  mTimer = NS_NewTimer();
+  mTimer = NS_NewTimer(GetCurrentSerialEventTarget());
   if (!mTimer) {
     return NS_ERROR_FAILURE;
   }
@@ -361,8 +362,8 @@ class AudioSourcePullListener : public MediaTrackListener {
                           uint32_t aFrequency)
       : mTrack(std::move(aTrack)),
         mPrincipalHandle(aPrincipalHandle),
-        mSineGenerator(
-            MakeUnique<SineWaveGenerator>(mTrack->mSampleRate, aFrequency)) {
+        mSineGenerator(MakeUnique<SineWaveGenerator<int16_t>>(
+            mTrack->mSampleRate, aFrequency)) {
     MOZ_COUNT_CTOR(AudioSourcePullListener);
   }
 
@@ -373,7 +374,7 @@ class AudioSourcePullListener : public MediaTrackListener {
 
   const RefPtr<SourceMediaTrack> mTrack;
   const PrincipalHandle mPrincipalHandle;
-  const UniquePtr<SineWaveGenerator> mSineGenerator;
+  const UniquePtr<SineWaveGenerator<int16_t>> mSineGenerator;
 };
 
 /**
@@ -434,18 +435,23 @@ nsresult MediaEngineDefaultAudioSource::Deallocate() {
 }
 
 void MediaEngineDefaultAudioSource::SetTrack(
-    const RefPtr<SourceMediaTrack>& aTrack, const PrincipalHandle& aPrincipal) {
+    const RefPtr<MediaTrack>& aTrack, const PrincipalHandle& aPrincipal) {
   AssertIsOnOwningThread();
 
   MOZ_ASSERT(mState == kAllocated);
   MOZ_ASSERT(!mTrack);
+  MOZ_ASSERT(aTrack->AsSourceTrack());
 
-  mTrack = aTrack;
+  mTrack = aTrack->AsSourceTrack();
   mPrincipalHandle = aPrincipal;
 }
 
 nsresult MediaEngineDefaultAudioSource::Start() {
   AssertIsOnOwningThread();
+
+  if (mState == kStarted) {
+    return NS_OK;
+  }
 
   MOZ_ASSERT(mState == kAllocated || mState == kStopped);
   MOZ_ASSERT(mTrack, "SetTrack() must happen before Start()");
@@ -498,10 +504,12 @@ nsresult MediaEngineDefaultAudioSource::Reconfigure(
 void AudioSourcePullListener::NotifyPull(MediaTrackGraph* aGraph,
                                          TrackTime aEndOfAppendedData,
                                          TrackTime aDesiredTime) {
-  TRACE_AUDIO_CALLBACK_COMMENT("SourceMediaTrack %p", mTrack.get());
+  TRACE_COMMENT("SourceMediaTrack %p", mTrack.get());
   AudioSegment segment;
   TrackTicks delta = aDesiredTime - aEndOfAppendedData;
-  RefPtr<SharedBuffer> buffer = SharedBuffer::Create(delta * sizeof(int16_t));
+  CheckedInt<size_t> bufferSize(sizeof(int16_t));
+  bufferSize *= delta;
+  RefPtr<SharedBuffer> buffer = SharedBuffer::Create(bufferSize);
   int16_t* dest = static_cast<int16_t*>(buffer->Data());
   mSineGenerator->generate(dest, delta);
   AutoTArray<const int16_t*, 1> channels;

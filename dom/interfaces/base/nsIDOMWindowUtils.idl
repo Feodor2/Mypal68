@@ -948,8 +948,23 @@ interface nsIDOMWindowUtils : nsISupports {
 
   /**
    * Get the number of screen pixels per CSS pixel.
+   *
+   * This is the same as window.devicePixelRatio, except it bypasses
+   * the fingerprinting resistance efforts that window.devicePixelRatio
+   * does (which is fine as this is only exposed to browser internals).
    */
   readonly attribute float screenPixelsPerCSSPixel;
+
+  /**
+   * Get the number of screen pixels per CSS pixel,
+   * not taking into account any override of the device pixel scale
+   * that's imposed by Responsive Design Mode.
+   *
+   * This is needed to e.g. correctly translate "window.mozInnerScreenX/Y"
+   * into device pixels even when "window" is the window of a document
+   * inside an RDM pane.
+   */
+  readonly attribute float screenPixelsPerCSSPixelNoOverride;
 
   /**
    * Get the current zoom factor.
@@ -1562,11 +1577,8 @@ interface nsIDOMWindowUtils : nsISupports {
 
   /**
    * Get file ref count info for given database and file id.
-   *
    */
-  [implicit_jscontext]
   boolean getFileReferences(in AString aDatabaseName, in long long aId,
-                            [optional] in jsval aOptions,
                             [optional] out long aRefCnt,
                             [optional] out long aDBRefCnt);
 

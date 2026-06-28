@@ -5,8 +5,8 @@
 #include "mozilla/dom/HTMLButtonElement.h"
 
 #include "HTMLFormSubmissionConstants.h"
+#include "mozilla/dom/FormData.h"
 #include "mozilla/dom/HTMLButtonElementBinding.h"
-#include "mozilla/dom/HTMLFormSubmission.h"
 #include "nsAttrValueInlines.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
@@ -50,7 +50,7 @@ static const nsAttrValue::EnumTable* kButtonDefaultType = &kButtonTypeTable[2];
 HTMLButtonElement::HTMLButtonElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
     FromParser aFromParser)
-    : nsGenericHTMLFormElementWithState(
+    : nsGenericHTMLFormControlElementWithState(
           std::move(aNodeInfo), aFromParser,
           FormControlType(kButtonDefaultType->value)),
       mDisabledChanged(false),
@@ -65,29 +65,31 @@ HTMLButtonElement::~HTMLButtonElement() = default;
 // nsISupports
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(HTMLButtonElement,
-                                   nsGenericHTMLFormElementWithState, mValidity)
+                                   nsGenericHTMLFormControlElementWithState,
+                                   mValidity)
 
-NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(HTMLButtonElement,
-                                             nsGenericHTMLFormElementWithState,
-                                             nsIConstraintValidation)
+NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(
+    HTMLButtonElement, nsGenericHTMLFormControlElementWithState,
+    nsIConstraintValidation)
 
 void HTMLButtonElement::SetCustomValidity(const nsAString& aError) {
-  nsIConstraintValidation::SetCustomValidity(aError);
+  ConstraintValidation::SetCustomValidity(aError);
 
   UpdateState(true);
 }
 
 void HTMLButtonElement::UpdateBarredFromConstraintValidation() {
-  SetBarredFromConstraintValidation(mType == FormControlType::ButtonButton ||
-                                    mType == FormControlType::ButtonReset ||
-                                    IsDisabled());
+  SetBarredFromConstraintValidation(
+      mType == FormControlType::ButtonButton ||
+      mType == FormControlType::ButtonReset ||
+      HasFlag(ELEMENT_IS_DATALIST_OR_HAS_DATALIST_ANCESTOR) || IsDisabled());
 }
 
 void HTMLButtonElement::FieldSetDisabledChanged(bool aNotify) {
   // FieldSetDisabledChanged *has* to be called *before*
   // UpdateBarredFromConstraintValidation, because the latter depends on our
   // disabled state.
-  nsGenericHTMLFormElementWithState::FieldSetDisabledChanged(aNotify);
+  nsGenericHTMLFormControlElementWithState::FieldSetDisabledChanged(aNotify);
 
   UpdateBarredFromConstraintValidation();
   UpdateState(aNotify);
@@ -112,7 +114,7 @@ int32_t HTMLButtonElement::TabIndexDefault() { return 0; }
 
 bool HTMLButtonElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                                         int32_t* aTabIndex) {
-  if (nsGenericHTMLFormElementWithState::IsHTMLFocusable(
+  if (nsGenericHTMLFormControlElementWithState::IsHTMLFocusable(
           aWithMouse, aIsFocusable, aTabIndex)) {
     return true;
   }
@@ -258,8 +260,10 @@ nsresult HTMLButtonElement::PostHandleEvent(EventChainPostVisitor& aVisitor) {
 nsresult HTMLButtonElement::BindToTree(BindContext& aContext,
                                        nsINode& aParent) {
   nsresult rv =
-      nsGenericHTMLFormElementWithState::BindToTree(aContext, aParent);
+      nsGenericHTMLFormControlElementWithState::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
+
+  UpdateBarredFromConstraintValidation();
 
   // Update our state; we may now be the default submit element
   UpdateState(false);
@@ -268,7 +272,9 @@ nsresult HTMLButtonElement::BindToTree(BindContext& aContext,
 }
 
 void HTMLButtonElement::UnbindFromTree(bool aNullParent) {
-  nsGenericHTMLFormElementWithState::UnbindFromTree(aNullParent);
+  nsGenericHTMLFormControlElementWithState::UnbindFromTree(aNullParent);
+
+  UpdateBarredFromConstraintValidation();
 
   // Update our state; we may no longer be the default submit element
   UpdateState(false);
@@ -278,16 +284,11 @@ NS_IMETHODIMP
 HTMLButtonElement::Reset() { return NS_OK; }
 
 NS_IMETHODIMP
-HTMLButtonElement::SubmitNamesValues(HTMLFormSubmission* aFormSubmission) {
+HTMLButtonElement::SubmitNamesValues(FormData* aFormData) {
   //
   // We only submit if we were the button pressed
   //
-  if (aFormSubmission->GetSubmitterElement() != this) {
-    return NS_OK;
-  }
-
-  // Disabled elements don't submit
-  if (IsDisabled()) {
+  if (aFormData->GetSubmitterElement() != this) {
     return NS_OK;
   }
 
@@ -309,7 +310,7 @@ HTMLButtonElement::SubmitNamesValues(HTMLFormSubmission* aFormSubmission) {
   //
   // Submit
   //
-  return aFormSubmission->AddNameValuePair(name, value);
+  return aFormData->AddNameValuePair(name, value);
 }
 
 void HTMLButtonElement::DoneCreatingElement() {
@@ -327,8 +328,8 @@ nsresult HTMLButtonElement::BeforeSetAttr(int32_t aNameSpaceID, nsAtom* aName,
     mDisabledChanged = true;
   }
 
-  return nsGenericHTMLFormElementWithState::BeforeSetAttr(aNameSpaceID, aName,
-                                                          aValue, aNotify);
+  return nsGenericHTMLFormControlElementWithState::BeforeSetAttr(
+      aNameSpaceID, aName, aValue, aNotify);
 }
 
 nsresult HTMLButtonElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
@@ -356,14 +357,13 @@ nsresult HTMLButtonElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
     }
   }
 
-  return nsGenericHTMLFormElementWithState::AfterSetAttr(
+  return nsGenericHTMLFormControlElementWithState::AfterSetAttr(
       aNameSpaceID, aName, aValue, aOldValue, aSubjectPrincipal, aNotify);
 }
 
-NS_IMETHODIMP
-HTMLButtonElement::SaveState() {
+void HTMLButtonElement::SaveState() {
   if (!mDisabledChanged) {
-    return NS_OK;
+    return;
   }
 
   PresState* state = GetPrimaryPresState();
@@ -373,8 +373,6 @@ HTMLButtonElement::SaveState() {
     state->disabled() = HasAttr(kNameSpaceID_None, nsGkAtoms::disabled);
     state->disabledSet() = true;
   }
-
-  return NS_OK;
 }
 
 bool HTMLButtonElement::RestoreState(PresState* aState) {
@@ -386,7 +384,8 @@ bool HTMLButtonElement::RestoreState(PresState* aState) {
 }
 
 EventStates HTMLButtonElement::IntrinsicState() const {
-  EventStates state = nsGenericHTMLFormElementWithState::IntrinsicState();
+  EventStates state =
+      nsGenericHTMLFormControlElementWithState::IntrinsicState();
 
   if (IsCandidateForConstraintValidation()) {
     if (IsValid()) {

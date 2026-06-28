@@ -208,7 +208,7 @@ nsresult nsNodeInfoManager::GetNodeInfo(const nsAString& aName, nsAtom* aPrefix,
   int32_t nsid = kNameSpaceID_None;
 
   if (!aNamespaceURI.IsEmpty()) {
-    nsresult rv = nsContentUtils::NameSpaceManager()->RegisterNameSpace(
+    nsresult rv = nsNameSpaceManager::GetInstance()->RegisterNameSpace(
         aNamespaceURI, nsid);
     NS_ENSURE_SUCCESS(rv, rv);
   }
@@ -404,7 +404,7 @@ bool nsNodeInfoManager::InternalMathMLEnabled() {
 }
 
 void nsNodeInfoManager::AddSizeOfIncludingThis(nsWindowSizes& aSizes) const {
-  aSizes.mDOMOtherSize += aSizes.mState.mMallocSizeOf(this);
+  aSizes.mDOMSizes.mDOMOtherSize += aSizes.mState.mMallocSizeOf(this);
 
   // Measurement of the following members may be added later if DMD finds it
   // is worthwhile:

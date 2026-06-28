@@ -16,8 +16,7 @@
 #include "nsINetAddr.h"
 #include "nsStringStream.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_ISUPPORTS(UDPSocket::ListenerProxy, nsIUDPSocketListener,
                   nsIUDPSocketInternal)
@@ -217,7 +216,7 @@ void UDPSocket::JoinMulticastGroup(const nsAString& aMulticastGroupAddress,
   if (mSocket) {
     MOZ_ASSERT(!mSocketChild);
 
-    aRv = mSocket->JoinMulticast(address, EmptyCString());
+    aRv = mSocket->JoinMulticast(address, ""_ns);
     NS_WARNING_ASSERTION(!aRv.Failed(), "JoinMulticast failed");
 
     return;
@@ -225,7 +224,7 @@ void UDPSocket::JoinMulticastGroup(const nsAString& aMulticastGroupAddress,
 
   MOZ_ASSERT(mSocketChild);
 
-  mSocketChild->JoinMulticast(address, EmptyCString());
+  mSocketChild->JoinMulticast(address, ""_ns);
 }
 
 void UDPSocket::LeaveMulticastGroup(const nsAString& aMulticastGroupAddress,
@@ -248,14 +247,14 @@ void UDPSocket::LeaveMulticastGroup(const nsAString& aMulticastGroupAddress,
   if (mSocket) {
     MOZ_ASSERT(!mSocketChild);
 
-    aRv = mSocket->LeaveMulticast(address, EmptyCString());
+    aRv = mSocket->LeaveMulticast(address, ""_ns);
     NS_WARNING_ASSERTION(!aRv.Failed(), "mSocket->LeaveMulticast failed");
     return;
   }
 
   MOZ_ASSERT(mSocketChild);
 
-  mSocketChild->LeaveMulticast(address, EmptyCString());
+  mSocketChild->LeaveMulticast(address, ""_ns);
 }
 
 nsresult UDPSocket::DoPendingMcastCommand() {
@@ -404,8 +403,7 @@ nsresult UDPSocket::InitLocal(const nsAString& aLocalAddress,
     UDPSOCKET_LOG(("%s: %s:%u", __FUNCTION__,
                    NS_ConvertUTF16toUTF8(aLocalAddress).get(), aLocalPort));
 
-    mozilla::net::NetAddr addr;
-    PRNetAddrToNetAddr(&prAddr, &addr);
+    mozilla::net::NetAddr addr(&prAddr);
     rv = sock->InitWithAddress(&addr, principal, mAddressReuse,
                                /* optionalArgc = */ 1);
   }
@@ -716,5 +714,4 @@ UDPSocket::CallListenerClosed() {
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

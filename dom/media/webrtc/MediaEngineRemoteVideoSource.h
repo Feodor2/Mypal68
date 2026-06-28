@@ -111,7 +111,7 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
                     const ipc::PrincipalInfo& aPrincipalInfo,
                     const char** aOutBadConstraint) override;
   nsresult Deallocate() override;
-  void SetTrack(const RefPtr<SourceMediaTrack>& aTrack,
+  void SetTrack(const RefPtr<MediaTrack>& aTrack,
                 const PrincipalHandle& aPrincipal) override;
   nsresult Start() override;
   nsresult Reconfigure(const dom::MediaTrackConstraints& aConstraints,
@@ -126,8 +126,6 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
   void GetSettings(dom::MediaTrackSettings& aOutSettings) const override;
 
   void Refresh(int aIndex);
-
-  void Shutdown() override;
 
   nsString GetName() const override;
   void SetName(nsString aName);
@@ -244,11 +242,6 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
   nsString mDeviceName;
   nsCString mUniqueId;
   Maybe<nsString> mFacingMode;
-
-  // Whether init has successfully completed.
-  // Set in Init(), reset in Shutdown().
-  // Owning thread only.
-  bool mInitDone = false;
 };
 
 }  // namespace mozilla

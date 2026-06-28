@@ -14,8 +14,7 @@ class PBackgroundParent;
 class PrincipalInfo;
 }  // namespace ipc
 
-namespace dom {
-namespace cache {
+namespace dom::cache {
 
 class PCacheChild;
 class PCacheParent;
@@ -45,8 +44,7 @@ void DeallocPCacheStorageChild(PCacheStorageChild* aActor);
 
 void DeallocPCacheStorageParent(PCacheStorageParent* aActor);
 
-}  // namespace cache
-}  // namespace dom
+}  // namespace dom::cache
 }  // namespace mozilla
 
 #endif  // mozilla_dom_cache_ActorUtils_h

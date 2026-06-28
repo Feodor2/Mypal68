@@ -96,7 +96,7 @@
 #include "mozilla/SMILAnimationController.h"
 #include "mozilla/SMILTimeContainer.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "mozilla/ServoCSSPropList.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/ServoStyleSet.h"
@@ -743,6 +743,16 @@ OnloadBlocker::GetLoadFlags(nsLoadFlags* aLoadFlags) {
 }
 
 NS_IMETHODIMP
+OnloadBlocker::GetTRRMode(nsIRequest::TRRMode* aTRRMode) {
+  return GetTRRModeImpl(aTRRMode);
+}
+
+NS_IMETHODIMP
+OnloadBlocker::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
+  return SetTRRModeImpl(aTRRMode);
+}
+
+NS_IMETHODIMP
 OnloadBlocker::SetLoadFlags(nsLoadFlags aLoadFlags) { return NS_OK; }
 
 // ==================================================================
@@ -1282,6 +1292,7 @@ Document::Document(const char* aContentType)
       mIsInitialDocumentInWindow(false),
       mIgnoreDocGroupMismatches(false),
       mLoadedAsData(false),
+      mAddedToMemoryReportingAsDataDocument(false),
       mMayStartLayout(true),
       mHaveFiredTitleChange(false),
       mIsShowing(false),
@@ -1551,6 +1562,8 @@ Document::~Document() {
   }
 
   UnlinkOriginalDocumentIfStatic();
+
+  UnregisterFromMemoryReportingForDataDocument();
 }
 
 NS_INTERFACE_TABLE_HEAD(Document)
@@ -1663,6 +1676,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(Document)
   }
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOnloadBlocker)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLastRememberedSizeObserver)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDOMImplementation)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mImageMaps)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mOrientationPendingPromise)
@@ -1727,9 +1741,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(Document)
     }
   }
 
-  if (tmp->mResizeObserverController) {
-    tmp->mResizeObserverController->Traverse(cb);
-  }
   for (size_t i = 0; i < tmp->mMetaViewports.Length(); i++) {
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMetaViewports[i].mElement);
   }
@@ -1778,6 +1789,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Document)
 
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSecurityInfo)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDisplayDocument)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mLastRememberedSizeObserver)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFontFaceSet)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mReadyForIdle)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocumentL10n)
@@ -1870,9 +1882,8 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Document)
 
   tmp->mInUnlinkOrDeletion = false;
 
-  if (tmp->mResizeObserverController) {
-    tmp->mResizeObserverController->Unlink();
-  }
+  tmp->UnregisterFromMemoryReportingForDataDocument();
+
   tmp->mMetaViewports.Clear();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mL10nProtoElements)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -2189,7 +2200,7 @@ already_AddRefed<nsIPrincipal> Document::MaybeDowngradePrincipal(
         parentDoc = parentDocShell->GetDocument();
         if (!parentDoc || !parentDoc->NodePrincipal()->IsSystemPrincipal()) {
           nsCOMPtr<nsIPrincipal> nullPrincipal =
-              do_CreateInstance("@mozilla.org/nullprincipal;1");
+              NullPrincipal::CreateWithoutOriginAttributes();
           return nullPrincipal.forget();
         }
       }
@@ -2566,6 +2577,7 @@ nsresult Document::StartDocumentLoad(const char* aCommand, nsIChannel* aChannel,
 
   if (nsCRT::strcmp(kLoadAsData, aCommand) == 0) {
     mLoadedAsData = true;
+    SetLoadedAsData(true, /* aConsiderForMemoryReporting */ true);
     // We need to disable script & style loading in this case.
     // We leave them disabled even in EndLoad(), and let anyone
     // who puts the document on display to worry about enabling.
@@ -2689,6 +2701,20 @@ nsresult Document::StartDocumentLoad(const char* aCommand, nsIChannel* aChannel,
   NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
+}
+
+void Document::SetLoadedAsData(bool aLoadedAsData,
+                               bool aConsiderForMemoryReporting) {
+  mLoadedAsData = aLoadedAsData;
+  if (aConsiderForMemoryReporting) {
+    nsIGlobalObject* global = GetScopeObject();
+    if (global) {
+      if (nsPIDOMWindowInner* window = global->AsInnerWindow()) {
+        nsGlobalWindowInner::Cast(window)
+            ->RegisterDataDocumentForMemoryReporting(this);
+      }
+    }
+  }
 }
 
 nsIContentSecurityPolicy* Document::GetCsp() const { return mCSP; }
@@ -3360,6 +3386,7 @@ void Document::LocalizationLinkAdded(Element* aLinkElement) {
       return;
     }
   }
+
   mDocumentL10n->AddResourceId(NS_ConvertUTF16toUTF8(href));
 
   if (mReadyState >= READYSTATE_INTERACTIVE) {
@@ -5303,7 +5330,7 @@ void Document::GetCookie(nsAString& aCookie, ErrorResult& rv) {
       do_GetService(NS_COOKIESERVICE_CONTRACTID);
   if (service) {
     nsAutoCString cookie;
-    service->GetCookieStringForPrincipal(EffectiveStoragePrincipal(), cookie);
+    service->GetCookieStringFromDocument(this, cookie);
     // CopyUTF8toUTF16 doesn't handle error
     // because it assumes that the input is valid.
     UTF_8_ENCODING->DecodeWithoutBOMHandling(cookie, aCookie);
@@ -5341,26 +5368,6 @@ void Document::SetCookie(const nsAString& aCookie, ErrorResult& aRv) {
     return;
   }
 
-  // The code for getting the URI matches Navigator::CookieEnabled
-  nsCOMPtr<nsIURI> principalURI;
-  auto* basePrin = BasePrincipal::Cast(NodePrincipal());
-  basePrin->GetURI(getter_AddRefs(principalURI));
-
-  if (!principalURI) {
-    // Document's principal is not a content or null (may be system), so
-    // can't set cookies
-
-    return;
-  }
-
-  nsCOMPtr<nsIChannel> channel(mChannel);
-  if (!channel) {
-    channel = CreateDummyChannelForCookies(principalURI);
-    if (!channel) {
-      return;
-    }
-  }
-
   // not having a cookie service isn't an error
   nsCOMPtr<nsICookieService> service =
       do_GetService(NS_COOKIESERVICE_CONTRACTID);
@@ -5369,7 +5376,7 @@ void Document::SetCookie(const nsAString& aCookie, ErrorResult& aRv) {
   }
 
   NS_ConvertUTF16toUTF8 cookie(aCookie);
-  nsresult rv = service->SetCookieString(principalURI, cookie, channel);
+  nsresult rv = service->SetCookieStringFromDocument(this, cookie);
 
   // No warning messages here.
   if (NS_FAILED(rv)) {
@@ -5382,33 +5389,6 @@ void Document::SetCookie(const nsAString& aCookie, ErrorResult& aRv) {
     observerService->NotifyObservers(ToSupports(this), "document-set-cookie",
                                      nsString(aCookie).get());
   }
-}
-
-already_AddRefed<nsIChannel> Document::CreateDummyChannelForCookies(
-    nsIURI* aCodebaseURI) {
-  // The cookie service reads the privacy status of the channel we pass to it in
-  // order to determine which cookie database to query.  In some cases we don't
-  // have a proper channel to hand it to the cookie service though.  This
-  // function creates a dummy channel that is not used to load anything, for the
-  // sole purpose of handing it to the cookie service.  DO NOT USE THIS CHANNEL
-  // FOR ANY OTHER PURPOSE.
-  MOZ_ASSERT(!mChannel);
-
-  // The following channel is never openend, so it does not matter what
-  // securityFlags we pass; let's follow the principle of least privilege.
-  nsCOMPtr<nsIChannel> channel;
-  NS_NewChannel(getter_AddRefs(channel), aCodebaseURI, this,
-                nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED,
-                nsIContentPolicy::TYPE_INVALID);
-  nsCOMPtr<nsIPrivateBrowsingChannel> pbChannel = do_QueryInterface(channel);
-  nsCOMPtr<nsIDocShell> docShell(mDocumentContainer);
-  nsCOMPtr<nsILoadContext> loadContext = do_QueryInterface(docShell);
-  if (!pbChannel || !loadContext) {
-    return nullptr;
-  }
-  pbChannel->SetPrivate(loadContext->UsePrivateBrowsing());
-
-  return channel.forget();
 }
 
 ReferrerPolicy Document::GetReferrerPolicy() const {
@@ -9742,6 +9722,37 @@ void Document::RetrieveRelevantHeaders(nsIChannel* aChannel) {
   }
 }
 
+void Document::ProcessMETATag(HTMLMetaElement* aMetaElement) {
+  // set any HTTP-EQUIV data into document's header data as well as url
+  nsAutoString header;
+  aMetaElement->GetAttr(kNameSpaceID_None, nsGkAtoms::httpEquiv, header);
+  if (!header.IsEmpty()) {
+    // Ignore META REFRESH when document is sandboxed from automatic features.
+    nsContentUtils::ASCIIToLower(header);
+    if (nsGkAtoms::refresh->Equals(header) &&
+        (GetSandboxFlags() & SANDBOXED_AUTOMATIC_FEATURES)) {
+      return;
+    }
+
+    nsAutoString result;
+    aMetaElement->GetAttr(kNameSpaceID_None, nsGkAtoms::content, result);
+    if (!result.IsEmpty()) {
+      RefPtr<nsAtom> fieldAtom(NS_Atomize(header));
+      SetHeaderData(fieldAtom, result);
+    }
+  }
+
+  if (aMetaElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::name,
+                                nsGkAtoms::handheldFriendly, eIgnoreCase)) {
+    nsAutoString result;
+    aMetaElement->GetAttr(kNameSpaceID_None, nsGkAtoms::content, result);
+    if (!result.IsEmpty()) {
+      nsContentUtils::ASCIIToLower(result);
+      SetHeaderData(nsGkAtoms::handheldFriendly, result);
+    }
+  }
+}
+
 already_AddRefed<Element> Document::CreateElem(const nsAString& aName,
                                                nsAtom* aPrefix,
                                                int32_t aNamespaceID,
@@ -10594,11 +10605,12 @@ nsresult Document::CloneDocHelper(Document* clone) const {
     // document, even if they are only paused.
     MOZ_ASSERT(!clone->GetNavigationTiming(),
                "Navigation time was already set?");
-    MOZ_ASSERT(mTiming,
-               "Timing should have been setup before making a static clone");
-    RefPtr<nsDOMNavigationTiming> timing =
-        mTiming->CloneNavigationTime(nsDocShell::Cast(clone->GetDocShell()));
-    clone->SetNavigationTiming(timing);
+    if (mTiming) {
+      RefPtr<nsDOMNavigationTiming> timing =
+          mTiming->CloneNavigationTime(nsDocShell::Cast(clone->GetDocShell()));
+      clone->SetNavigationTiming(timing);
+    }
+    clone->SetCsp(mCSP);
   }
 
   // Now ensure that our clone has the same URI, base URI, and principal as us.
@@ -10632,16 +10644,16 @@ nsresult Document::CloneDocHelper(Document* clone) const {
     clone->SetScopeObject(GetScopeObject());
   }
   // Make the clone a data document
-  clone->SetLoadedAsData(true);
+  clone->SetLoadedAsData(
+      true,
+      /* aConsiderForMemoryReporting */ !mCreatingStaticClone);
 
   // Misc state
 
   // State from Document
   clone->mCharacterSet = mCharacterSet;
   clone->mCharacterSetSource = mCharacterSetSource;
-  if (clone->IsHTMLOrXHTML()) {
-    clone->AsHTMLDocument()->SetCompatibilityMode(mCompatMode);
-  }
+  clone->SetCompatibilityMode(mCompatMode);
   clone->mBidiOptions = mBidiOptions;
   clone->mContentLanguage = mContentLanguage;
   clone->SetContentTypeInternal(GetContentTypeInternal());
@@ -12110,7 +12122,7 @@ void Document::MaybeResolveReadyForIdle() {
   IgnoredErrorResult rv;
   Promise* readyPromise = GetDocumentReadyForIdle(rv);
   if (readyPromise) {
-    readyPromise->MaybeResolve(this);
+    readyPromise->MaybeResolveWithUndefined();
   }
 }
 
@@ -13699,7 +13711,8 @@ void Document::MaybeActiveMediaComponents() {
 }
 
 void Document::DocAddSizeOfExcludingThis(nsWindowSizes& aWindowSizes) const {
-  nsINode::AddSizeOfExcludingThis(aWindowSizes, &aWindowSizes.mDOMOtherSize);
+  nsINode::AddSizeOfExcludingThis(aWindowSizes,
+                                  &aWindowSizes.mDOMSizes.mDOMOtherSize);
 
   for (nsIContent* kid = GetFirstChild(); kid; kid = kid->GetNextSibling()) {
     AddSizeOfNodeTree(*kid, aWindowSizes);
@@ -13729,11 +13742,12 @@ void Document::DocAddSizeOfExcludingThis(nsWindowSizes& aWindowSizes) const {
     mNodeInfoManager->AddSizeOfIncludingThis(aWindowSizes);
   }
 
-  aWindowSizes.mDOMMediaQueryLists += mDOMMediaQueryLists.sizeOfExcludingThis(
-      aWindowSizes.mState.mMallocSizeOf);
+  aWindowSizes.mDOMSizes.mDOMMediaQueryLists +=
+      mDOMMediaQueryLists.sizeOfExcludingThis(
+          aWindowSizes.mState.mMallocSizeOf);
 
   for (const MediaQueryList* mql : mDOMMediaQueryLists) {
-    aWindowSizes.mDOMMediaQueryLists +=
+    aWindowSizes.mDOMSizes.mDOMMediaQueryLists +=
         mql->SizeOfExcludingThis(aWindowSizes.mState.mMallocSizeOf);
   }
 
@@ -13757,13 +13771,14 @@ void Document::DocAddSizeOfExcludingThis(nsWindowSizes& aWindowSizes) const {
     mResizeObserverController->AddSizeOfIncludingThis(aWindowSizes);
   }
 
-  aWindowSizes.mDOMOtherSize += mAttrStyleSheet
-                                    ? mAttrStyleSheet->DOMSizeOfIncludingThis(
-                                          aWindowSizes.mState.mMallocSizeOf)
-                                    : 0;
+  aWindowSizes.mDOMSizes.mDOMOtherSize +=
+      mAttrStyleSheet ? mAttrStyleSheet->DOMSizeOfIncludingThis(
+                            aWindowSizes.mState.mMallocSizeOf)
+                      : 0;
 
-  aWindowSizes.mDOMOtherSize += mStyledLinks.ShallowSizeOfExcludingThis(
-      aWindowSizes.mState.mMallocSizeOf);
+  aWindowSizes.mDOMSizes.mDOMOtherSize +=
+      mStyledLinks.ShallowSizeOfExcludingThis(
+          aWindowSizes.mState.mMallocSizeOf);
 
   // Measurement of the following members may be added later if DMD finds it
   // is worthwhile:
@@ -13772,7 +13787,8 @@ void Document::DocAddSizeOfExcludingThis(nsWindowSizes& aWindowSizes) const {
 }
 
 void Document::DocAddSizeOfIncludingThis(nsWindowSizes& aWindowSizes) const {
-  aWindowSizes.mDOMOtherSize += aWindowSizes.mState.mMallocSizeOf(this);
+  aWindowSizes.mDOMSizes.mDOMOtherSize +=
+      aWindowSizes.mState.mMallocSizeOf(this);
   DocAddSizeOfExcludingThis(aWindowSizes);
 }
 
@@ -13794,19 +13810,19 @@ void Document::AddSizeOfNodeTree(nsINode& aNode, nsWindowSizes& aWindowSizes) {
   // nsINode::AddSizeOfIncludingThis() to a value in nsWindowSizes.
   switch (aNode.NodeType()) {
     case nsINode::ELEMENT_NODE:
-      aWindowSizes.mDOMElementNodesSize += nodeSize;
+      aWindowSizes.mDOMSizes.mDOMElementNodesSize += nodeSize;
       break;
     case nsINode::TEXT_NODE:
-      aWindowSizes.mDOMTextNodesSize += nodeSize;
+      aWindowSizes.mDOMSizes.mDOMTextNodesSize += nodeSize;
       break;
     case nsINode::CDATA_SECTION_NODE:
-      aWindowSizes.mDOMCDATANodesSize += nodeSize;
+      aWindowSizes.mDOMSizes.mDOMCDATANodesSize += nodeSize;
       break;
     case nsINode::COMMENT_NODE:
-      aWindowSizes.mDOMCommentNodesSize += nodeSize;
+      aWindowSizes.mDOMSizes.mDOMCommentNodesSize += nodeSize;
       break;
     default:
-      aWindowSizes.mDOMOtherSize += nodeSize;
+      aWindowSizes.mDOMSizes.mDOMOtherSize += nodeSize;
       break;
   }
 
@@ -14026,6 +14042,27 @@ void Document::NotifyIntersectionObservers() {
       // alive.
       MOZ_KnownLive(observer)->Notify();
     }
+  }
+}
+
+ResizeObserver& Document::EnsureLastRememberedSizeObserver() {
+  if (!mLastRememberedSizeObserver) {
+    mLastRememberedSizeObserver =
+        ResizeObserver::CreateLastRememberedSizeObserver(*this);
+  }
+  return *mLastRememberedSizeObserver;
+}
+
+void Document::ObserveForLastRememberedSize(Element& aElement) {
+  // Options are initialized with ResizeObserverBoxOptions::Content_box by
+  // default, which is what we want.
+  static ResizeObserverOptions options;
+  EnsureLastRememberedSizeObserver().Observe(aElement, options);
+}
+
+void Document::UnobserveForLastRememberedSize(Element& aElement) {
+  if (mLastRememberedSizeObserver) {
+    mLastRememberedSizeObserver->Unobserve(aElement);
   }
 }
 
@@ -14329,7 +14366,7 @@ DocumentAutoplayPolicy Document::AutoplayPolicy() const {
 }
 
 void Document::MaybeAllowStorageForOpenerAfterUserInteraction() {
-  if (!CookieJarSettings()->GetRejectThirdPartyTrackers()) {
+  if (!CookieJarSettings()->GetRejectThirdPartyContexts()) {
     return;
   }
 
@@ -14368,9 +14405,17 @@ void Document::MaybeAllowStorageForOpenerAfterUserInteraction() {
     return;
   }
 
-  // We care about first-party tracking resources only.
-  if (!nsContentUtils::IsFirstPartyTrackingResourceWindow(inner)) {
-    return;
+  uint32_t cookieBehavior = CookieJarSettings()->GetCookieBehavior();
+  if (cookieBehavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
+      cookieBehavior ==
+          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) {
+    // We care about first-party tracking resources only.
+    if (!nsContentUtils::IsFirstPartyTrackingResourceWindow(inner)) {
+      return;
+    }
+  } else {
+    MOZ_ASSERT(net::CookieJarSettings::IsRejectThirdPartyWithExceptions(
+        cookieBehavior));
   }
 
   // If the opener is not a 3rd party and if this window is not a 3rd party, we
@@ -14685,15 +14730,23 @@ already_AddRefed<Promise> Document::RequestStorageAccess(ErrorResult& aRv) {
     return nullptr;
   }
 
-  // Step 1. If the document already has been granted access, resolve.
   nsCOMPtr<nsPIDOMWindowInner> inner = GetInnerWindow();
-  RefPtr<nsGlobalWindowOuter> outer;
-  if (inner) {
-    outer = nsGlobalWindowOuter::Cast(inner->GetOuterWindow());
-    if (outer->HasStorageAccess()) {
-      promise->MaybeResolveWithUndefined();
-      return promise.forget();
-    }
+  if (!inner) {
+    promise->MaybeRejectWithUndefined();
+    return promise.forget();
+  }
+
+  // Step 1. If the document already has been granted access, resolve.
+  RefPtr<nsGlobalWindowOuter> outer =
+      nsGlobalWindowOuter::Cast(inner->GetOuterWindow());
+  if (!outer) {
+    promise->MaybeRejectWithUndefined();
+    return promise.forget();
+  }
+
+  if (outer->HasStorageAccess()) {
+    promise->MaybeResolveWithUndefined();
+    return promise.forget();
   }
 
   // Step 2. If the document has a null origin, reject.
@@ -14703,7 +14756,7 @@ already_AddRefed<Promise> Document::RequestStorageAccess(ErrorResult& aRv) {
   }
 
   // Only enforce third-party checks when there is a reason to enforce them.
-  if (!CookieJarSettings()->GetRejectThirdPartyTrackers()) {
+  if (!CookieJarSettings()->GetRejectThirdPartyContexts()) {
     // Step 3. If the document's frame is the main frame, resolve.
     if (IsTopLevelContentDocument()) {
       promise->MaybeResolveWithUndefined();
@@ -14748,7 +14801,7 @@ already_AddRefed<Promise> Document::RequestStorageAccess(ErrorResult& aRv) {
   //         user settings, anti-clickjacking heuristics, or prompting the
   //         user for explicit permission. Reject if some rule is not fulfilled.
 
-  if (CookieJarSettings()->GetRejectThirdPartyTrackers() && inner) {
+  if (CookieJarSettings()->GetRejectThirdPartyContexts()) {
     // Only do something special for third-party tracking content.
     if (StorageDisabledByAntiTracking(this, nullptr)) {
       // Note: If this has returned true, the top-level document is guaranteed
@@ -15245,4 +15298,17 @@ void Document::GetConnectedShadowRoots(
   AppendToArray(aOut, mComposedShadowRoots);
 }
 
+void Document::UnregisterFromMemoryReportingForDataDocument() {
+  if (!mAddedToMemoryReportingAsDataDocument) {
+    return;
+  }
+  mAddedToMemoryReportingAsDataDocument = false;
+  nsIGlobalObject* global = GetScopeObject();
+  if (global) {
+    if (nsPIDOMWindowInner* win = global->AsInnerWindow()) {
+      nsGlobalWindowInner::Cast(win)->UnregisterDataDocumentForMemoryReporting(
+          this);
+    }
+  }
+}
 }  // namespace mozilla::dom

@@ -109,6 +109,17 @@ nsresult nsXMLContentSink::Init(Document* aDoc, nsIURI* aURI,
   return NS_OK;
 }
 
+inline void ImplCycleCollectionTraverse(
+    nsCycleCollectionTraversalCallback& aCallback,
+    nsXMLContentSink::StackNode& aField, const char* aName,
+    uint32_t aFlags = 0) {
+  ImplCycleCollectionTraverse(aCallback, aField.mContent, aName, aFlags);
+}
+
+inline void ImplCycleCollectionUnlink(nsXMLContentSink::StackNode& aField) {
+  ImplCycleCollectionUnlink(aField.mContent);
+}
+
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsXMLContentSink)
   NS_INTERFACE_MAP_ENTRY(nsIContentSink)
   NS_INTERFACE_MAP_ENTRY(nsIXMLContentSink)
@@ -119,18 +130,9 @@ NS_INTERFACE_MAP_END_INHERITING(nsContentSink)
 NS_IMPL_ADDREF_INHERITED(nsXMLContentSink, nsContentSink)
 NS_IMPL_RELEASE_INHERITED(nsXMLContentSink, nsContentSink)
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(nsXMLContentSink)
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(nsXMLContentSink,
-                                                  nsContentSink)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCurrentHead)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocElement)
-  for (uint32_t i = 0, count = tmp->mContentStack.Length(); i < count; i++) {
-    const StackNode& node = tmp->mContentStack.ElementAt(i);
-    cb.NoteXPCOMChild(node.mContent);
-  }
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentChildren)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+NS_IMPL_CYCLE_COLLECTION_INHERITED(nsXMLContentSink, nsContentSink,
+                                   mCurrentHead, mDocElement, mLastTextNode,
+                                   mContentStack, mDocumentChildren)
 
 // nsIContentSink
 NS_IMETHODIMP
@@ -307,22 +309,23 @@ nsXMLContentSink::DidBuildModel(bool aTerminated) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXMLContentSink::OnDocumentCreated(Document* aResultDocument) {
-  NS_ENSURE_ARG(aResultDocument);
-
+nsresult nsXMLContentSink::OnDocumentCreated(Document* aSourceDocument,
+                                             Document* aResultDocument) {
   aResultDocument->SetDocWriteDisabled(true);
 
   nsCOMPtr<nsIContentViewer> contentViewer;
   mDocShell->GetContentViewer(getter_AddRefs(contentViewer));
-  if (contentViewer) {
+  // Make sure that we haven't loaded a new document into the contentviewer
+  // after starting the XSLT transform.
+  if (contentViewer && contentViewer->GetDocument() == aSourceDocument) {
     return contentViewer->SetDocumentInternal(aResultDocument, true);
   }
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsXMLContentSink::OnTransformDone(nsresult aResult, Document* aResultDocument) {
+nsresult nsXMLContentSink::OnTransformDone(Document* aSourceDocument,
+                                           nsresult aResult,
+                                           Document* aResultDocument) {
   MOZ_ASSERT(aResultDocument,
              "Don't notify about transform end without a document.");
 
@@ -331,42 +334,49 @@ nsXMLContentSink::OnTransformDone(nsresult aResult, Document* aResultDocument) {
   nsCOMPtr<nsIContentViewer> contentViewer;
   mDocShell->GetContentViewer(getter_AddRefs(contentViewer));
 
-  if (NS_FAILED(aResult) && contentViewer) {
-    // Transform failed.
-    aResultDocument->SetMayStartLayout(false);
-    // We have an error document.
-    contentViewer->SetDocument(aResultDocument);
-  }
-
   RefPtr<Document> originalDocument = mDocument;
   bool blockingOnload = mIsBlockingOnload;
-  if (!mRunsToCompletion) {
-    // This BlockOnload call corresponds to the UnblockOnload call in
-    // nsContentSink::DropParserAndPerfHint.
-    aResultDocument->BlockOnload();
-    mIsBlockingOnload = true;
+
+  // Make sure that we haven't loaded a new document into the contentviewer
+  // after starting the XSLT transform.
+  if (contentViewer && (contentViewer->GetDocument() == aSourceDocument ||
+                        contentViewer->GetDocument() == aResultDocument)) {
+    if (NS_FAILED(aResult)) {
+      // Transform failed.
+      aResultDocument->SetMayStartLayout(false);
+      // We have an error document.
+      contentViewer->SetDocument(aResultDocument);
+    }
+
+    if (!mRunsToCompletion) {
+      // This BlockOnload call corresponds to the UnblockOnload call in
+      // nsContentSink::DropParserAndPerfHint.
+      aResultDocument->BlockOnload();
+      mIsBlockingOnload = true;
+    }
+    // Transform succeeded, or it failed and we have an error document to
+    // display.
+    mDocument = aResultDocument;
+    aResultDocument->SetDocWriteDisabled(false);
+
+    // Notify document observers that all the content has been stuck
+    // into the document.
+    // XXX do we need to notify for things like PIs?  Or just the
+    // documentElement?
+    nsIContent* rootElement = mDocument->GetRootElement();
+    if (rootElement) {
+      NS_ASSERTION(mDocument->ComputeIndexOf(rootElement).isSome(),
+                   "rootElement not in doc?");
+      mDocument->BeginUpdate();
+      MutationObservers::NotifyContentInserted(mDocument, rootElement);
+      mDocument->EndUpdate();
+    }
+
+    // Start the layout process
+    StartLayout(false);
+
+    ScrollToRef();
   }
-  // Transform succeeded, or it failed and we have an error document to display.
-  mDocument = aResultDocument;
-  aResultDocument->SetDocWriteDisabled(false);
-
-  // Notify document observers that all the content has been stuck
-  // into the document.
-  // XXX do we need to notify for things like PIs?  Or just the
-  // documentElement?
-  nsIContent* rootElement = mDocument->GetRootElement();
-  if (rootElement) {
-    NS_ASSERTION(mDocument->ComputeIndexOf(rootElement).isSome(),
-                 "rootElement not in doc?");
-    mDocument->BeginUpdate();
-    MutationObservers::NotifyContentInserted(mDocument, rootElement);
-    mDocument->EndUpdate();
-  }
-
-  // Start the layout process
-  StartLayout(false);
-
-  ScrollToRef();
 
   originalDocument->EndLoad();
   if (blockingOnload) {
@@ -473,7 +483,7 @@ nsresult nsXMLContentSink::CreateElement(
     if (!mPrettyPrintHasFactoredElements && !mPrettyPrintHasSpecialRoot &&
         mPrettyPrintXML) {
       mPrettyPrintHasFactoredElements =
-          nsContentUtils::NameSpaceManager()->HasElementCreator(
+          nsNameSpaceManager::GetInstance()->HasElementCreator(
               aNodeInfo->NamespaceID());
     }
 
@@ -555,14 +565,9 @@ nsresult nsXMLContentSink::CloseElement(nsIContent* aContent) {
   }
 
   nsresult rv = NS_OK;
-  if (nodeInfo->Equals(nsGkAtoms::meta, kNameSpaceID_XHTML) &&
-      // Need to check here to make sure this meta tag does not set
-      // mPrettyPrintXML to false when we have a special root!
-      (!mPrettyPrintXML || !mPrettyPrintHasSpecialRoot)) {
-    rv = ProcessMETATag(aContent);
-  } else if (nodeInfo->Equals(nsGkAtoms::link, kNameSpaceID_XHTML) ||
-             nodeInfo->Equals(nsGkAtoms::style, kNameSpaceID_XHTML) ||
-             nodeInfo->Equals(nsGkAtoms::style, kNameSpaceID_SVG)) {
+  if (nodeInfo->Equals(nsGkAtoms::link, kNameSpaceID_XHTML) ||
+      nodeInfo->Equals(nsGkAtoms::style, kNameSpaceID_XHTML) ||
+      nodeInfo->Equals(nsGkAtoms::style, kNameSpaceID_SVG)) {
     if (auto* linkStyle = LinkStyle::FromNode(*aContent)) {
       linkStyle->SetEnableUpdates(true);
       auto updateOrError =
@@ -764,7 +769,7 @@ nsIContent* nsXMLContentSink::GetCurrentContent() {
   return GetCurrentStackNode()->mContent;
 }
 
-StackNode* nsXMLContentSink::GetCurrentStackNode() {
+nsXMLContentSink::StackNode* nsXMLContentSink::GetCurrentStackNode() {
   int32_t count = mContentStack.Length();
   return count != 0 ? &mContentStack[count - 1] : nullptr;
 }

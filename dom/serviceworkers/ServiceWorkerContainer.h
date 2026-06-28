@@ -58,7 +58,6 @@ class ServiceWorkerContainer final : public DOMEventTargetHelper {
                                            DOMEventTargetHelper)
 
   IMPL_EVENT_HANDLER(controllerchange)
-  IMPL_EVENT_HANDLER(error)
   IMPL_EVENT_HANDLER(messageerror)
 
   // Almost a manual expansion of IMPL_EVENT_HANDLER(message), but

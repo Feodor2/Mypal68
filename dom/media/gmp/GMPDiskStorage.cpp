@@ -15,8 +15,7 @@
 #include "nsContentCID.h"
 #include "nsServiceManagerUtils.h"
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 // We store the records for a given GMP as files in the profile dir.
 // $profileDir/gmp/$platform/$gmpName/storage/$nodeId/
@@ -452,5 +451,4 @@ already_AddRefed<GMPStorage> CreateGMPDiskStorage(const nsCString& aNodeId,
   return storage.forget();
 }
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp

@@ -22,13 +22,13 @@ interface Storage {
   getter DOMString? getItem(DOMString key);
 
   [Throws, NeedsSubjectPrincipal]
-  setter void setItem(DOMString key, DOMString value);
+  setter undefined setItem(DOMString key, DOMString value);
 
   [Throws, NeedsSubjectPrincipal]
-  deleter void removeItem(DOMString key);
+  deleter undefined removeItem(DOMString key);
 
   [Throws, NeedsSubjectPrincipal]
-  void clear();
+  undefined clear();
 
   [ChromeOnly]
   readonly attribute boolean isSessionOnly;
@@ -39,6 +39,7 @@ interface Storage {
  * testing.  Will never be exposed to content at large and unlikely to be useful
  * in a WebDriver context.
  */
+#ifdef ENABLE_TESTS
 partial interface Storage {
   /**
    * Does a security-check and ensures the underlying database has been opened
@@ -46,14 +47,14 @@ partial interface Storage {
    * have a similar effect but also impact the state of the snapshot.)
    */
   [Throws, NeedsSubjectPrincipal, Pref="dom.storage.testing"]
-  void open();
+  undefined open();
 
   /**
    * Automatically ends any explicit snapshot and drops the reference to the
    * underlying database, but does not otherwise perturb the database.
    */
   [Throws, NeedsSubjectPrincipal, Pref="dom.storage.testing"]
-  void close();
+  undefined close();
 
   /**
    * Ensures the database has been opened and initiates an explicit snapshot.
@@ -62,21 +63,40 @@ partial interface Storage {
    * `endExplicitSnapshot` or `close`.
    */
   [Throws, NeedsSubjectPrincipal, Pref="dom.storage.testing"]
-  void beginExplicitSnapshot();
+  undefined beginExplicitSnapshot();
+
+  /**
+   * Checkpoints the explicitly begun snapshot. This is only useful for testing
+   * of snapshot re-using when multiple checkpoints are involved. There's no
+   * need to call this before `endExplicitSnapshot` because it checkpoints the
+   * snapshot before it's ended.
+   */
+  [Throws, NeedsSubjectPrincipal, Pref="dom.storage.testing"]
+  undefined checkpointExplicitSnapshot();
 
   /**
    * Ends the explicitly begun snapshot and retains the underlying database.
    * Compare with `close` which also drops the reference to the database.
    */
   [Throws, NeedsSubjectPrincipal, Pref="dom.storage.testing"]
-  void endExplicitSnapshot();
+  undefined endExplicitSnapshot();
 
   /**
-   * Returns true if the underlying database has been opened and it has an
-   * active snapshot (initialized implicitly or explicitly).
+   * Returns true if the underlying database has been opened, the database is
+   * not being closed and it has a snapshot (initialized implicitly or
+   * explicitly).
    */
-#ifdef ENABLE_TESTS
   [Throws, NeedsSubjectPrincipal, Pref="dom.storage.testing"]
-  readonly attribute boolean hasActiveSnapshot;
-#endif
+  readonly attribute boolean hasSnapshot;
+
+  /**
+   * Returns snapshot usage.
+   *
+   * @throws NS_ERROR_NOT_AVAILABLE if the underlying database hasn't been
+   *         opened or the database is being closed or it doesn't have a
+   *         snapshot.
+   */
+  [Throws, NeedsSubjectPrincipal, Pref="dom.storage.testing"]
+  readonly attribute long long snapshotUsage;
 };
+#endif

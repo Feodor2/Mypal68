@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsGeoPosition.h"
 #include "nsIConsoleService.h"
@@ -12,6 +11,7 @@
 #include "prtime.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/GeolocationPositionErrorBinding.h"
 #include "MLSFallback.h"
 
@@ -166,12 +166,12 @@ CoreLocationLocationProvider::CoreLocationLocationProvider()
 NS_IMETHODIMP
 CoreLocationLocationProvider::Startup() {
   if (!mCLObjects) {
-    nsAutoPtr<CoreLocationObjects> clObjs(new CoreLocationObjects());
+    auto clObjs = MakeUnique<CoreLocationObjects>();
 
     nsresult rv = clObjs->Init(this);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    mCLObjects = clObjs.forget();
+    mCLObjects = clObjs.release();
   }
 
   // Must be stopped before starting or response (success or failure) is not guaranteed

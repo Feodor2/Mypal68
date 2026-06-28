@@ -12,23 +12,22 @@ typedef (ReadableStreamDefaultReader or ReadableStreamBYOBReader) ReadableStream
 enum ReadableStreamType { "bytes" };
 
 interface mixin ReadableStreamGenericReader {
-  readonly attribute Promise<void> closed;
+  readonly attribute Promise<undefined> closed;
 
-  [Throws]
-  Promise<void> cancel(optional any reason);
+  [NewObject]
+  Promise<undefined> cancel(optional any reason);
 };
 
-[Exposed=*,
-Pref="dom.streams.readable_stream_default_reader.enabled"]
+[Exposed=*]
 interface ReadableStreamDefaultReader {
   [Throws]
   constructor(ReadableStream stream);
 
-  [Throws]
+  [NewObject]
   Promise<ReadableStreamReadResult> read();
 
   [Throws]
-  void releaseLock();
+  undefined releaseLock();
 };
 ReadableStreamDefaultReader includes ReadableStreamGenericReader;
 

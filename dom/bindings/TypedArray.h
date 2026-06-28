@@ -20,8 +20,7 @@
 #include "nsWrapperCache.h"
 #include "nsWrapperCacheInlines.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 /*
  * Various typed array classes for argument conversion.  We have a base class
@@ -284,7 +283,6 @@ class TypedArrayCreator {
   const ArrayType& mArray;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_TypedArray_h */

@@ -65,7 +65,7 @@ class GMPChild : public PGMPChild {
   GMPErr GetAPI(const char* aAPIName, void* aHostAPI, void** aPluginAPI,
                 uint32_t aDecryptorId = 0);
 
-  nsTArray<UniquePtr<GMPContentChild>> mGMPContentChildren;
+  nsTArray<RefPtr<GMPContentChild>> mGMPContentChildren;
 
   RefPtr<GMPTimerChild> mTimerChild;
   RefPtr<GMPStorageChild> mStorage;

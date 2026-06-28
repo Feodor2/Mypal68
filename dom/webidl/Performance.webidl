@@ -13,6 +13,9 @@
  * W3C liability, trademark and document use rules apply.
  */
 
+// DOMTimeStamp is deprecated, use EpochTimeStamp instead.
+typedef unsigned long long DOMTimeStamp;
+typedef unsigned long long EpochTimeStamp;
 typedef double DOMHighResTimeStamp;
 typedef sequence <PerformanceEntry> PerformanceEntryList;
 
@@ -49,8 +52,8 @@ partial interface Performance {
 // https://w3c.github.io/resource-timing/#sec-extensions-performance-interface
 [Exposed=(Window,Worker)]
 partial interface Performance {
-  void clearResourceTimings();
-  void setResourceTimingBufferSize(unsigned long maxSize);
+  undefined clearResourceTimings();
+  undefined setResourceTimingBufferSize(unsigned long maxSize);
   attribute EventHandler onresourcetimingbufferfull;
 };
 
@@ -62,14 +65,28 @@ partial interface Performance {
 };
 
 // https://w3c.github.io/user-timing/#extensions-performance-interface
+dictionary PerformanceMarkOptions {
+  any detail;
+  DOMHighResTimeStamp startTime;
+};
+
+// https://w3c.github.io/user-timing/#extensions-performance-interface
+dictionary PerformanceMeasureOptions {
+  any detail;
+  (DOMString or DOMHighResTimeStamp) start;
+  DOMHighResTimeStamp duration;
+  (DOMString or DOMHighResTimeStamp) end;
+};
+
+// https://w3c.github.io/user-timing/#extensions-performance-interface
 [Exposed=(Window,Worker)]
 partial interface Performance {
   [Throws]
-  void mark(DOMString markName);
-  void clearMarks(optional DOMString markName);
+  PerformanceMark mark(DOMString markName, optional PerformanceMarkOptions markOptions = {});
+  undefined clearMarks(optional DOMString markName);
   [Throws]
-  void measure(DOMString measureName, optional DOMString startMark, optional DOMString endMark);
-  void clearMeasures(optional DOMString measureName);
+  PerformanceMeasure measure(DOMString measureName, optional (DOMString or PerformanceMeasureOptions) startOrMeasureOptions = {}, optional DOMString endMark);
+  undefined clearMeasures(optional DOMString measureName);
 };
 
 [Exposed=Window]

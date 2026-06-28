@@ -6,7 +6,10 @@
 #define nsIRadioVisitor_h___
 
 #include "nsISupports.h"
-class nsIFormControl;
+
+namespace mozilla::dom {
+class HTMLInputElement;
+}  // namespace mozilla::dom
 
 // IID for the nsIRadioControl interface
 #define NS_IRADIOVISITOR_IID                         \
@@ -35,7 +38,7 @@ class nsIRadioVisitor : public nsISupports {
    * @param aRadio the radio button in question (must be nullptr and QI'able to
    *               nsIRadioControlElement)
    */
-  virtual bool Visit(nsIFormControl* aRadio) = 0;
+  virtual bool Visit(mozilla::dom::HTMLInputElement* aRadio) = 0;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIRadioVisitor, NS_IRADIOVISITOR_IID)

@@ -3,21 +3,21 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 with Files("**"):
-    BUG_COMPONENT = ("Core", "DOM: Device Interfaces")
+    BUG_COMPONENT = ("Core", "DOM: Web Authentication")
 
 EXPORTS.mozilla.dom += [
-    'Credential.h',
-    'CredentialsContainer.h',
+    "Credential.h",
+    "CredentialsContainer.h",
 ]
 
 UNIFIED_SOURCES += [
-    'Credential.cpp',
-    'CredentialsContainer.cpp',
+    "Credential.cpp",
+    "CredentialsContainer.cpp",
 ]
 
-include('/ipc/chromium/chromium-config.mozbuild')
+include("/ipc/chromium/chromium-config.mozbuild")
 
-FINAL_LIBRARY = 'xul'
+FINAL_LIBRARY = "xul"
 
-MOCHITEST_MANIFESTS += ['tests/mochitest/mochitest.ini']
-BROWSER_CHROME_MANIFESTS += ['tests/browser/browser.ini']
+MOCHITEST_MANIFESTS += ["tests/mochitest/mochitest.ini"]
+BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.ini"]

@@ -24,14 +24,25 @@ enum Namespace {
 };
 static const Namespace INVALID_NAMESPACE = NUMBER_OF_NAMESPACES;
 
-typedef int64_t CacheId;
+using CacheId = int64_t;
 static const CacheId INVALID_CACHE_ID = -1;
 
-// XXX Rename to OriginMetadata.
-// XXX Consider inheritance from ClientMetadata.
-struct QuotaInfo : quota::OriginMetadata {
+struct CacheDirectoryMetadata : quota::ClientMetadata {
   nsCOMPtr<nsIFile> mDir;
   int64_t mDirectoryLockId = -1;
+
+  explicit CacheDirectoryMetadata(quota::PrincipalMetadata aPrincipalMetadata)
+      : quota::ClientMetadata(
+            quota::OriginMetadata{std::move(aPrincipalMetadata),
+                                  quota::PERSISTENCE_TYPE_DEFAULT},
+            quota::Client::Type::DOMCACHE) {}
+
+  explicit CacheDirectoryMetadata(quota::OriginMetadata aOriginMetadata)
+      : quota::ClientMetadata(std::move(aOriginMetadata),
+                              quota::Client::Type::DOMCACHE) {
+    MOZ_DIAGNOSTIC_ASSERT(aOriginMetadata.mPersistenceType ==
+                          quota::PERSISTENCE_TYPE_DEFAULT);
+  }
 };
 
 struct DeletionInfo {
@@ -39,7 +50,7 @@ struct DeletionInfo {
   int64_t mDeletedPaddingSize = 0;
 };
 
-typedef std::function<void(nsCOMPtr<nsIInputStream>&&)> InputStreamResolver;
+using InputStreamResolver = std::function<void(nsCOMPtr<nsIInputStream>&&)>;
 
 enum class OpenMode : uint8_t { Eager, Lazy, NumTypes };
 

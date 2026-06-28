@@ -3,6 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "UDPSocketChild.h"
+#include "UDPSocket.h"
 #include "mozilla/Unused.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/net/NeckoChild.h"
@@ -15,14 +16,13 @@
 
 using mozilla::net::gNeckoChild;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_ISUPPORTS(UDPSocketChildBase, nsISupports)
 
 UDPSocketChildBase::UDPSocketChildBase() : mIPCOpen(false) {}
 
-UDPSocketChildBase::~UDPSocketChildBase() {}
+UDPSocketChildBase::~UDPSocketChildBase() = default;
 
 void UDPSocketChildBase::ReleaseIPDLReference() {
   MOZ_ASSERT(mIPCOpen);
@@ -48,7 +48,7 @@ NS_IMETHODIMP_(MozExternalRefCountType) UDPSocketChild::Release(void) {
 
 UDPSocketChild::UDPSocketChild() : mBackgroundManager(nullptr), mLocalPort(0) {}
 
-UDPSocketChild::~UDPSocketChild() {}
+UDPSocketChild::~UDPSocketChild() = default;
 
 nsresult UDPSocketChild::SetBackgroundSpinsEvents() {
   using mozilla::ipc::BackgroundChild;
@@ -234,5 +234,4 @@ mozilla::ipc::IPCResult UDPSocketChild::RecvCallbackError(
   return IPC_OK();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

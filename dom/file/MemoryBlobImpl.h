@@ -16,8 +16,7 @@
 #include "nsIIPCSerializableInputStream.h"
 #include "nsISeekableStream.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class MemoryBlobImpl final : public BaseBlobImpl {
  public:
@@ -42,11 +41,12 @@ class MemoryBlobImpl final : public BaseBlobImpl {
     MOZ_ASSERT(mDataOwner && mDataOwner->mData, "must have data");
   }
 
-  void CreateInputStream(nsIInputStream** aStream, ErrorResult& aRv) override;
+  void CreateInputStream(nsIInputStream** aStream,
+                         ErrorResult& aRv) const override;
 
   already_AddRefed<BlobImpl> CreateSlice(uint64_t aStart, uint64_t aLength,
                                          const nsAString& aContentType,
-                                         ErrorResult& aRv) override;
+                                         ErrorResult& aRv) const override;
 
   bool IsMemoryFile() const override { return true; }
 
@@ -153,7 +153,6 @@ class MemoryBlobImpl final : public BaseBlobImpl {
   RefPtr<DataOwner> mDataOwner;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_MemoryBlobImpl_h

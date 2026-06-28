@@ -40,7 +40,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(Response, FetchBody<Response>)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mHeaders)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mSignalImpl)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mFetchStreamReader)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mReadableStreamBody)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mReadableStreamReader)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
@@ -50,7 +49,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(Response, FetchBody<Response>)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mHeaders)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSignalImpl)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mFetchStreamReader)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReadableStreamBody)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReadableStreamReader)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
@@ -291,11 +289,8 @@ already_AddRefed<Response> Response::Constructor(
 
       // If this is a DOM generated ReadableStream, we can extract the
       // inputStream directly.
-      if (readableStream.HasNativeUnderlyingSource()) {
-        BodyStreamHolder* underlyingSource =
-            readableStream.GetNativeUnderlyingSource();
-        MOZ_ASSERT(underlyingSource);
-
+      if (BodyStreamHolder* underlyingSource =
+              readableStream.GetBodyStreamHolder()) {
         aRv = BodyStream::RetrieveInputStream(underlyingSource,
                                               getter_AddRefs(bodyStream));
 

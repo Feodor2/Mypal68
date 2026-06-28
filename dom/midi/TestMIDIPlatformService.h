@@ -8,6 +8,8 @@
 #include "mozilla/dom/MIDIPlatformService.h"
 #include "mozilla/dom/MIDITypes.h"
 
+class nsIThread;
+
 namespace mozilla {
 namespace dom {
 

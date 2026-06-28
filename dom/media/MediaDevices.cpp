@@ -3,6 +3,8 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/MediaDevices.h"
+
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/MediaStreamBinding.h"
 #include "mozilla/dom/MediaDeviceInfo.h"
 #include "mozilla/dom/MediaDevicesBinding.h"
@@ -21,48 +23,47 @@
 namespace mozilla {
 namespace dom {
 
-class FuzzTimerCallBack final : public nsITimerCallback, public nsINamed {
-  ~FuzzTimerCallBack() {}
-
- public:
-  explicit FuzzTimerCallBack(MediaDevices* aMediaDevices)
-      : mMediaDevices(aMediaDevices) {}
-
-  NS_DECL_ISUPPORTS
-
-  NS_IMETHOD Notify(nsITimer* aTimer) final {
-    mMediaDevices->DispatchTrustedEvent(NS_LITERAL_STRING("devicechange"));
-    return NS_OK;
-  }
-
-  NS_IMETHOD GetName(nsACString& aName) override {
-    aName.AssignLiteral("FuzzTimerCallBack");
-    return NS_OK;
-  }
-
- private:
-  nsCOMPtr<MediaDevices> mMediaDevices;
-};
-
-NS_IMPL_ISUPPORTS(FuzzTimerCallBack, nsITimerCallback, nsINamed)
-
 MediaDevices::~MediaDevices() {
-  MediaManager* mediamanager = MediaManager::GetIfExists();
-  if (mediamanager) {
-    mediamanager->RemoveDeviceChangeCallback(this);
+  MOZ_ASSERT(NS_IsMainThread());
+  if (mFuzzTimer) {
+    mFuzzTimer->Cancel();
   }
+  mDeviceChangeListener.DisconnectIfExists();
 }
 
 already_AddRefed<Promise> MediaDevices::GetUserMedia(
     const MediaStreamConstraints& aConstraints, CallerType aCallerType,
     ErrorResult& aRv) {
-  RefPtr<Promise> p = Promise::Create(GetParentObject(), aRv);
+  MOZ_ASSERT(NS_IsMainThread());
+  // Get the relevant global for the promise from the wrapper cache because
+  // DOMEventTargetHelper::GetOwner() returns null if the document is unloaded.
+  // We know the wrapper exists because it is being used for |this| from JS.
+  // See https://github.com/heycam/webidl/issues/932 for why the relevant
+  // global is used instead of the current global.
+  nsCOMPtr<nsIGlobalObject> global = xpc::NativeGlobal(GetWrapper());
+  // global is a window because MediaDevices is exposed only to Window.
+  nsCOMPtr<nsPIDOMWindowInner> owner = do_QueryInterface(global);
+  RefPtr<Promise> p = Promise::Create(global, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
+  /* If requestedMediaTypes is the empty set, return a promise rejected with a
+   * TypeError. */
+  if (!MediaManager::IsOn(aConstraints.mVideo) &&
+      !MediaManager::IsOn(aConstraints.mAudio)) {
+    p->MaybeRejectWithTypeError("audio and/or video is required");
+    return p.forget();
+  }
+  /* If the relevant settings object's responsible document is NOT fully
+   * active, return a promise rejected with a DOMException object whose name
+   * attribute has the value "InvalidStateError". */
+  if (!owner->IsFullyActive()) {
+    p->MaybeRejectWithInvalidStateError("The document is not fully active.");
+    return p.forget();
+  }
   RefPtr<MediaDevices> self(this);
   MediaManager::Get()
-      ->GetUserMedia(GetOwner(), aConstraints, aCallerType)
+      ->GetUserMedia(owner, aConstraints, aCallerType)
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
           [this, self, p](RefPtr<DOMMediaStream>&& aStream) {
@@ -76,7 +77,7 @@ already_AddRefed<Promise> MediaDevices::GetUserMedia(
             if (!window) {
               return;  // Leave Promise pending after navigation by design.
             }
-            p->MaybeReject(MakeRefPtr<MediaStreamError>(window, *error));
+            error->Reject(p);
           });
   return p.forget();
 }
@@ -84,14 +85,15 @@ already_AddRefed<Promise> MediaDevices::GetUserMedia(
 already_AddRefed<Promise> MediaDevices::EnumerateDevices(CallerType aCallerType,
                                                          ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
-
-  RefPtr<Promise> p = Promise::Create(GetParentObject(), aRv);
+  nsCOMPtr<nsIGlobalObject> global = xpc::NativeGlobal(GetWrapper());
+  nsCOMPtr<nsPIDOMWindowInner> owner = do_QueryInterface(global);
+  RefPtr<Promise> p = Promise::Create(global, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
   RefPtr<MediaDevices> self(this);
   MediaManager::Get()
-      ->EnumerateDevices(GetOwner(), aCallerType)
+      ->EnumerateDevices(owner, aCallerType)
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
           [this, self,
@@ -128,7 +130,7 @@ already_AddRefed<Promise> MediaDevices::EnumerateDevices(CallerType aCallerType,
             if (!window) {
               return;  // Leave Promise pending after navigation by design.
             }
-            p->MaybeReject(MakeRefPtr<MediaStreamError>(window, *error));
+            error->Reject(p);
           });
   return p.forget();
 }
@@ -136,13 +138,118 @@ already_AddRefed<Promise> MediaDevices::EnumerateDevices(CallerType aCallerType,
 already_AddRefed<Promise> MediaDevices::GetDisplayMedia(
     const DisplayMediaStreamConstraints& aConstraints, CallerType aCallerType,
     ErrorResult& aRv) {
-  RefPtr<Promise> p = Promise::Create(GetParentObject(), aRv);
+  nsCOMPtr<nsIGlobalObject> global = xpc::NativeGlobal(GetWrapper());
+  RefPtr<Promise> p = Promise::Create(global, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
+  nsCOMPtr<nsPIDOMWindowInner> owner = do_QueryInterface(global);
+  /* If the relevant global object of this does not have transient activation,
+   * return a promise rejected with a DOMException object whose name attribute
+   * has the value InvalidStateError. */
+  Document* doc = owner->GetExtantDoc();
+  if (NS_WARN_IF(!doc)) {
+    p->MaybeRejectWithSecurityError("No document.");
+    return p.forget();
+  }
+  if (!doc->HasBeenUserGestureActivated()) {
+    p->MaybeRejectWithInvalidStateError(
+        "getDisplayMedia must be called from a user gesture handler.");
+    return p.forget();
+  }
+  /* If constraints.video is false, return a promise rejected with a newly
+   * created TypeError. */
+  if (!MediaManager::IsOn(aConstraints.mVideo)) {
+    p->MaybeRejectWithTypeError("video is required");
+    return p.forget();
+  }
+  MediaStreamConstraints c;
+  auto& vc = c.mVideo.SetAsMediaTrackConstraints();
+
+  if (aConstraints.mVideo.IsMediaTrackConstraints()) {
+    vc = aConstraints.mVideo.GetAsMediaTrackConstraints();
+    /* If CS contains a member named advanced, return a promise rejected with
+     * a newly created TypeError. */
+    if (vc.mAdvanced.WasPassed()) {
+      p->MaybeRejectWithTypeError("advanced not allowed");
+      return p.forget();
+    }
+    auto getCLR = [](const auto& aCon) -> const ConstrainLongRange& {
+      static ConstrainLongRange empty;
+      return (aCon.WasPassed() && !aCon.Value().IsLong())
+                 ? aCon.Value().GetAsConstrainLongRange()
+                 : empty;
+    };
+    auto getCDR = [](auto&& aCon) -> const ConstrainDoubleRange& {
+      static ConstrainDoubleRange empty;
+      return (aCon.WasPassed() && !aCon.Value().IsDouble())
+                 ? aCon.Value().GetAsConstrainDoubleRange()
+                 : empty;
+    };
+    const auto& w = getCLR(vc.mWidth);
+    const auto& h = getCLR(vc.mHeight);
+    const auto& f = getCDR(vc.mFrameRate);
+    /* If CS contains a member whose name specifies a constrainable property
+     * applicable to display surfaces, and whose value in turn is a dictionary
+     * containing a member named either min or exact, return a promise
+     * rejected with a newly created TypeError. */
+    if (w.mMin.WasPassed() || h.mMin.WasPassed() || f.mMin.WasPassed()) {
+      p->MaybeRejectWithTypeError("min not allowed");
+      return p.forget();
+    }
+    if (w.mExact.WasPassed() || h.mExact.WasPassed() || f.mExact.WasPassed()) {
+      p->MaybeRejectWithTypeError("exact not allowed");
+      return p.forget();
+    }
+    /* If CS contains a member whose name, failedConstraint specifies a
+     * constrainable property, constraint, applicable to display surfaces, and
+     * whose value in turn is a dictionary containing a member named max, and
+     * that member's value in turn is less than the constrainable property's
+     * floor value, then let failedConstraint be the name of the constraint,
+     * let message be either undefined or an informative human-readable
+     * message, and return a promise rejected with a new OverconstrainedError
+     * created by calling OverconstrainedError(failedConstraint, message). */
+    // We fail early without incurring a prompt, on known-to-fail constraint
+    // values that don't reveal anything about the user's system.
+    const char* badConstraint = nullptr;
+    if (w.mMax.WasPassed() && w.mMax.Value() < 1) {
+      badConstraint = "width";
+    }
+    if (h.mMax.WasPassed() && h.mMax.Value() < 1) {
+      badConstraint = "height";
+    }
+    if (f.mMax.WasPassed() && f.mMax.Value() < 1) {
+      badConstraint = "frameRate";
+    }
+    if (badConstraint) {
+      p->MaybeReject(MakeRefPtr<dom::MediaStreamError>(
+          owner, *MakeRefPtr<MediaMgrError>(
+                     MediaMgrError::Name::OverconstrainedError, "",
+                     NS_ConvertASCIItoUTF16(badConstraint))));
+      return p.forget();
+    }
+  }
+  /* If the relevant settings object's responsible document is NOT fully
+   * active, return a promise rejected with a DOMException object whose name
+   * attribute has the value "InvalidStateError". */
+  if (!owner->IsFullyActive()) {
+    p->MaybeRejectWithInvalidStateError("The document is not fully active.");
+    return p.forget();
+  }
+  // We ask for "screen" sharing.
+  //
+  // If this is a privileged call or permission is disabled, this gives us full
+  // screen sharing by default, which is useful for internal testing.
+  //
+  // If this is a non-priviliged call, GetUserMedia() will change it to "window"
+  // for us.
+  vc.mMediaSource.Reset();
+  vc.mMediaSource.Construct().AssignASCII(
+      dom::MediaSourceEnumValues::GetString(MediaSourceEnum::Screen));
+
   RefPtr<MediaDevices> self(this);
   MediaManager::Get()
-      ->GetDisplayMedia(GetOwner(), aConstraints, aCallerType)
+      ->GetUserMedia(owner, c, aCallerType)
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
           [this, self, p](RefPtr<DOMMediaStream>&& aStream) {
@@ -156,7 +263,41 @@ already_AddRefed<Promise> MediaDevices::GetDisplayMedia(
             if (!window) {
               return;  // leave promise pending after navigation.
             }
-            p->MaybeReject(MakeRefPtr<MediaStreamError>(window, *error));
+            error->Reject(p);
+          });
+  return p.forget();
+}
+
+already_AddRefed<Promise> MediaDevices::SelectAudioOutput(
+    const AudioOutputOptions& aOptions, CallerType aCallerType,
+    ErrorResult& aRv) {
+  nsCOMPtr<nsIGlobalObject> global = xpc::NativeGlobal(GetWrapper());
+  RefPtr<Promise> p = Promise::Create(global, aRv);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return nullptr;
+  }
+  nsCOMPtr<nsPIDOMWindowInner> owner = do_QueryInterface(global);
+  RefPtr<MediaDevices> self(this);
+  MediaManager::Get()
+      ->SelectAudioOutput(owner, aOptions, aCallerType)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [this, self, p](RefPtr<MediaDevice> aDevice) {
+            nsPIDOMWindowInner* window = GetWindowIfCurrent();
+            if (!window) {
+              return;  // Leave Promise pending after navigation by design.
+            }
+            MOZ_ASSERT(aDevice->mKind == dom::MediaDeviceKind::Audiooutput);
+            p->MaybeResolve(
+                MakeRefPtr<MediaDeviceInfo>(aDevice->mID, aDevice->mKind,
+                                            aDevice->mName, aDevice->mGroupID));
+          },
+          [this, self, p](const RefPtr<MediaMgrError>& error) {
+            nsPIDOMWindowInner* window = GetWindowIfCurrent();
+            if (!window) {
+              return;  // Leave Promise pending after navigation by design.
+            }
+            error->Reject(p);
           });
   return p.forget();
 }
@@ -187,35 +328,62 @@ void MediaDevices::OnDeviceChange() {
     return;
   }
 
-  if (!mFuzzTimer) {
-    mFuzzTimer = NS_NewTimer();
+  if (mFuzzTimer) {
+    // An event is already in flight.
+    return;
   }
+
+  mFuzzTimer = NS_NewTimer();
 
   if (!mFuzzTimer) {
     MOZ_ASSERT(false);
     return;
   }
 
-  mFuzzTimer->Cancel();
-  RefPtr<FuzzTimerCallBack> cb = new FuzzTimerCallBack(this);
-  mFuzzTimer->InitWithCallback(cb, DEVICECHANGE_HOLD_TIME_IN_MS,
-                               nsITimer::TYPE_ONE_SHOT);
+  mFuzzTimer->InitWithNamedFuncCallback(
+      [](nsITimer*, void* aClosure) {
+        MediaDevices* md = static_cast<MediaDevices*>(aClosure);
+        md->DispatchTrustedEvent(NS_LITERAL_STRING("devicechange"));
+        md->mFuzzTimer = nullptr;
+      },
+      this, DEVICECHANGE_HOLD_TIME_IN_MS, nsITimer::TYPE_ONE_SHOT,
+      "MediaDevices::mFuzzTimer Callback");
 }
 
 mozilla::dom::EventHandlerNonNull* MediaDevices::GetOndevicechange() {
   return GetEventHandler(nsGkAtoms::ondevicechange);
 }
 
+void MediaDevices::SetupDeviceChangeListener() {
+  if (mIsDeviceChangeListenerSetUp) {
+    return;
+  }
+
+  nsPIDOMWindowInner* window = GetOwner();
+  if (!window) {
+    return;
+  }
+
+  nsISerialEventTarget* mainThread =
+      window->EventTargetFor(TaskCategory::Other);
+  if (!mainThread) {
+    return;
+  }
+
+  mDeviceChangeListener = MediaManager::Get()->DeviceListChangeEvent().Connect(
+      mainThread, this, &MediaDevices::OnDeviceChange);
+  mIsDeviceChangeListenerSetUp = true;
+}
+
 void MediaDevices::SetOndevicechange(
     mozilla::dom::EventHandlerNonNull* aCallback) {
   SetEventHandler(nsGkAtoms::ondevicechange, aCallback);
-
-  MediaManager::Get()->AddDeviceChangeCallback(this);
+  SetupDeviceChangeListener();
 }
 
 void MediaDevices::EventListenerAdded(nsAtom* aType) {
-  MediaManager::Get()->AddDeviceChangeCallback(this);
   DOMEventTargetHelper::EventListenerAdded(aType);
+  SetupDeviceChangeListener();
 }
 
 JSObject* MediaDevices::WrapObject(JSContext* aCx,

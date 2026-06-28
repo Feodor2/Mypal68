@@ -6,7 +6,7 @@
 
 #include "mozilla/Base64.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/PushManagerBinding.h"
 #include "mozilla/dom/PushSubscription.h"
@@ -14,7 +14,6 @@
 #include "mozilla/dom/PushUtil.h"
 #include "mozilla/dom/RootedDictionary.h" //MY
 #include "mozilla/dom/WorkerRunnable.h"
-#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerScope.h"
 
 #include "mozilla/dom/Promise.h"
@@ -37,14 +36,14 @@ namespace {
 nsresult GetPermissionState(nsIPrincipal* aPrincipal,
                             PushPermissionState& aState) {
   nsCOMPtr<nsIPermissionManager> permManager =
-      mozilla::services::GetPermissionManager();
+      mozilla::components::PermissionManager::Service();
 
   if (!permManager) {
     return NS_ERROR_FAILURE;
   }
   uint32_t permission = nsIPermissionManager::UNKNOWN_ACTION;
   nsresult rv = permManager->TestExactPermissionFromPrincipal(
-      aPrincipal, NS_LITERAL_CSTRING("desktop-notification"), &permission);
+      aPrincipal, "desktop-notification"_ns, &permission);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -75,15 +74,15 @@ nsresult GetSubscriptionParams(nsIPushSubscription* aSubscription,
     return rv;
   }
 
-  rv = aSubscription->GetKey(NS_LITERAL_STRING("p256dh"), aRawP256dhKey);
+  rv = aSubscription->GetKey(u"p256dh"_ns, aRawP256dhKey);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-  rv = aSubscription->GetKey(NS_LITERAL_STRING("auth"), aAuthSecret);
+  rv = aSubscription->GetKey(u"auth"_ns, aAuthSecret);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-  rv = aSubscription->GetKey(NS_LITERAL_STRING("appServer"), aAppServerKey);
+  rv = aSubscription->GetKey(u"appServer"_ns, aAppServerKey);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

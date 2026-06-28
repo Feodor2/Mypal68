@@ -39,12 +39,6 @@ namespace mozilla::dom {
 using namespace mozilla::dom::indexedDB;
 using namespace mozilla::ipc;
 
-namespace {
-
-NS_DEFINE_IID(kIDBRequestIID, PRIVATE_IDBREQUEST_IID);
-
-}  // namespace
-
 IDBRequest::IDBRequest(IDBDatabase* aDatabase)
     : DOMEventTargetHelper(aDatabase),
       mLoggingSerialNumber(0),
@@ -300,7 +294,7 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(IDBRequest, DOMEventTargetHelper)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(IDBRequest)
-  if (aIID.Equals(kIDBRequestIID)) {
+  if (aIID.Equals(NS_GET_IID(mozilla::dom::detail::PrivateIDBRequest))) {
     foundInterface = this;
   } else
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
@@ -339,7 +333,7 @@ RefPtr<IDBOpenDBRequest> IDBOpenDBRequest::Create(
   aFactory->AssertIsOnOwningThread();
   MOZ_ASSERT(aGlobal);
 
-  bool fileHandleDisabled = !IndexedDatabaseManager::IsFileHandleEnabled();
+  bool fileHandleDisabled = !StaticPrefs::dom_fileHandle_enabled();
 
   RefPtr<IDBOpenDBRequest> request =
       new IDBOpenDBRequest(std::move(aFactory), aGlobal, fileHandleDisabled);
@@ -442,16 +436,6 @@ NS_INTERFACE_MAP_END_INHERITING(IDBRequest)
 
 NS_IMPL_ADDREF_INHERITED(IDBOpenDBRequest, IDBRequest)
 NS_IMPL_RELEASE_INHERITED(IDBOpenDBRequest, IDBRequest)
-
-nsresult IDBOpenDBRequest::PostHandleEvent(EventChainPostVisitor& aVisitor) {
-  nsresult rv =
-      IndexedDatabaseManager::CommonPostHandleEvent(aVisitor, *mFactory);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  return NS_OK;
-}
 
 JSObject* IDBOpenDBRequest::WrapObject(JSContext* aCx,
                                        JS::Handle<JSObject*> aGivenProto) {

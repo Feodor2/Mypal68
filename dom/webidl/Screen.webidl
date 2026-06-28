@@ -52,7 +52,7 @@ interface Screen : EventTarget {
    * DEPRECATED, use ScreenOrientation API instead.
    * Unlock the screen orientation.
    */
-  void mozUnlockOrientation();
+  undefined mozUnlockOrientation();
 };
 
 // https://w3c.github.io/screen-orientation

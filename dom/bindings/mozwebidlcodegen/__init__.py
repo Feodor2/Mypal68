@@ -9,9 +9,11 @@ from __future__ import print_function, unicode_literals
 
 import errno
 import hashlib
+import io
 import json
 import logging
 import os
+import six
 
 from copy import deepcopy
 
@@ -239,7 +241,7 @@ class WebIDLCodegenManager(LoggingMixin):
         self._state = WebIDLCodegenManagerState()
 
         if os.path.exists(state_path):
-            with open(state_path, "rb") as fh:
+            with io.open(state_path, "r") as fh:
                 try:
                     self._state = WebIDLCodegenManagerState(fh=fh)
                 except Exception as e:
@@ -344,8 +346,10 @@ class WebIDLCodegenManager(LoggingMixin):
         if self._make_deps_path:
             mk = Makefile()
             codegen_rule = mk.create_rule([self._make_deps_target])
-            codegen_rule.add_dependencies(global_hashes.keys())
-            codegen_rule.add_dependencies(self._input_paths)
+            codegen_rule.add_dependencies(six.ensure_text(s) for s in
+                                          global_hashes.keys())
+            codegen_rule.add_dependencies(six.ensure_text(p) for p in
+                                          self._input_paths)
 
             with FileAvoidWrite(self._make_deps_path) as fh:
                 mk.dump(fh)
@@ -381,9 +385,9 @@ class WebIDLCodegenManager(LoggingMixin):
         parser = WebIDL.Parser(self._cache_dir, lexer=None)
 
         for path in sorted(self._input_paths):
-            with open(path, "rb") as fh:
+            with io.open(path, "r", encoding="utf-8") as fh:
                 data = fh.read()
-                hashes[path] = hashlib.sha1(data).hexdigest()
+                hashes[path] = hashlib.sha1(six.ensure_binary(data)).hexdigest()
                 parser.parse(data, path)
 
         # Only these directories may contain WebIDL files with interfaces
@@ -601,7 +605,7 @@ class WebIDLCodegenManager(LoggingMixin):
         for f in current_files:
             # This will fail if the file doesn't exist. If a current global
             # dependency doesn't exist, something else is wrong.
-            with open(f, "rb") as fh:
+            with io.open(f, "rb") as fh:
                 current_hashes[f] = hashlib.sha1(fh.read()).hexdigest()
 
         # The set of files has changed.
@@ -616,7 +620,7 @@ class WebIDLCodegenManager(LoggingMixin):
         return False, current_hashes
 
     def _save_state(self):
-        with open(self._state_path, "wb") as fh:
+        with io.open(self._state_path, "w", newline="\n") as fh:
             self._state.dump(fh)
 
     def _maybe_write_codegen(self, obj, declare_path, define_path, result=None):
@@ -656,7 +660,7 @@ def create_build_system_manager(topsrcdir=None, topobjdir=None, dist_dir=None):
     obj_dir = os.path.join(topobjdir, "dom", "bindings")
     webidl_root = os.path.join(topsrcdir, "dom", "webidl")
 
-    with open(os.path.join(obj_dir, 'file-lists.json'), "rb") as fh:
+    with io.open(os.path.join(obj_dir, "file-lists.json"), "r") as fh:
         files = json.load(fh)
 
     inputs = (

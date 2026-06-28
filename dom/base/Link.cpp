@@ -7,6 +7,7 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLDNSPrefetch.h"
 #include "mozilla/IHistory.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "nsLayoutUtils.h"
@@ -16,11 +17,10 @@
 
 #include "nsEscape.h"
 #include "nsGkAtoms.h"
-#include "nsHTMLDNSPrefetch.h"
 #include "nsString.h"
 #include "mozAutoDocUpdate.h"
 
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "nsAttrValueInlines.h"
 #include "HTMLLinkElement.h"
 
@@ -28,30 +28,25 @@ namespace mozilla::dom {
 
 Link::Link(Element* aElement)
     : mElement(aElement),
-      mLinkState(eLinkState_NotLink),
+      mState(State::NotLink),
       mNeedsRegistration(false),
       mRegistered(false),
       mHasPendingLinkUpdate(false),
-      mInDNSPrefetch(false),
       mHistory(true) {
   MOZ_ASSERT(mElement, "Must have an element");
 }
 
 Link::Link()
     : mElement(nullptr),
-      mLinkState(eLinkState_NotLink),
+      mState(State::NotLink),
       mNeedsRegistration(false),
       mRegistered(false),
       mHasPendingLinkUpdate(false),
-      mInDNSPrefetch(false),
       mHistory(false) {}
 
 Link::~Link() {
   // !mElement is for mock_Link.
   MOZ_ASSERT(!mElement || !mElement->IsInComposedDoc());
-  if (IsInDNSPrefetch()) {
-    nsHTMLDNSPrefetch::LinkDestroyed(this);
-  }
   UnregisterFromHistory();
 }
 
@@ -61,37 +56,15 @@ bool Link::ElementHasHref() const {
           mElement->HasAttr(kNameSpaceID_XLink, nsGkAtoms::href));
 }
 
-void Link::TryDNSPrefetch() {
-  MOZ_ASSERT(mElement->IsInComposedDoc());
-  if (ElementHasHref() && nsHTMLDNSPrefetch::IsAllowed(mElement->OwnerDoc())) {
-    nsHTMLDNSPrefetch::Prefetch(this, nsHTMLDNSPrefetch::Priority::Low);
-  }
-}
-
-void Link::CancelDNSPrefetch(nsWrapperCache::FlagsType aDeferredFlag,
-                             nsWrapperCache::FlagsType aRequestedFlag) {
-  // If prefetch was deferred, clear flag and move on
-  if (mElement->HasFlag(aDeferredFlag)) {
-    mElement->UnsetFlags(aDeferredFlag);
-    // Else if prefetch was requested, clear flag and send cancellation
-  } else if (mElement->HasFlag(aRequestedFlag)) {
-    mElement->UnsetFlags(aRequestedFlag);
-    // Possible that hostname could have changed since binding, but since this
-    // covers common cases, most DNS prefetch requests will be canceled
-    nsHTMLDNSPrefetch::CancelPrefetch(this, nsHTMLDNSPrefetch::Priority::Low,
-                                      NS_ERROR_ABORT);
-  }
-}
-
 void Link::VisitedQueryFinished(bool aVisited) {
   MOZ_ASSERT(mRegistered, "Setting the link state of an unregistered Link!");
-  MOZ_ASSERT(mLinkState == eLinkState_Unvisited,
+  MOZ_ASSERT(mState == State::Unvisited,
              "Why would we want to know our visited state otherwise?");
 
-  auto newState = aVisited ? eLinkState_Visited : eLinkState_Unvisited;
+  auto newState = aVisited ? State::Visited : State::Unvisited;
 
   // Set our current state as appropriate.
-  mLinkState = newState;
+  mState = newState;
 
   // We will be no longer registered if we're visited, as it'd be pointless, we
   // never transition from visited -> unvisited.
@@ -133,12 +106,12 @@ EventStates Link::LinkState() const {
     nsCOMPtr<nsIURI> hrefURI(GetURI());
 
     // Assume that we are not visited until we are told otherwise.
-    self->mLinkState = eLinkState_Unvisited;
+    self->mState = State::Unvisited;
 
     // Make sure the href attribute has a valid link (bug 23209).
     // If we have a good href, register with History if available.
     if (mHistory && hrefURI) {
-      if (nsCOMPtr<IHistory> history = services::GetHistory()) {
+      if (nsCOMPtr<IHistory> history = components::History::Service()) {
         self->mRegistered = true;
         history->RegisterVisitedCallback(hrefURI, self);
         // And make sure we are in the document's link map.
@@ -148,11 +121,11 @@ EventStates Link::LinkState() const {
   }
 
   // Otherwise, return our known state.
-  if (mLinkState == eLinkState_Visited) {
+  if (mState == State::Visited) {
     return NS_EVENT_STATE_VISITED;
   }
 
-  if (mLinkState == eLinkState_Unvisited) {
+  if (mState == State::Unvisited) {
     return NS_EVENT_STATE_UNVISITED;
   }
 
@@ -488,21 +461,12 @@ void Link::GetHash(nsAString& _hash) {
 }
 
 void Link::ResetLinkState(bool aNotify, bool aHasHref) {
-  nsLinkState defaultState;
-
-  // The default state for links with an href is unvisited.
-  if (aHasHref) {
-    defaultState = eLinkState_Unvisited;
-  } else {
-    defaultState = eLinkState_NotLink;
-  }
-
   // If !mNeedsRegstration, then either we've never registered, or we're
   // currently registered; in either case, we should remove ourself
   // from the doc and the history.
-  if (!mNeedsRegistration && mLinkState != eLinkState_NotLink) {
+  if (!mNeedsRegistration && mState != State::NotLink) {
     Document* doc = mElement->GetComposedDoc();
-    if (doc && (mRegistered || mLinkState == eLinkState_Visited)) {
+    if (doc && (mRegistered || mState == State::Visited)) {
       // Tell the document to forget about this link if we've registered
       // with it before.
       doc->ForgetLink(this);
@@ -520,8 +484,9 @@ void Link::ResetLinkState(bool aNotify, bool aHasHref) {
   UnregisterFromHistory();
   mCachedURI = nullptr;
 
-  // Update our state back to the default.
-  mLinkState = defaultState;
+  // Update our state back to the default; the default state for links with an
+  // href is unvisited.
+  mState = aHasHref ? State::Unvisited : State::NotLink;
 
   // We have to be very careful here: if aNotify is false we do NOT
   // want to call UpdateState, because that will call into LinkState()
@@ -534,7 +499,7 @@ void Link::ResetLinkState(bool aNotify, bool aHasHref) {
   if (aNotify) {
     mElement->UpdateState(aNotify);
   } else {
-    if (mLinkState == eLinkState_Unvisited) {
+    if (mState == State::Unvisited) {
       mElement->UpdateLinkState(NS_EVENT_STATE_UNVISITED);
     } else {
       mElement->UpdateLinkState(EventStates());
@@ -550,7 +515,7 @@ void Link::UnregisterFromHistory() {
 
   // And tell History to stop tracking us.
   if (mHistory && mCachedURI) {
-    if (nsCOMPtr<IHistory> history = services::GetHistory()) {
+    if (nsCOMPtr<IHistory> history = components::History::Service()) {
       history->UnregisterVisitedCallback(mCachedURI, this);
       mRegistered = false;
     }

@@ -61,6 +61,10 @@ interface nsIContentSecurityPolicy : nsISerializable
     BLOCK_ALL_MIXED_CONTENT        = 18,
     SANDBOX_DIRECTIVE              = 19,
     WORKER_SRC_DIRECTIVE           = 20,
+    SCRIPT_SRC_ELEM_DIRECTIVE      = 21,
+    SCRIPT_SRC_ATTR_DIRECTIVE      = 22,
+    STYLE_SRC_ELEM_DIRECTIVE       = 23,
+    STYLE_SRC_ATTR_DIRECTIVE       = 24,
   };
 
   /**

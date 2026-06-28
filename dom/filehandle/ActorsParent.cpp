@@ -7,6 +7,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/File.h"
@@ -35,16 +36,6 @@
 #include "nsThreadPool.h"
 #include "nsThreadUtils.h"
 #include "nsXPCOMCIDInternal.h"
-
-#define DISABLE_ASSERTS_FOR_FUZZING 0
-
-#if DISABLE_ASSERTS_FOR_FUZZING
-#  define ASSERT_UNLESS_FUZZING(...) \
-    do {                             \
-    } while (0)
-#else
-#  define ASSERT_UNLESS_FUZZING(...) MOZ_ASSERT(false, __VA_ARGS__)
-#endif
 
 namespace mozilla::dom {
 
@@ -1182,7 +1173,7 @@ BackgroundMutableFileParentBase::AllocPBackgroundFileHandleParent(
   AssertIsOnBackgroundThread();
 
   if (NS_WARN_IF(aMode != FileMode::Readonly && aMode != FileMode::Readwrite)) {
-    ASSERT_UNLESS_FUZZING();
+    MOZ_CRASH_UNLESS_FUZZING();
     return nullptr;
   }
 
@@ -1365,7 +1356,7 @@ bool FileHandle::VerifyRequestParams(const FileRequestParams& aParams) const {
           aParams.get_FileRequestGetMetadataParams();
 
       if (NS_WARN_IF(!params.size() && !params.lastModified())) {
-        ASSERT_UNLESS_FUZZING();
+        MOZ_CRASH_UNLESS_FUZZING();
         return false;
       }
 
@@ -1376,17 +1367,17 @@ bool FileHandle::VerifyRequestParams(const FileRequestParams& aParams) const {
       const FileRequestReadParams& params = aParams.get_FileRequestReadParams();
 
       if (NS_WARN_IF(params.offset() == UINT64_MAX)) {
-        ASSERT_UNLESS_FUZZING();
+        MOZ_CRASH_UNLESS_FUZZING();
         return false;
       }
 
       if (NS_WARN_IF(!params.size())) {
-        ASSERT_UNLESS_FUZZING();
+        MOZ_CRASH_UNLESS_FUZZING();
         return false;
       }
 
       if (NS_WARN_IF(params.size() > UINT32_MAX)) {
-        ASSERT_UNLESS_FUZZING();
+        MOZ_CRASH_UNLESS_FUZZING();
         return false;
       }
 
@@ -1395,7 +1386,7 @@ bool FileHandle::VerifyRequestParams(const FileRequestParams& aParams) const {
 
     case FileRequestParams::TFileRequestWriteParams: {
       if (NS_WARN_IF(mMode != FileMode::Readwrite)) {
-        ASSERT_UNLESS_FUZZING();
+        MOZ_CRASH_UNLESS_FUZZING();
         return false;
       }
 
@@ -1403,12 +1394,12 @@ bool FileHandle::VerifyRequestParams(const FileRequestParams& aParams) const {
           aParams.get_FileRequestWriteParams();
 
       if (NS_WARN_IF(!params.dataLength())) {
-        ASSERT_UNLESS_FUZZING();
+        MOZ_CRASH_UNLESS_FUZZING();
         return false;
       }
 
       if (NS_WARN_IF(!VerifyRequestData(params.data()))) {
-        ASSERT_UNLESS_FUZZING();
+        MOZ_CRASH_UNLESS_FUZZING();
         return false;
       }
 
@@ -1417,7 +1408,7 @@ bool FileHandle::VerifyRequestParams(const FileRequestParams& aParams) const {
 
     case FileRequestParams::TFileRequestTruncateParams: {
       if (NS_WARN_IF(mMode != FileMode::Readwrite)) {
-        ASSERT_UNLESS_FUZZING();
+        MOZ_CRASH_UNLESS_FUZZING();
         return false;
       }
 
@@ -1425,7 +1416,7 @@ bool FileHandle::VerifyRequestParams(const FileRequestParams& aParams) const {
           aParams.get_FileRequestTruncateParams();
 
       if (NS_WARN_IF(params.offset() == UINT64_MAX)) {
-        ASSERT_UNLESS_FUZZING();
+        MOZ_CRASH_UNLESS_FUZZING();
         return false;
       }
 
@@ -1434,7 +1425,7 @@ bool FileHandle::VerifyRequestParams(const FileRequestParams& aParams) const {
 
     case FileRequestParams::TFileRequestFlushParams: {
       if (NS_WARN_IF(mMode != FileMode::Readwrite)) {
-        ASSERT_UNLESS_FUZZING();
+        MOZ_CRASH_UNLESS_FUZZING();
         return false;
       }
 
@@ -1457,7 +1448,7 @@ bool FileHandle::VerifyRequestData(const FileRequestData& aData) const {
       const FileRequestStringData& data = aData.get_FileRequestStringData();
 
       if (NS_WARN_IF(data.string().IsEmpty())) {
-        ASSERT_UNLESS_FUZZING();
+        MOZ_CRASH_UNLESS_FUZZING();
         return false;
       }
 
@@ -1525,7 +1516,7 @@ mozilla::ipc::IPCResult FileHandle::RecvFinish() {
   AssertIsOnBackgroundThread();
 
   if (NS_WARN_IF(mFinishOrAbortReceived)) {
-    ASSERT_UNLESS_FUZZING();
+    MOZ_CRASH_UNLESS_FUZZING();
     return IPC_FAIL_NO_REASON(this);
   }
 
@@ -1539,7 +1530,7 @@ mozilla::ipc::IPCResult FileHandle::RecvAbort() {
   AssertIsOnBackgroundThread();
 
   if (NS_WARN_IF(mFinishOrAbortReceived)) {
-    ASSERT_UNLESS_FUZZING();
+    MOZ_CRASH_UNLESS_FUZZING();
     return IPC_FAIL_NO_REASON(this);
   }
 
@@ -1565,12 +1556,12 @@ PBackgroundFileRequestParent* FileHandle::AllocPBackgroundFileRequestParent(
 #endif
 
   if (NS_WARN_IF(!trustParams && !VerifyRequestParams(aParams))) {
-    ASSERT_UNLESS_FUZZING();
+    MOZ_CRASH_UNLESS_FUZZING();
     return nullptr;
   }
 
   if (NS_WARN_IF(mFinishOrAbortReceived)) {
-    ASSERT_UNLESS_FUZZING();
+    MOZ_CRASH_UNLESS_FUZZING();
     return nullptr;
   }
 

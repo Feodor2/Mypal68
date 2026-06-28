@@ -65,20 +65,6 @@ Result<Ok, nsresult> AnnexB::ConvertSampleToAnnexB(
     if (!samplewriter->Prepend(annexB->Elements(), annexB->Length())) {
       return Err(NS_ERROR_OUT_OF_MEMORY);
     }
-
-    // Prepending the NAL with SPS/PPS will mess up the encryption subsample
-    // offsets. So we need to account for the extra bytes by increasing
-    // the length of the first clear data subsample. Otherwise decryption
-    // will fail.
-    if (aSample->mCrypto.IsEncrypted()) {
-      if (aSample->mCrypto.mPlainSizes.Length() == 0) {
-        samplewriter->mCrypto.mPlainSizes.AppendElement(annexB->Length());
-        samplewriter->mCrypto.mEncryptedSizes.AppendElement(
-            samplewriter->Size() - annexB->Length());
-      } else {
-        samplewriter->mCrypto.mPlainSizes[0] += annexB->Length();
-      }
-    }
   }
 
   return Ok();

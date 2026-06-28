@@ -6,12 +6,15 @@
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/JSEventHandler.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/EventListenerBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "nsArrayUtils.h"
 #include "nsCOMArray.h"
+#include "nsINode.h"
 #include "nsJSUtils.h"
 #include "nsMemory.h"
 #include "nsServiceManagerUtils.h"
@@ -70,15 +73,18 @@ EventListenerChange::GetCountOfEventListenerChangesAffectingAccessibility(
  ******************************************************************************/
 
 EventListenerInfo::EventListenerInfo(
-    const nsAString& aType, JS::Handle<JSObject*> aScriptedListener,
+    EventListenerManager* aListenerManager, const nsAString& aType,
+    JS::Handle<JSObject*> aScriptedListener,
     JS::Handle<JSObject*> aScriptedListenerGlobal, bool aCapturing,
-    bool aAllowsUntrusted, bool aInSystemEventGroup)
-    : mType(aType),
+    bool aAllowsUntrusted, bool aInSystemEventGroup, bool aIsHandler)
+    : mListenerManager(aListenerManager),
+      mType(aType),
       mScriptedListener(aScriptedListener),
       mScriptedListenerGlobal(aScriptedListenerGlobal),
       mCapturing(aCapturing),
       mAllowsUntrusted(aAllowsUntrusted),
-      mInSystemEventGroup(aInSystemEventGroup) {
+      mInSystemEventGroup(aInSystemEventGroup),
+      mIsHandler(aIsHandler) {
   if (aScriptedListener) {
     MOZ_ASSERT(JS_IsGlobalObject(aScriptedListenerGlobal));
     js::AssertSameCompartment(aScriptedListener, aScriptedListenerGlobal);
@@ -89,20 +95,9 @@ EventListenerInfo::EventListenerInfo(
 
 EventListenerInfo::~EventListenerInfo() { DropJSObjects(this); }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(EventListenerInfo)
-
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(EventListenerInfo)
-NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
-
-NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(EventListenerInfo)
-  tmp->mScriptedListener = nullptr;
-  tmp->mScriptedListenerGlobal = nullptr;
-NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(EventListenerInfo)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mScriptedListener)
-  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mScriptedListenerGlobal)
-NS_IMPL_CYCLE_COLLECTION_TRACE_END
+NS_IMPL_CYCLE_COLLECTION_WITH_JS_MEMBERS(EventListenerInfo, (mListenerManager),
+                                         (mScriptedListener,
+                                          mScriptedListenerGlobal))
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(EventListenerInfo)
   NS_INTERFACE_MAP_ENTRY(nsIEventListenerInfo)
@@ -134,6 +129,22 @@ NS_IMETHODIMP
 EventListenerInfo::GetInSystemEventGroup(bool* aInSystemEventGroup) {
   *aInSystemEventGroup = mInSystemEventGroup;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+EventListenerInfo::GetEnabled(bool* aEnabled) {
+  NS_ENSURE_STATE(mListenerManager);
+  return mListenerManager->IsListenerEnabled(
+      mType, mScriptedListener, mCapturing, mAllowsUntrusted,
+      mInSystemEventGroup, mIsHandler, aEnabled);
+}
+
+NS_IMETHODIMP
+EventListenerInfo::SetEnabled(bool aEnabled) {
+  NS_ENSURE_STATE(mListenerManager);
+  return mListenerManager->SetListenerEnabled(
+      mType, mScriptedListener, mCapturing, mAllowsUntrusted,
+      mInSystemEventGroup, mIsHandler, aEnabled);
 }
 
 NS_IMETHODIMP

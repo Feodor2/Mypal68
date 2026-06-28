@@ -65,6 +65,7 @@ DIRS += [
     "storage",
     "svg",
     "locales",
+    "locks",
     "network",
     "permission",
     "plugins/base",

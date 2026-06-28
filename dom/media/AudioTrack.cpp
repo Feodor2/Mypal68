@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/dom/AudioStreamTrack.h"
 #include "mozilla/dom/AudioTrack.h"
 #include "mozilla/dom/AudioTrackBinding.h"
 #include "mozilla/dom/AudioTrackList.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 AudioTrack::AudioTrack(nsIGlobalObject* aOwnerGlobal, const nsAString& aId,
                        const nsAString& aKind, const nsAString& aLabel,
@@ -65,5 +65,4 @@ void AudioTrack::SetEnabledInternal(bool aEnabled, int aFlags) {
   }
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -141,6 +141,14 @@ already_AddRefed<FetchEvent> FetchEvent::Constructor(
   e->mRequest = aOptions.mRequest;
   e->mClientId = aOptions.mClientId;
   e->mResultingClientId = aOptions.mResultingClientId;
+  RefPtr<nsIGlobalObject> global = do_QueryObject(aGlobal.GetAsSupports());
+  MOZ_ASSERT(global);
+  ErrorResult rv;
+  e->mHandled = Promise::Create(global, rv);
+  if (rv.Failed()) {
+    rv.SuppressException();
+    return nullptr;
+  }
   return e.forget();
 }
 
@@ -934,7 +942,8 @@ NS_IMPL_RELEASE_INHERITED(FetchEvent, ExtendableEvent)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(FetchEvent)
 NS_INTERFACE_MAP_END_INHERITING(ExtendableEvent)
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(FetchEvent, ExtendableEvent, mRequest)
+NS_IMPL_CYCLE_COLLECTION_INHERITED(FetchEvent, ExtendableEvent, mRequest,
+                                   mHandled)
 
 ExtendableEvent::ExtendableEvent(EventTarget* aOwner)
     : Event(aOwner, nullptr, nullptr) {}

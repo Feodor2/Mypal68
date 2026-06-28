@@ -9,9 +9,9 @@
 
 #include "mozilla/Alignment.h"
 #include "mozilla/Attributes.h"
+#include <utility>
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 // The union type has an enum to keep track of which of its UnionMembers has
 // been constructed.
@@ -27,26 +27,17 @@ class UnionMember {
   UnionMember() = default;
   ~UnionMember() = default;
 
-  T& SetValue() {
-    new (mStorage.addr()) T();
+  template <typename... Args>
+  T& SetValue(Args&&... args) {
+    new (mStorage.addr()) T(std::forward<Args>(args)...);
     return *mStorage.addr();
   }
-  template <typename T1>
-  T& SetValue(const T1& aValue) {
-    new (mStorage.addr()) T(aValue);
-    return *mStorage.addr();
-  }
-  template <typename T1, typename T2>
-  T& SetValue(const T1& aValue1, const T2& aValue2) {
-    new (mStorage.addr()) T(aValue1, aValue2);
-    return *mStorage.addr();
-  }
+
   T& Value() { return *mStorage.addr(); }
   const T& Value() const { return *mStorage.addr(); }
   void Destroy() { mStorage.addr()->~T(); }
 } MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS;
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_UnionMember_h

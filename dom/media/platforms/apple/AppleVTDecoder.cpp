@@ -6,15 +6,17 @@
 
 #include "AppleDecoderModule.h"
 #include "AppleUtils.h"
+#include "H264.h"
+#include "MP4Decoder.h"
 #include "MacIOSurfaceImage.h"
 #include "MediaData.h"
-#include "mozilla/ArrayUtils.h"
-#include "H264.h"
-#include "nsThreadUtils.h"
-#include "mozilla/Logging.h"
+#include "VPXDecoder.h"
 #include "VideoUtils.h"
 #include "gfxPlatform.h"
-#include "MacIOSurfaceImage.h"
+#include "mozilla/ArrayUtils.h"
+#include "mozilla/Logging.h"
+#include "mozilla/TaskQueue.h"
+#include "nsThreadUtils.h"
 
 #define LOG(...) DDMOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, __VA_ARGS__)
 #define LOGEX(_this, ...) \
@@ -24,7 +26,7 @@ namespace mozilla {
 
 using namespace layers;
 
-AppleVTDecoder::AppleVTDecoder(const VideoInfo& aConfig, TaskQueue* aTaskQueue,
+AppleVTDecoder::AppleVTDecoder(const VideoInfo& aConfig,
                                layers::ImageContainer* aImageContainer,
                                CreateDecoderParams::OptionSet aOptions)
     : mExtraData(aConfig.mExtraData),
@@ -36,7 +38,9 @@ AppleVTDecoder::AppleVTDecoder(const VideoInfo& aConfig, TaskQueue* aTaskQueue,
                       ? DefaultColorSpace({mPictureWidth, mPictureHeight})
                       : aConfig.mColorSpace),
       mColorRange(aConfig.mColorRange),
-      mTaskQueue(aTaskQueue),
+      mTaskQueue(
+          new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),
+                        "AppleVTDecoder")),
       mMaxRefFrames(aOptions.contains(CreateDecoderParams::Option::LowLatency)
                         ? 0
                         : H264::ComputeMaxRefFrames(aConfig.mExtraData)),
@@ -103,15 +107,11 @@ RefPtr<MediaDataDecoder::DecodePromise> AppleVTDecoder::Drain() {
 }
 
 RefPtr<ShutdownPromise> AppleVTDecoder::Shutdown() {
-  if (mTaskQueue) {
-    RefPtr<AppleVTDecoder> self = this;
-    return InvokeAsync(mTaskQueue, __func__, [self]() {
-      self->ProcessShutdown();
-      return ShutdownPromise::CreateAndResolve(true, __func__);
-    });
-  }
-  ProcessShutdown();
-  return ShutdownPromise::CreateAndResolve(true, __func__);
+  RefPtr<AppleVTDecoder> self = this;
+  return InvokeAsync(mTaskQueue, __func__, [self]() {
+    self->ProcessShutdown();
+    return self->mTaskQueue->BeginShutdown();
+  });
 }
 
 // Helper to fill in a timestamp structure.
@@ -129,7 +129,7 @@ static CMSampleTimingInfo TimingInfoFromSample(MediaRawData* aSample) {
 }
 
 void AppleVTDecoder::ProcessDecode(MediaRawData* aSample) {
-  AssertOnTaskQueueThread();
+  AssertOnTaskQueue();
 
   if (mIsFlushing) {
     MonitorAutoLock mon(mMonitor);
@@ -179,7 +179,15 @@ void AppleVTDecoder::ProcessDecode(MediaRawData* aSample) {
       kVTDecodeFrame_EnableAsynchronousDecompression;
   rv = VTDecompressionSessionDecodeFrame(
       mSession, sample, decodeFlags, CreateAppleFrameRef(aSample), &infoFlags);
-  if (rv != noErr && !(infoFlags & kVTDecodeInfo_FrameDropped)) {
+  if (infoFlags & kVTDecodeInfo_FrameDropped) {
+    MonitorAutoLock mon(mMonitor);
+    // Smile and nod
+    NS_WARNING("Decoder synchronously dropped frame");
+    mPromise.ResolveIfExists(DecodedData(), __func__);
+    return;
+  }
+
+  if (rv != noErr) {
     LOG("AppleVTDecoder: Error %d VTDecompressionSessionDecodeFrame", rv);
     NS_WARNING("Couldn't pass frame to decoder");
     // It appears that even when VTDecompressionSessionDecodeFrame returned a
@@ -208,7 +216,7 @@ void AppleVTDecoder::ProcessShutdown() {
 }
 
 RefPtr<MediaDataDecoder::FlushPromise> AppleVTDecoder::ProcessFlush() {
-  AssertOnTaskQueueThread();
+  AssertOnTaskQueue();
   nsresult rv = WaitForAsynchronousFrames();
   if (NS_FAILED(rv)) {
     LOG("AppleVTDecoder::Flush failed waiting for platform decoder");
@@ -225,7 +233,7 @@ RefPtr<MediaDataDecoder::FlushPromise> AppleVTDecoder::ProcessFlush() {
 }
 
 RefPtr<MediaDataDecoder::DecodePromise> AppleVTDecoder::ProcessDrain() {
-  AssertOnTaskQueueThread();
+  AssertOnTaskQueue();
   nsresult rv = WaitForAsynchronousFrames();
   if (NS_FAILED(rv)) {
     LOG("AppleVTDecoder::Drain failed waiting for platform decoder");
@@ -274,9 +282,12 @@ static void PlatformCallback(void* decompressionOutputRefCon,
       static_cast<AppleVTDecoder::AppleFrameRef*>(sourceFrameRefCon));
 
   // Validate our arguments.
-  if (status != noErr || !image) {
+  if (status != noErr) {
+    NS_WARNING("VideoToolbox decoder returned an error");
+    decoder->OnDecodeError(status);
+    return;
+  } else if (!image) {
     NS_WARNING("VideoToolbox decoder returned no data");
-    image = nullptr;
   } else if (flags & kVTDecodeInfo_FrameDropped) {
     NS_WARNING("  ...frame tagged as dropped...");
   } else {
@@ -423,6 +434,14 @@ void AppleVTDecoder::OutputFrame(CVPixelBufferRef aImage,
 
   LOG("%llu decoded frames queued",
       static_cast<unsigned long long>(mReorderQueue.Length()));
+}
+
+void AppleVTDecoder::OnDecodeError(OSStatus aError) {
+  MonitorAutoLock mon(mMonitor);
+  mPromise.RejectIfExists(
+      MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
+                  RESULT_DETAIL("OnDecodeError:%x", aError)),
+      __func__);
 }
 
 nsresult AppleVTDecoder::WaitForAsynchronousFrames() {

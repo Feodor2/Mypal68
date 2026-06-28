@@ -18,7 +18,7 @@ using namespace mozilla;
 TEST(MediaEventSource, SingleListener)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
 
   MediaEventProducer<int> source;
   int i = 0;
@@ -42,7 +42,7 @@ TEST(MediaEventSource, SingleListener)
 TEST(MediaEventSource, MultiListener)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
 
   MediaEventProducer<int> source;
   int i = 0;
@@ -73,7 +73,7 @@ TEST(MediaEventSource, MultiListener)
 TEST(MediaEventSource, DisconnectAfterNotification)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
 
   MediaEventProducer<int> source;
   int i = 0;
@@ -100,7 +100,7 @@ TEST(MediaEventSource, DisconnectAfterNotification)
 TEST(MediaEventSource, DisconnectBeforeNotification)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
 
   MediaEventProducer<int> source;
   int i = 0;
@@ -145,7 +145,7 @@ TEST(MediaEventSource, DisconnectAndConnect)
 TEST(MediaEventSource, VoidEventType)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
 
   MediaEventProducer<void> source;
   int i = 0;
@@ -182,7 +182,7 @@ TEST(MediaEventSource, VoidEventType)
 TEST(MediaEventSource, ListenerType1)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
 
   MediaEventProducer<int> source;
   int i = 0;
@@ -210,7 +210,7 @@ TEST(MediaEventSource, ListenerType1)
 TEST(MediaEventSource, ListenerType2)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
 
   MediaEventProducer<int> source;
 
@@ -260,7 +260,7 @@ struct SomeEvent {
 TEST(MediaEventSource, CopyEvent1)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
 
   MediaEventProducer<SomeEvent> source;
   int i = 0;
@@ -287,7 +287,7 @@ TEST(MediaEventSource, CopyEvent1)
 TEST(MediaEventSource, CopyEvent2)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
 
   MediaEventProducer<SomeEvent> source;
   int i = 0;
@@ -316,7 +316,7 @@ TEST(MediaEventSource, CopyEvent2)
 TEST(MediaEventSource, MoveOnly)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
 
   MediaEventProducerExc<UniquePtr<int>> source;
 
@@ -350,7 +350,7 @@ struct RefCounter {
 TEST(MediaEventSource, NoMove)
 {
   RefPtr<TaskQueue> queue =
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER));
 
   MediaEventProducer<RefPtr<RefCounter>> source;
 

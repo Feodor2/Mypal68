@@ -4,19 +4,20 @@
 
 #include "GMPService.h"
 
-#include "GeckoChildProcessHost.h"
 #include "GMPLog.h"
 #include "GMPParent.h"
 #include "GMPProcessParent.h"
 #include "GMPServiceChild.h"
 #include "GMPServiceParent.h"
 #include "GMPVideoDecoderParent.h"
+#include "GeckoChildProcessHost.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/dom/PluginCrashedEvent.h"
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/dom/PluginCrashedEvent.h"
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxInfo.h"
 #endif
+#include "VideoUtils.h"
 #include "mozilla/Services.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/SystemGroup.h"
@@ -32,7 +33,6 @@
 #include "nsXPCOMPrivate.h"
 #include "prio.h"
 #include "runnable_utils.h"
-#include "VideoUtils.h"
 
 namespace mozilla {
 
@@ -124,6 +124,7 @@ NS_IMPL_ISUPPORTS(GeckoMediaPluginService, mozIGeckoMediaPluginService,
 
 GeckoMediaPluginService::GeckoMediaPluginService()
     : mMutex("GeckoMediaPluginService::mMutex"),
+      mMainThread(GetMainThreadSerialEventTarget()),
       mGMPThreadShutdown(false),
       mShuttingDownOnGMPThread(false),
       mXPCOMWillShutdown(false) {
@@ -143,7 +144,7 @@ GeckoMediaPluginService::GeckoMediaPluginService()
   }
 }
 
-GeckoMediaPluginService::~GeckoMediaPluginService() {}
+GeckoMediaPluginService::~GeckoMediaPluginService() = default;
 
 NS_IMETHODIMP
 GeckoMediaPluginService::RunPluginCrashCallbacks(
@@ -199,8 +200,6 @@ nsresult GeckoMediaPluginService::Init() {
   MOZ_ASSERT(obsService);
   MOZ_ALWAYS_SUCCEEDS(obsService->AddObserver(
       this, NS_XPCOM_SHUTDOWN_THREADS_OBSERVER_ID, false));
-  MOZ_ALWAYS_SUCCEEDS(
-      obsService->AddObserver(this, NS_XPCOM_WILL_SHUTDOWN_OBSERVER_ID, false));
 
   // Kick off scanning for plugins
   nsCOMPtr<nsIThread> thread;
@@ -214,12 +213,24 @@ void GeckoMediaPluginService::ShutdownGMPThread() {
     MutexAutoLock lock(mMutex);
     mGMPThreadShutdown = true;
     mGMPThread.swap(gmpThread);
-    mAbstractGMPThread = nullptr;
   }
 
   if (gmpThread) {
     gmpThread->Shutdown();
   }
+}
+
+/* static */
+nsCOMPtr<nsIAsyncShutdownClient> GeckoMediaPluginService::GetShutdownBarrier() {
+  nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdownService();
+  MOZ_RELEASE_ASSERT(svc);
+
+  nsCOMPtr<nsIAsyncShutdownClient> barrier;
+  nsresult rv = svc->GetXpcomWillShutdown(getter_AddRefs(barrier));
+
+  MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
+  MOZ_RELEASE_ASSERT(barrier);
+  return barrier;
 }
 
 nsresult GeckoMediaPluginService::GMPDispatch(nsIRunnable* event,
@@ -258,11 +269,8 @@ GeckoMediaPluginService::GetThread(nsIThread** aThread) {
       return rv;
     }
 
-    mAbstractGMPThread =
-        AbstractThread::CreateXPCOMThreadWrapper(mGMPThread, false);
-
     // Tell the thread to initialize plugins
-    InitializePlugins(mAbstractGMPThread.get());
+    InitializePlugins(mGMPThread);
   }
 
   nsCOMPtr<nsIThread> copy = mGMPThread;
@@ -271,9 +279,13 @@ GeckoMediaPluginService::GetThread(nsIThread** aThread) {
   return NS_OK;
 }
 
-RefPtr<AbstractThread> GeckoMediaPluginService::GetAbstractGMPThread() {
-  MutexAutoLock lock(mMutex);
-  return mAbstractGMPThread;
+already_AddRefed<nsISerialEventTarget> GeckoMediaPluginService::GetGMPThread() {
+  nsCOMPtr<nsISerialEventTarget> thread;
+  {
+    MutexAutoLock lock(mMutex);
+    thread = mGMPThread;
+  }
+  return thread.forget();
 }
 
 NS_IMETHODIMP
@@ -281,7 +293,7 @@ GeckoMediaPluginService::GetDecryptingGMPVideoDecoder(
     GMPCrashHelper* aHelper, nsTArray<nsCString>* aTags,
     const nsACString& aNodeId,
     UniquePtr<GetGMPVideoDecoderCallback>&& aCallback, uint32_t aDecryptorId) {
-  MOZ_ASSERT(mGMPThread->EventTarget()->IsOnCurrentThread());
+  MOZ_ASSERT(mGMPThread->IsOnCurrentThread());
   NS_ENSURE_ARG(aTags && aTags->Length() > 0);
   NS_ENSURE_ARG(aCallback);
 
@@ -290,7 +302,7 @@ GeckoMediaPluginService::GetDecryptingGMPVideoDecoder(
   }
 
   GetGMPVideoDecoderCallback* rawCallback = aCallback.release();
-  RefPtr<AbstractThread> thread(GetAbstractGMPThread());
+  nsCOMPtr<nsISerialEventTarget> thread(GetGMPThread());
   RefPtr<GMPCrashHelper> helper(aHelper);
   GetContentParent(aHelper, aNodeId, nsLiteralCString(GMP_API_VIDEO_DECODER),
                    *aTags)
@@ -322,7 +334,7 @@ GeckoMediaPluginService::GetGMPVideoEncoder(
     GMPCrashHelper* aHelper, nsTArray<nsCString>* aTags,
     const nsACString& aNodeId,
     UniquePtr<GetGMPVideoEncoderCallback>&& aCallback) {
-  MOZ_ASSERT(mGMPThread->EventTarget()->IsOnCurrentThread());
+  MOZ_ASSERT(mGMPThread->IsOnCurrentThread());
   NS_ENSURE_ARG(aTags && aTags->Length() > 0);
   NS_ENSURE_ARG(aCallback);
 
@@ -331,7 +343,7 @@ GeckoMediaPluginService::GetGMPVideoEncoder(
   }
 
   GetGMPVideoEncoderCallback* rawCallback = aCallback.release();
-  RefPtr<AbstractThread> thread(GetAbstractGMPThread());
+  nsCOMPtr<nsISerialEventTarget> thread(GetGMPThread());
   RefPtr<GMPCrashHelper> helper(aHelper);
   GetContentParent(aHelper, aNodeId, nsLiteralCString(GMP_API_VIDEO_ENCODER),
                    *aTags)

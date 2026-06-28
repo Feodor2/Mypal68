@@ -20,6 +20,7 @@
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamDefaultReaderBinding.h"
 #include "mozilla/dom/RequestBinding.h"
+#include "mozilla/dom/workerinternals/RuntimeService.h"
 
 class nsIGlobalObject;
 class nsIEventTarget;
@@ -160,7 +161,7 @@ class FetchBody : public BodyStreamHolder, public AbortFollower {
   }
 
   already_AddRefed<ReadableStream> GetBody(JSContext* aCx, ErrorResult& aRv);
-  void GetMimeType(nsACString& aMimeType);
+  void GetMimeType(nsACString& aMimeType, nsACString& aMixedCaseMimeType);
 
   const nsACString& BodyBlobURISpec() const;
 
@@ -204,16 +205,9 @@ class FetchBody : public BodyStreamHolder, public AbortFollower {
 
   // BodyStreamHolder
   void NullifyStream() override {
-    mReadableStreamBody = nullptr;
+    BodyStreamHolder::NullifyStream();
     mReadableStreamReader = nullptr;
     mFetchStreamReader = nullptr;
-  }
-
-  void SetReadableStreamBody(ReadableStream* aBody) override {
-    mReadableStreamBody = aBody;
-  }
-  ReadableStream* GetReadableStreamBody() override {
-    return mReadableStreamBody;
   }
 
   void MarkAsRead() override { mBodyUsed = true; }
@@ -231,13 +225,6 @@ class FetchBody : public BodyStreamHolder, public AbortFollower {
 
  protected:
   nsCOMPtr<nsIGlobalObject> mOwner;
-
-  // Always set whenever the FetchBody is created on the worker thread.
-  WorkerPrivate* mWorkerPrivate;
-
-  // This is the ReadableStream exposed to content. It's underlying source is a
-  // BodyStream object. This needs to be traversed by subclasses.
-  RefPtr<ReadableStream> mReadableStreamBody;
 
   // This is the Reader used to retrieve data from the body. This needs to be
   // traversed by subclasses.
@@ -257,9 +244,9 @@ class FetchBody : public BodyStreamHolder, public AbortFollower {
 
   void LockStream(JSContext* aCx, ReadableStream* aStream, ErrorResult& aRv);
 
-  bool IsOnTargetThread() { return NS_IsMainThread() == !mWorkerPrivate; }
-
-  void AssertIsOnTargetThread() { MOZ_ASSERT(IsOnTargetThread()); }
+  void AssertIsOnTargetThread() {
+    MOZ_ASSERT(NS_IsMainThread() == !GetCurrentThreadWorkerPrivate());
+  }
 
   // Only ever set once, always on target thread.
   bool mBodyUsed;
@@ -277,7 +264,7 @@ class EmptyBody final : public FetchBody<EmptyBody> {
   static already_AddRefed<EmptyBody> Create(
       nsIGlobalObject* aGlobal, mozilla::ipc::PrincipalInfo* aPrincipalInfo,
       AbortSignalImpl* aAbortSignalImpl, const nsACString& aMimeType,
-      ErrorResult& aRv);
+      const nsACString& aMixedCaseMimeType, ErrorResult& aRv);
 
   nsIGlobalObject* GetParentObject() const { return mOwner; }
 
@@ -288,7 +275,10 @@ class EmptyBody final : public FetchBody<EmptyBody> {
     return mPrincipalInfo;
   }
 
-  void GetMimeType(nsACString& aMimeType) { aMimeType = mMimeType; }
+  void GetMimeType(nsACString& aMimeType, nsACString& aMixedCaseMimeType) {
+    aMimeType = mMimeType;
+    aMixedCaseMimeType = mMixedCaseMimeType;
+  }
 
   void GetBody(nsIInputStream** aStream, int64_t* aBodyLength = nullptr);
 
@@ -304,6 +294,7 @@ class EmptyBody final : public FetchBody<EmptyBody> {
   EmptyBody(nsIGlobalObject* aGlobal,
             mozilla::ipc::PrincipalInfo* aPrincipalInfo,
             AbortSignalImpl* aAbortSignalImpl, const nsACString& aMimeType,
+            const nsACString& aMixedCaseMimeType,
             already_AddRefed<nsIInputStream> aBodyStream);
 
   ~EmptyBody();
@@ -311,6 +302,7 @@ class EmptyBody final : public FetchBody<EmptyBody> {
   UniquePtr<mozilla::ipc::PrincipalInfo> mPrincipalInfo;
   RefPtr<AbortSignalImpl> mAbortSignalImpl;
   nsCString mMimeType;
+  nsCString mMixedCaseMimeType;
   nsCOMPtr<nsIInputStream> mBodyStream;
 };
 }  // namespace dom

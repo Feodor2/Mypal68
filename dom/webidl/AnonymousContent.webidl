@@ -27,7 +27,7 @@ interface AnonymousContent {
    * Set the text content of an element inside this custom anonymous content.
    */
   [Throws]
-  void setTextContentForElement(DOMString elementId, DOMString text);
+  undefined setTextContentForElement(DOMString elementId, DOMString text);
 
   /**
    * Get the value of an attribute of an element inside this custom anonymous
@@ -42,16 +42,16 @@ interface AnonymousContent {
    * content.
    */
   [NeedsSubjectPrincipal=NonSystem, Throws]
-  void setAttributeForElement(DOMString elementId,
-                              DOMString attributeName,
-                              DOMString value);
+  undefined setAttributeForElement(DOMString elementId,
+                                   DOMString attributeName,
+                                   DOMString value);
 
   /**
    * Remove an attribute from an element inside this custom anonymous content.
    */
   [Throws]
-  void removeAttributeForElement(DOMString elementId,
-                                 DOMString attributeName);
+  undefined removeAttributeForElement(DOMString elementId,
+                                      DOMString attributeName);
 
   /**
    * Get the canvas' context for the element specified if it's a <canvas>
@@ -74,8 +74,8 @@ interface AnonymousContent {
    * not render any background images once this method has been called.
    */
   [Throws]
-  void setCutoutRectsForElement(DOMString elementId,
-                                sequence<DOMRect> rects);
+  undefined setCutoutRectsForElement(DOMString elementId,
+                                     sequence<DOMRect> rects);
 
   /**
    * Get the computed value of a property on an element inside this custom
@@ -83,7 +83,7 @@ interface AnonymousContent {
    */
   [Throws]
   UTF8String? getComputedStylePropertyValue(DOMString elementId,
-                                           UTF8String propertyName);
+                                            UTF8String propertyName);
 
   /**
    * If event's original target is in the anonymous content, this returns the id
@@ -95,5 +95,5 @@ interface AnonymousContent {
    * Set given style to this AnonymousContent.
    */
   [Throws]
-  void setStyle(UTF8String property, UTF8String value);
+  undefined setStyle(UTF8String property, UTF8String value);
 };

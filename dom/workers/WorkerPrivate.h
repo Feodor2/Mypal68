@@ -19,11 +19,12 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/ClientSource.h"
 #include "mozilla/dom/FlippedOnce.h"
+#include "mozilla/dom/Timeout.h"
 #include "mozilla/dom/JSExecutionManager.h" //MY
+#include "mozilla/dom/quota/CheckedUnsafePtr.h"
 #include "mozilla/dom/Worker.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerLoadInfo.h"
-#include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/WorkerStatus.h"
 #include "mozilla/dom/workerinternals/JSSettings.h"
 #include "mozilla/dom/workerinternals/Queue.h"
@@ -41,7 +42,7 @@ namespace dom {
 
 // If you change this, the corresponding list in nsIWorkerDebugger.idl needs
 // to be updated too.
-enum WorkerType { WorkerTypeDedicated, WorkerTypeShared, WorkerTypeService };
+enum WorkerKind { WorkerKindDedicated, WorkerKindShared, WorkerKindService };
 
 class ClientInfo;
 class ClientSource;
@@ -68,9 +69,9 @@ class WorkerThread;
 // object. It exists to avoid changing a lot of code to use Mutex* instead of
 // Mutex&.
 class SharedMutex {
-  class RefCountedMutex final : public Lock {
+  class RefCountedMutex final : public Lock2 {
    public:
-    explicit RefCountedMutex() : Lock() {}
+    explicit RefCountedMutex() : Lock2() {}
 
     NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RefCountedMutex)
 
@@ -86,14 +87,16 @@ class SharedMutex {
 
   SharedMutex(const SharedMutex& aOther) = default;
 
-  operator Lock&() { return *mMutex; }
+  operator Lock2&() { return *mMutex; }
 
-  operator const Lock&() const { return *mMutex; }
+  operator const Lock2&() const { return *mMutex; }
 
   void AssertCurrentThreadOwns() const { mMutex->AssertCurrentThreadOwns(); }
 };
 
-class WorkerPrivate final : public RelativeTimeline {
+class WorkerPrivate final
+    : public RelativeTimeline,
+      public SupportsCheckedUnsafePtr<CheckIf<DiagnosticAssertEnabled>> {
  public:
   struct LocationInfo {
     nsCString mHref;
@@ -111,7 +114,7 @@ class WorkerPrivate final : public RelativeTimeline {
 
   static already_AddRefed<WorkerPrivate> Constructor(
       JSContext* aCx, const nsAString& aScriptURL, bool aIsChromeWorker,
-      WorkerType aWorkerType, const nsAString& aWorkerName,
+      WorkerKind aWorkerKind, const nsAString& aWorkerName,
       const nsACString& aServiceWorkerScope, WorkerLoadInfo* aLoadInfo,
       ErrorResult& aRv);
 
@@ -121,7 +124,7 @@ class WorkerPrivate final : public RelativeTimeline {
                               WorkerPrivate* aParent,
                               const nsAString& aScriptURL, bool aIsChromeWorker,
                               LoadGroupBehavior aLoadGroupBehavior,
-                              WorkerType aWorkerType,
+                              WorkerKind aWorkerKind,
                               WorkerLoadInfo* aLoadInfo);
 
   void Traverse(nsCycleCollectionTraversalCallback& aCb);
@@ -204,8 +207,26 @@ class WorkerPrivate final : public RelativeTimeline {
     return std::move(mDefaultLocale);
   }
 
+  /**
+   * Invoked by WorkerThreadPrimaryRunnable::Run if it already called
+   * SetWorkerPrivateInWorkerThread but has to bail out on initialization before
+   * calling DoRunLoop because PBackground failed to initialize or something
+   * like that.  Note that there's currently no point earlier than this that
+   * failure can be reported.
+   *
+   * When this happens, the worker will need to be deleted, plus the call to
+   * SetWorkerPrivateInWorkerThread will have scheduled all the
+   * mPreStartRunnables which need to be cleaned up after, as well as any
+   * scheduled control runnables.  We're somewhat punting on debugger runnables
+   * for now, which may leak, but the intent is to moot this whole scenario via
+   * shutdown blockers, so we don't want the extra complexity right now.
+   */
+  void RunLoopNeverRan();
+
   MOZ_CAN_RUN_SCRIPT
   void DoRunLoop(JSContext* aCx);
+
+  void UnrootGlobalScopes();
 
   bool InterruptCallback(JSContext* aCx);
 
@@ -225,9 +246,9 @@ class WorkerPrivate final : public RelativeTimeline {
 
   bool ModifyBusyCountFromWorker(bool aIncrease);
 
-  bool AddChildWorker(WorkerPrivate* aChildWorker);
+  bool AddChildWorker(WorkerPrivate& aChildWorker);
 
-  void RemoveChildWorker(WorkerPrivate* aChildWorker);
+  void RemoveChildWorker(WorkerPrivate& aChildWorker);
 
   void PostMessageToParent(JSContext* aCx, JS::Handle<JS::Value> aMessage,
                            const Sequence<JSObject*>& aTransferable,
@@ -260,9 +281,10 @@ class WorkerPrivate final : public RelativeTimeline {
                                    const nsTArray<nsString>& aParams);
 
   int32_t SetTimeout(JSContext* aCx, TimeoutHandler* aHandler, int32_t aTimeout,
-                     bool aIsInterval, ErrorResult& aRv);
+                     bool aIsInterval, Timeout::Reason aReason,
+                     ErrorResult& aRv);
 
-  void ClearTimeout(int32_t aId);
+  void ClearTimeout(int32_t aId, Timeout::Reason aReason);
 
   MOZ_CAN_RUN_SCRIPT bool RunExpiredTimeouts(JSContext* aCx);
 
@@ -545,6 +567,9 @@ class WorkerPrivate final : public RelativeTimeline {
   // worker [Dedicated|Shared|Service].
   bool IsChromeWorker() const { return mIsChromeWorker; }
 
+  // TODO: Invariants require that the parent worker out-live any child
+  // worker, so WorkerPrivate* should be safe in the moment of calling.
+  // We would like to have stronger type-system annotated/enforced handling.
   WorkerPrivate* GetParent() const { return mParent; }
 
   bool IsFrozen() const {
@@ -568,25 +593,25 @@ class WorkerPrivate final : public RelativeTimeline {
 
   const nsString& WorkerName() const { return mWorkerName; }
 
-  WorkerType Type() const { return mWorkerType; }
+  WorkerKind Kind() const { return mWorkerKind; }
 
-  bool IsDedicatedWorker() const { return mWorkerType == WorkerTypeDedicated; }
+  bool IsDedicatedWorker() const { return mWorkerKind == WorkerKindDedicated; }
 
-  bool IsSharedWorker() const { return mWorkerType == WorkerTypeShared; }
+  bool IsSharedWorker() const { return mWorkerKind == WorkerKindShared; }
 
-  bool IsServiceWorker() const { return mWorkerType == WorkerTypeService; }
+  bool IsServiceWorker() const { return mWorkerKind == WorkerKindService; }
 
   nsContentPolicyType ContentPolicyType() const {
-    return ContentPolicyType(mWorkerType);
+    return ContentPolicyType(mWorkerKind);
   }
 
-  static nsContentPolicyType ContentPolicyType(WorkerType aWorkerType) {
-    switch (aWorkerType) {
-      case WorkerTypeDedicated:
+  static nsContentPolicyType ContentPolicyType(WorkerKind aWorkerKind) {
+    switch (aWorkerKind) {
+      case WorkerKindDedicated:
         return nsIContentPolicy::TYPE_INTERNAL_WORKER;
-      case WorkerTypeShared:
+      case WorkerKindShared:
         return nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER;
-      case WorkerTypeService:
+      case WorkerKindService:
         return nsIContentPolicy::TYPE_INTERNAL_SERVICE_WORKER;
       default:
         MOZ_ASSERT_UNREACHABLE("Invalid worker type");
@@ -901,7 +926,7 @@ class WorkerPrivate final : public RelativeTimeline {
 
  private:
   WorkerPrivate(WorkerPrivate* aParent, const nsAString& aScriptURL,
-                bool aIsChromeWorker, WorkerType aWorkerType,
+                bool aIsChromeWorker, WorkerKind aWorkerKind,
                 const nsAString& aWorkerName,
                 const nsACString& aServiceWorkerScope,
                 WorkerLoadInfo& aLoadInfo);
@@ -1009,14 +1034,16 @@ class WorkerPrivate final : public RelativeTimeline {
   SharedMutex mMutex;
   ConditionVariable mCondVar;
 
-  WorkerPrivate* mParent;
+  // We cannot make this CheckedUnsafePtr<WorkerPrivate> as this would violate
+  // our static assert
+  MOZ_NON_OWNING_REF WorkerPrivate* mParent;
 
   nsString mScriptURL;
 
   // This is the worker name for shared workers and dedicated workers.
   const nsString mWorkerName;
 
-  const WorkerType mWorkerType;
+  const WorkerKind mWorkerKind;
 
   // The worker is owned by its thread, which is represented here.  This is set
   // in Constructor() and emptied by WorkerFinishedRunnable, and conditionally
@@ -1114,6 +1141,8 @@ class WorkerPrivate final : public RelativeTimeline {
 
     RefPtr<WorkerGlobalScope> mScope;
     RefPtr<WorkerDebuggerGlobalScope> mDebuggerScope;
+    // We cannot make this CheckedUnsafePtr<WorkerPrivate> as this would violate
+    // our static assert
     nsTArray<WorkerPrivate*> mChildWorkers;
     nsTObserverArray<WorkerRef*> mWorkerRefs;
     nsTArray<UniquePtr<TimeoutInfo>> mTimeouts;
@@ -1151,7 +1180,7 @@ class WorkerPrivate final : public RelativeTimeline {
     uint32_t mDebuggerEventLoopLevel;
 
     uint32_t mErrorHandlerRecursionCount;
-    uint32_t mNextTimeoutId;
+    int32_t mNextTimeoutId;
 
     // Tracks the current setTimeout/setInterval nesting level.
     // When there isn't a TimeoutHandler on the stack, this will be 0.
@@ -1184,7 +1213,9 @@ class WorkerPrivate final : public RelativeTimeline {
     ~AutoPushEventLoopGlobal();
 
    private:
-    WorkerPrivate* mWorkerPrivate;
+    // We cannot make this CheckedUnsafePtr<WorkerPrivate> as this would violate
+    // our static assert
+    MOZ_NON_OWNING_REF WorkerPrivate* mWorkerPrivate;
     nsCOMPtr<nsIGlobalObject> mOldEventLoopGlobal;
   };
   friend class AutoPushEventLoopGlobal;
@@ -1235,7 +1266,7 @@ class WorkerPrivate final : public RelativeTimeline {
 };
 
 class AutoSyncLoopHolder {
-  WorkerPrivate* mWorkerPrivate;
+  CheckedUnsafePtr<WorkerPrivate> mWorkerPrivate;
   nsCOMPtr<nsIEventTarget> mTarget;
   uint32_t mIndex;
 
@@ -1258,7 +1289,7 @@ class AutoSyncLoopHolder {
   }
 
   bool Run() {
-    WorkerPrivate* workerPrivate = mWorkerPrivate;
+    CheckedUnsafePtr<WorkerPrivate> workerPrivate = mWorkerPrivate;
     mWorkerPrivate = nullptr;
 
     workerPrivate->AssertIsOnWorkerThread();

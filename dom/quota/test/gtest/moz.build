@@ -3,11 +3,16 @@
 # file, you can obtain one at http://mozilla.org/MPL/2.0/.
 
 UNIFIED_SOURCES = [
+    "Common.cpp",
     "TestCheckedUnsafePtr.cpp",
     "TestFlatten.cpp",
+    "TestForwardDecls.cpp",
     "TestPersistenceType.cpp",
+    "TestQMResult.cpp",
     "TestQuotaCommon.cpp",
     "TestQuotaManager.cpp",
+    "TestResultExtensions.cpp",
+    "TestScopedLogExtraInfo.cpp",
     "TestUsageInfo.cpp",
 ]
 

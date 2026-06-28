@@ -489,8 +489,6 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   bool HasVideo() const { return mMediaInfo.HasVideo(); }
 
-  bool IsEncrypted() const { return mIsEncrypted; }
-
   bool Paused() const { return mPaused; }
 
   double DefaultPlaybackRate() const {
@@ -589,10 +587,11 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   already_AddRefed<Promise> MozDumpDebugInfo();
 
-  // For use by mochitests. Enabling pref "media.test.video-suspend"
+  // For use by mochitests.
+#ifdef ENABLE_TESTS
   void SetVisible(bool aVisible);
 
-  // For use by mochitests. Enabling pref "media.test.video-suspend"
+  // For use by mochitests.
   bool HasSuspendTaint() const;
 
   // For use by mochitests.
@@ -600,6 +599,7 @@ class HTMLMediaElement : public nsGenericHTMLElement,
 
   // For use by mochitests only.
   bool IsVisible() const;
+#endif
 
   // Synchronously, return the next video frame and mark the element unable to
   // participate in decode suspending.
@@ -825,6 +825,14 @@ class HTMLMediaElement : public nsGenericHTMLElement,
    * fire "timeupdate".
    */
   void UpdateSrcStreamTime();
+
+  /**
+   * Called after a tail dispatch when playback of mSrcStream ended, to comply
+   * with the spec where we must start reporting true for the ended attribute
+   * after the event loop returns to step 1. A MediaStream could otherwise be
+   * manipulated to end a HTMLMediaElement synchronously.
+   */
+  void UpdateSrcStreamReportPlaybackEnded();
 
   /**
    * Called by our DOMMediaStream::TrackListener when a new MediaStreamTrack has
@@ -1313,6 +1321,12 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   Watchable<bool> mSrcStreamPlaybackEnded = {
       false, "HTMLMediaElement::mSrcStreamPlaybackEnded"};
 
+  // Mirrors mSrcStreamPlaybackEnded after a tail dispatch when set to true,
+  // but may be be forced to false directly. To accomodate when an application
+  // ends playback synchronously by manipulating mSrcStream or its tracks,
+  // e.g., through MediaStream.removeTrack(), or MediaStreamTrack.stop().
+  bool mSrcStreamReportPlaybackEnded = false;
+
   // Holds a reference to the stream connecting this stream to the window
   // capture sink.
   UniquePtr<MediaStreamWindowCapturer> mStreamWindowCapturer;
@@ -1477,7 +1491,9 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   nsCOMPtr<nsITimer> mProgressTimer;
 
   // Timer used to simulate video-suspend.
+#ifdef ENABLE_TESTS
   nsCOMPtr<nsITimer> mVideoDecodeSuspendTimer;
+#endif
 
   // Timer used to stop listening media control events.
   nsCOMPtr<nsITimer> mStopMediaControlTimer;
@@ -1598,9 +1614,6 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   // Info about the played media.
   MediaInfo mMediaInfo;
 
-  // True if the media has encryption information.
-  bool mIsEncrypted = false;
-
   enum WaitingForKeyState {
     NOT_WAITING_FOR_KEY = 0,
     WAITING_FOR_KEY = 1,
@@ -1695,8 +1708,10 @@ class HTMLMediaElement : public nsGenericHTMLElement,
   bool mHasSuspendTaint = false;
 
   // True if media element has been forced into being considered 'hidden'.
-  // For use by mochitests. Enabling pref "media.test.video-suspend"
+  // For use by mochitests.
+#ifdef ENABLE_TESTS
   bool mForcedHidden = false;
+#endif
 
   Visibility mVisibilityState = Visibility::Untracked;
 

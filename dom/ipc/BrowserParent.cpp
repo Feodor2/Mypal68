@@ -10,6 +10,7 @@
 #  include "mozilla/a11y/DocAccessibleParent.h"
 #  include "nsAccessibilityService.h"
 #endif
+#include "mozilla/Components.h"
 #include "mozilla/BrowserElementParent.h"
 #include "mozilla/dom/BlobImpl.h" //MY
 #include "mozilla/dom/BrowsingContextGroup.h"
@@ -1260,36 +1261,6 @@ bool BrowserParent::DeallocPFilePickerParent(PFilePickerParent* actor) {
   return true;
 }
 
-IPCResult BrowserParent::RecvIndexedDBPermissionRequest(
-    nsIPrincipal* aPrincipal, IndexedDBPermissionRequestResolver&& aResolve) {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  nsCOMPtr<nsIPrincipal> principal(aPrincipal);
-  if (!principal) {
-    return IPC_FAIL_NO_REASON(this);
-  }
-
-  if (NS_WARN_IF(!mFrameElement)) {
-    return IPC_FAIL_NO_REASON(this);
-  }
-
-  RefPtr<indexedDB::PermissionRequestHelper> actor =
-      new indexedDB::PermissionRequestHelper(mFrameElement, principal,
-                                             aResolve);
-
-  mozilla::Result permissionOrErr = actor->PromptIfNeeded();
-  if (permissionOrErr.isErr()) {
-    return IPC_FAIL_NO_REASON(this);
-  }
-
-  if (permissionOrErr.inspect() !=
-      indexedDB::PermissionRequestBase::kPermissionPrompt) {
-    aResolve(permissionOrErr.inspect());
-  }
-
-  return IPC_OK();
-}
-
 IPCResult BrowserParent::RecvPWindowGlobalConstructor(
     PWindowGlobalParent* aActor, const WindowGlobalInit& aInit) {
   static_cast<WindowGlobalParent*>(aActor)->Init(aInit);
@@ -2436,6 +2407,8 @@ mozilla::ipc::IPCResult BrowserParent::RecvOnStateChange(
     Unused << browser->SetIsNavigating(aStateChangeData->isNavigating());
     Unused << browser->SetMayEnableCharacterEncodingMenu(
         aStateChangeData->mayEnableCharacterEncodingMenu());
+    Unused << browser->SetCharsetAutodetected(
+        aStateChangeData->charsetAutodetected());
     Unused << browser->UpdateForStateChange(aStateChangeData->charset(),
                                             aStateChangeData->documentURI(),
                                             aStateChangeData->contentType());
@@ -3627,6 +3600,8 @@ class FakeChannel final : public nsIChannel,
   NS_IMETHOD SetLoadGroup(nsILoadGroup*) NO_IMPL;
   NS_IMETHOD SetLoadFlags(nsLoadFlags) NO_IMPL;
   NS_IMETHOD GetLoadFlags(nsLoadFlags*) NO_IMPL;
+  NS_IMETHOD GetTRRMode(nsIRequest::TRRMode* aTRRMode) NO_IMPL;
+  NS_IMETHOD SetTRRMode(nsIRequest::TRRMode aMode) NO_IMPL;
   NS_IMETHOD GetIsDocument(bool*) NO_IMPL;
   NS_IMETHOD GetOriginalURI(nsIURI**) NO_IMPL;
   NS_IMETHOD SetOriginalURI(nsIURI*) NO_IMPL;
@@ -3962,7 +3937,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvVisitURI(nsIURI* aURI,
   if (NS_WARN_IF(!widget)) {
     return IPC_OK();
   }
-  nsCOMPtr<IHistory> history = services::GetHistory();
+  nsCOMPtr<IHistory> history = components::History::Service();
   if (history) {
     Unused << history->VisitURI(widget, aURI, aLastVisitedURI, aFlags);
   }
@@ -3972,7 +3947,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvVisitURI(nsIURI* aURI,
 mozilla::ipc::IPCResult BrowserParent::RecvQueryVisitedState(
     const nsTArray<RefPtr<nsIURI>>&& aURIs) {
 #ifdef MOZ_ANDROID_HISTORY
-  nsCOMPtr<IHistory> history = services::GetHistory();
+  nsCOMPtr<IHistory> history = components::History::Service();
   if (NS_WARN_IF(!history)) {
     return IPC_OK();
   }

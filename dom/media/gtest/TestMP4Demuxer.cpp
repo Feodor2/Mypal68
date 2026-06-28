@@ -41,7 +41,7 @@ class MP4DemuxerBinding {
       : resource(new MockMediaResource(aFileName)),
         mDemuxer(new MP4Demuxer(resource)),
         mTaskQueue(
-            new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK))),
+            new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER))),
         mIndex(0) {
     EXPECT_EQ(NS_OK, resource->Open());
   }
@@ -164,28 +164,6 @@ TEST(MP4Demuxer, Seek)
             },
             DO_FAIL);
   });
-}
-
-static nsCString ToCryptoString(const CryptoSample& aCrypto) {
-  nsCString res;
-  if (aCrypto.IsEncrypted()) {
-    res.AppendPrintf("%d ", aCrypto.mIVSize);
-    for (size_t i = 0; i < aCrypto.mKeyId.Length(); i++) {
-      res.AppendPrintf("%02x", aCrypto.mKeyId[i]);
-    }
-    res.AppendLiteral(" ");
-    for (size_t i = 0; i < aCrypto.mIV.Length(); i++) {
-      res.AppendPrintf("%02x", aCrypto.mIV[i]);
-    }
-    EXPECT_EQ(aCrypto.mPlainSizes.Length(), aCrypto.mEncryptedSizes.Length());
-    for (size_t i = 0; i < aCrypto.mPlainSizes.Length(); i++) {
-      res.AppendPrintf(" %d,%d", aCrypto.mPlainSizes[i],
-                       aCrypto.mEncryptedSizes[i]);
-    }
-  } else {
-    res.AppendLiteral("no crypto");
-  }
-  return res;
 }
 
 TEST(MP4Demuxer, CENCFragVideo)
@@ -324,7 +302,6 @@ TEST(MP4Demuxer, CENCFragVideo)
             binding->mTaskQueue, __func__,
             [binding, video]() {
               for (uint32_t i = 0; i < binding->mSamples.Length(); i++) {
-                nsCString text = ToCryptoString(binding->mSamples[i]->mCrypto);
                 EXPECT_STREQ(video[i++], text.get());
               }
               EXPECT_EQ(ArrayLength(video), binding->mSamples.Length());

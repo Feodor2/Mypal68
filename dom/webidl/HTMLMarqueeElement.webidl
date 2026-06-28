@@ -31,7 +31,7 @@ interface HTMLMarqueeElement : HTMLElement {
   attribute EventHandler onfinish;
   attribute EventHandler onstart;
 
-  void start();
-  void stop();
+  undefined start();
+  undefined stop();
 };
 

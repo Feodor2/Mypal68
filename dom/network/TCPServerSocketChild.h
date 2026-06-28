@@ -18,8 +18,7 @@
 
 class nsITCPServerSocketInternal;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class TCPServerSocket;
 
@@ -54,7 +53,6 @@ class TCPServerSocketChild : public mozilla::net::PTCPServerSocketChild,
   mozilla::ipc::IPCResult RecvCallbackAccept(PTCPSocketChild* socket);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_TCPServerSocketChild_h

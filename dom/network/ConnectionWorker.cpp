@@ -5,12 +5,11 @@
 #include <limits>
 #include "mozilla/Hal.h"
 #include "ConnectionWorker.h"
+#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerRunnable.h"
 
-namespace mozilla {
-namespace dom {
-namespace network {
+namespace mozilla::dom::network {
 
 class ConnectionProxy final : public hal::NetworkObserver {
  public:
@@ -204,6 +203,4 @@ void ConnectionProxy::Shutdown() {
   mWorkerRef = nullptr;
 }
 
-}  // namespace network
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::network

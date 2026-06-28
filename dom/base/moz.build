@@ -181,6 +181,7 @@ EXPORTS.mozilla.dom += [
     "ElementInlines.h",
     "EventSource.h",
     "EventSourceEventService.h",
+    "External.h",
     "FilteredNodeIterator.h",
     "FormData.h",
     "FragmentOrElement.h",
@@ -261,6 +262,7 @@ EXPORTS.mozilla.dom += [
     "UserActivation.h",
     "ViewportMetaData.h",
     "VisualViewport.h",
+    "WindowFeatures.h",
     "WindowOrientationObserver.h",
     "WindowProxyHolder.h",
 ]
@@ -313,6 +315,7 @@ UNIFIED_SOURCES += [
     "Element.cpp",
     "EventSource.cpp",
     "EventSourceEventService.cpp",
+    "External.cpp",
     "FormData.cpp",
     "FragmentOrElement.cpp",
     "GeneratedImageContent.cpp",
@@ -439,6 +442,7 @@ UNIFIED_SOURCES += [
     "ViewportMetaData.cpp",
     "VisualViewport.cpp",
     "WindowDestroyedEvent.cpp",
+    "WindowFeatures.cpp",
     "WindowNamedPropertiesHandler.cpp",
     "WindowOrientationObserver.cpp",
     "XPathGenerator.cpp",
@@ -549,9 +553,6 @@ if CONFIG["MOZ_WEBRTC"]:
 include("/ipc/chromium/chromium-config.mozbuild")
 
 FINAL_LIBRARY = "xul"
-
-if CONFIG["MOZ_BUILD_APP"] in ["browser", "mobile/android", "xulrunner"]:
-    DEFINES["HAVE_SIDEBAR"] = True
 
 if CONFIG["MOZ_X11"]:
     CXXFLAGS += CONFIG["TK_CFLAGS"]

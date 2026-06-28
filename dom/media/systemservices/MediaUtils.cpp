@@ -3,15 +3,15 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MediaUtils.h"
+#include "mozilla/Services.h"
 
-namespace mozilla {
-namespace media {
+namespace mozilla::media {
 
-RefPtr<nsIAsyncShutdownClient> GetShutdownBarrier() {
+nsCOMPtr<nsIAsyncShutdownClient> GetShutdownBarrier() {
   nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdownService();
   MOZ_RELEASE_ASSERT(svc);
 
-  RefPtr<nsIAsyncShutdownClient> barrier;
+  nsCOMPtr<nsIAsyncShutdownClient> barrier;
   nsresult rv = svc->GetProfileBeforeChange(getter_AddRefs(barrier));
   if (!barrier) {
     // We are probably in a content process. We need to do cleanup at
@@ -25,5 +25,4 @@ RefPtr<nsIAsyncShutdownClient> GetShutdownBarrier() {
 
 NS_IMPL_ISUPPORTS(ShutdownBlocker, nsIAsyncShutdownBlocker)
 
-}  // namespace media
-}  // namespace mozilla
+}  // namespace mozilla::media

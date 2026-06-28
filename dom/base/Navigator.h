@@ -39,6 +39,7 @@ class ServiceWorkerContainer;
 class DOMRequest;
 class CredentialsContainer;
 class Clipboard;
+class LockManager;
 }  // namespace dom
 #ifdef MOZ_WEBGPU
 namespace webgpu {
@@ -50,8 +51,7 @@ class Instance;
 // Navigator: Script "navigator" object
 //*****************************************************************************
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Permissions;
 
@@ -67,7 +67,6 @@ class GamepadServiceTest;
 #endif
 class NavigatorUserMediaSuccessCallback;
 class NavigatorUserMediaErrorCallback;
-class MozGetUserMediaDevicesSuccessCallback;
 
 struct MIDIOptions;
 
@@ -121,7 +120,7 @@ class Navigator final : public nsISupports, public nsWrapperCache {
                                    nsIURI* aHandlerURI, nsIURI* aDocumentURI,
                                    ErrorResult& aRv);
   void RegisterProtocolHandler(const nsAString& aScheme, const nsAString& aURL,
-                               const nsAString& aTitle, ErrorResult& aRv);
+                               ErrorResult& aRv);
   nsMimeTypeArray* GetMimeTypes(ErrorResult& aRv);
   nsPluginArray* GetPlugins(ErrorResult& aRv);
   Permissions* GetPermissions(ErrorResult& aRv);
@@ -190,12 +189,6 @@ class Navigator final : public nsISupports, public nsWrapperCache {
                        NavigatorUserMediaSuccessCallback& aOnSuccess,
                        NavigatorUserMediaErrorCallback& aOnError,
                        CallerType aCallerType, ErrorResult& aRv);
-  MOZ_CAN_RUN_SCRIPT
-  void MozGetUserMediaDevices(const MediaStreamConstraints& aConstraints,
-                              MozGetUserMediaDevicesSuccessCallback& aOnSuccess,
-                              NavigatorUserMediaErrorCallback& aOnError,
-                              uint64_t aInnerWindowID, const nsAString& aCallID,
-                              ErrorResult& aRv);
 
   already_AddRefed<ServiceWorkerContainer> ServiceWorker();
 
@@ -204,6 +197,7 @@ class Navigator final : public nsISupports, public nsWrapperCache {
 #ifdef MOZ_WEBGPU
   webgpu::Instance* Gpu();
 #endif
+  dom::LockManager* Locks();
 
   static bool Webdriver();
 
@@ -277,9 +271,9 @@ class Navigator final : public nsISupports, public nsWrapperCache {
 #ifdef MOZ_WEBGPU
   RefPtr<webgpu::Instance> mWebGpu;
 #endif
+  RefPtr<dom::LockManager> mLocks;
 };
 
-}  // namespace dom
 }  // namespace mozilla
 
 #endif  // mozilla_dom_Navigator_h

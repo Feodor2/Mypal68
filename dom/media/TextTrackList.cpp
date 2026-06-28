@@ -13,8 +13,7 @@
 #include "mozilla/dom/TextTrackCue.h"
 #include "mozilla/dom/TextTrackManager.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(TextTrackList, DOMEventTargetHelper,
                                    mTextTracks, mTextTrackManager)
@@ -189,5 +188,4 @@ nsTArray<RefPtr<TextTrack>>& TextTrackList::GetTextTrackArray() {
   return mTextTracks;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

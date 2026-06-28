@@ -15,8 +15,7 @@
 #include "nsCOMPtr.h"
 #include "nsPIDOMWindow.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class AuthenticatorResponse : public nsISupports, public nsWrapperCache {
  public:
@@ -43,7 +42,6 @@ class AuthenticatorResponse : public nsISupports, public nsWrapperCache {
   JS::Heap<JSObject*> mClientDataJSONCachedObj;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_AuthenticatorResponse_h

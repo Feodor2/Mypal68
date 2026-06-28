@@ -1008,17 +1008,6 @@ uint32_t H264::ComputeMaxRefFrames(const mozilla::MediaByteBuffer* aExtraData) {
   int nalLenSize = ((*aSample->mExtraData)[4] & 3) + 1;
 
   size_t sampleSize = aSample->Size();
-  if (aSample->mCrypto.IsEncrypted()) {
-    // The content is encrypted, we can only parse the non-encrypted data.
-    MOZ_ASSERT(aSample->mCrypto.mPlainSizes.Length() > 0);
-    if (aSample->mCrypto.mPlainSizes.Length() == 0 ||
-        aSample->mCrypto.mPlainSizes[0] > sampleSize) {
-      // This is invalid content.
-      return nullptr;
-    }
-    sampleSize = aSample->mCrypto.mPlainSizes[0];
-  }
-
   BufferReader reader(aSample->Data(), sampleSize);
 
   nsTArray<SPSData> SPSTable;

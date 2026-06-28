@@ -11,8 +11,7 @@
 #include "nsIAsyncInputStream.h"
 #include "nsIInputStreamLength.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class BlobURL;
 class BlobURLChannel;
@@ -75,8 +74,6 @@ class BlobURLInputStream final : public nsIAsyncInputStream,
   nsCOMPtr<nsIEventTarget> mAsyncLengthWaitTarget;
 };
 
-}  // namespace dom
-
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif /* mozilla_dom_BlobURLInputStream_h */

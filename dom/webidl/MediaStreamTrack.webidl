@@ -107,13 +107,13 @@ interface MediaStreamTrack : EventTarget {
     readonly    attribute MediaStreamTrackState readyState;
                 attribute EventHandler          onended;
     MediaStreamTrack       clone ();
-    void                   stop ();
+    undefined              stop ();
 //  MediaTrackCapabilities getCapabilities ();
     MediaTrackConstraints  getConstraints ();
     [NeedsCallerType]
     MediaTrackSettings     getSettings ();
 
-    [Throws, NeedsCallerType]
-    Promise<void>          applyConstraints (optional MediaTrackConstraints constraints = {});
+    [NewObject, NeedsCallerType]
+    Promise<undefined>     applyConstraints (optional MediaTrackConstraints constraints = {});
 //              attribute EventHandler          onoverconstrained;
 };

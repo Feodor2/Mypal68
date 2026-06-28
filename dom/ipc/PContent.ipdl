@@ -57,7 +57,9 @@ include ClientIPCTypes;
 include HangTypes;
 include PrefsTypes;
 include NeckoChannelParams;
+include PSMIPCTypes;
 
+include "mozilla/GfxMessageUtils.h";
 include "mozilla/dom/CSPMessageUtils.h";
 include "mozilla/dom/ReferrerInfoUtils.h";
 include "mozilla/ipc/ByteBufUtils.h";
@@ -82,7 +84,6 @@ using mozilla::LayoutDeviceIntPoint from "Units.h";
 using struct LookAndFeelInt from "mozilla/widget/WidgetMessageUtils.h";
 using class mozilla::dom::MessagePort from "mozilla/dom/MessagePort.h";
 using class mozilla::dom::ipc::StructuredCloneData from "mozilla/dom/ipc/StructuredCloneData.h";
-using mozilla::DataStorageType from "ipc/DataStorageIPCUtils.h";
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
 using struct mozilla::layers::TextureFactoryIdentifier from "mozilla/layers/CompositorTypes.h";
 using mozilla::layers::CompositorOptions from "mozilla/layers/CompositorOptions.h";
@@ -153,17 +154,6 @@ struct SystemFontListEntry {
     bool      appFontFamily;
 };
 #endif
-
-struct DataStorageItem {
-  nsCString key;
-  nsCString value;
-  DataStorageType type;
-};
-
-struct DataStorageEntry {
-  DataStorageItem[] items;
-  nsString filename;
-};
 
 struct ClipboardCapabilities {
   bool supportsSelectionClipboard;
@@ -271,7 +261,6 @@ struct XPCOMInitData
 {
     bool isOffline;
     bool isConnected;
-    int32_t captivePortalState;
     bool isLangRTL;
     bool haveBidiKeyboards;
     nsCString[] dictionaries;
@@ -503,7 +492,6 @@ child:
 
     async SetOffline(bool offline);
     async SetConnectivity(bool connectivity);
-    async SetCaptivePortalState(int32_t aState);
 
     async NotifyVisited(VisitedQueryResult[] uri);
 
@@ -554,6 +542,8 @@ child:
 
     async FlushMemory(nsString reason);
 
+    async ApplicationBackground();
+    async ApplicationForeground();
     async GarbageCollect();
     async CycleCollect();
     async UnlinkGhosts();
@@ -859,7 +849,7 @@ parent:
 
     async PRemoteSpellcheckEngine();
 
-    async InitCrashReporter(Shmem shmem, NativeThreadId tid);
+    async InitCrashReporter(NativeThreadId tid);
 
     sync IsSecureURI(uint32_t aType, nsIURI aURI, uint32_t aFlags,
                      OriginAttributes aOriginAttributes)
@@ -1291,8 +1281,7 @@ parent:
                        PBrowser aNewTab,
                        uint32_t aChromeFlags,
                        bool aCalledFromJS,
-                       bool aPositionSpecified,
-                       bool aSizeSpecified,
+                       bool aWidthSpecified,
                        nsIURI aURIToLoad,
                        nsCString aFeatures,
                        float aFullZoom,
@@ -1305,13 +1294,12 @@ parent:
       PBrowser aThisTab,
       uint32_t aChromeFlags,
       bool aCalledFromJS,
-      bool aPositionSpecified,
-      bool aSizeSpecified,
+      bool aWidthSpecified,
       nsIURI aURIToLoad,
       nsCString aFeatures,
       float aFullZoom,
       nsString aName,
-      Principal aTriggeringPrincipal,
+      nsIPrincipal aTriggeringPrincipal,
       nsIContentSecurityPolicy aCsp,
       nsIReferrerInfo aReferrerInfo);
 

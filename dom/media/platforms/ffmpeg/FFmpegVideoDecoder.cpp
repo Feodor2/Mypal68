@@ -122,10 +122,10 @@ void FFmpegVideoDecoder<LIBAV_VER>::PtsCorrectionContext::Reset() {
 }
 
 FFmpegVideoDecoder<LIBAV_VER>::FFmpegVideoDecoder(
-    FFmpegLibWrapper* aLib, TaskQueue* aTaskQueue, const VideoInfo& aConfig,
+    FFmpegLibWrapper* aLib, const VideoInfo& aConfig,
     KnowsCompositor* aAllocator, ImageContainer* aImageContainer,
     bool aLowLatency)
-    : FFmpegDataDecoder(aLib, aTaskQueue, GetCodecId(aConfig.mMimeType)),
+    : FFmpegDataDecoder(aLib, GetCodecId(aConfig.mMimeType)),
       mImageAllocator(aAllocator),
       mImageContainer(aImageContainer),
       mInfo(aConfig),
@@ -188,6 +188,7 @@ void FFmpegVideoDecoder<LIBAV_VER>::InitCodecContext() {
 MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
     MediaRawData* aSample, uint8_t* aData, int aSize, bool* aGotFrame,
     MediaDataDecoder::DecodedData& aResults) {
+  MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
   AVPacket packet;
   mLib->av_init_packet(&packet);
 
@@ -306,7 +307,7 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::DoDecode(
 
 MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImage(
     int64_t aOffset, int64_t aPts, int64_t aDuration,
-    MediaDataDecoder::DecodedData& aResults) {
+    MediaDataDecoder::DecodedData& aResults) const {
   FFMPEG_LOG("Got one frame output with pts=%" PRId64 " dts=%" PRId64
              " duration=%" PRId64 " opaque=%" PRId64,
              aPts, mFrame->pkt_dts, aDuration, mCodecContext->reordered_opaque);
@@ -418,6 +419,7 @@ MediaResult FFmpegVideoDecoder<LIBAV_VER>::CreateImage(
 
 RefPtr<MediaDataDecoder::FlushPromise>
 FFmpegVideoDecoder<LIBAV_VER>::ProcessFlush() {
+  MOZ_ASSERT(mTaskQueue->IsOnCurrentThread());
   mPtsContext.Reset();
   mDurationMap.Clear();
   return FFmpegDataDecoder::ProcessFlush();

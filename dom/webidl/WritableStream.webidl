@@ -8,7 +8,6 @@
 
 [Exposed=*,
 //Transferable See Bug 1734240
-Pref="dom.streams.writable_streams.enabled"
 ]
 interface WritableStream {
   [Throws]
@@ -17,10 +16,10 @@ interface WritableStream {
   readonly attribute boolean locked;
 
   [Throws]
-  Promise<void> abort(optional any reason);
+  Promise<undefined> abort(optional any reason);
 
-  [Throws]
-  Promise<void> close();
+  [NewObject]
+  Promise<undefined> close();
 
   [Throws]
   WritableStreamDefaultWriter getWriter();

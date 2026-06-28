@@ -4,6 +4,7 @@
 
 #include "mozilla/dom/MIDIPermissionRequest.h"
 #include "mozilla/dom/MIDIAccessManager.h"
+#include "mozilla/dom/MIDIOptionsBinding.h"
 #include "nsIGlobalObject.h"
 #include "mozilla/Preferences.h"
 #include "nsContentUtils.h"
@@ -11,6 +12,8 @@
 //-------------------------------------------------
 // MIDI Permission Requests
 //-------------------------------------------------
+
+using namespace mozilla::dom;
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(MIDIPermissionRequest,
                                    ContentPermissionRequestBase, mPromise)

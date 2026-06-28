@@ -2,26 +2,29 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "ReadableStreamTee.h"
+
+#include "ReadIntoRequest.h"
+#include "TeeState.h"
 #include "js/Exception.h"
 #include "js/TypeDecls.h"
 #include "js/experimental/TypedData.h"
 #include "mozilla/dom/ByteStreamHelpers.h"
 #include "mozilla/dom/Promise-inl.h"
-#include "mozilla/dom/ReadIntoRequest.h"
 #include "mozilla/dom/ReadableStream.h"
 #include "mozilla/dom/ReadableStreamBYOBReader.h"
 #include "mozilla/dom/ReadableStreamDefaultController.h"
 #include "mozilla/dom/ReadableStreamGenericReader.h"
-#include "mozilla/dom/ReadableStreamTee.h"
 #include "mozilla/dom/ReadableStreamDefaultReader.h"
 #include "mozilla/dom/ReadableByteStreamController.h"
-#include "mozilla/dom/TeeState.h"
 #include "mozilla/dom/UnderlyingSourceBinding.h"
 #include "mozilla/dom/UnderlyingSourceCallbackHelpers.h"
 #include "nsCycleCollectionParticipant.h"
 #include "mozilla/CycleCollectedJSContext.h"
 
 namespace mozilla::dom {
+
+using namespace streams_abstract;
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(ReadableStreamDefaultTeeSourceAlgorithms,
                                    UnderlyingSourceAlgorithmsBase, mTeeState)
@@ -316,8 +319,6 @@ class ByteStreamTeeSourceAlgorithms final
     // Step 4.
     return do_AddRef(mTeeState->CancelPromise());
   };
-
-  void ErrorCallback() override {}
 
  protected:
   ~ByteStreamTeeSourceAlgorithms() override = default;
@@ -956,6 +957,7 @@ void ForwardReaderError(TeeState* aTeeState,
       RefPtr(aTeeState), RefPtr(aThisReader));
 }
 
+namespace streams_abstract {
 // https://streams.spec.whatwg.org/#abstract-opdef-readablebytestreamtee
 void ReadableByteStreamTee(JSContext* aCx, ReadableStream* aStream,
                            nsTArray<RefPtr<ReadableStream>>& aResult,
@@ -981,7 +983,7 @@ void ReadableByteStreamTee(JSContext* aCx, ReadableStream* aStream,
   auto branch1Algorithms =
       MakeRefPtr<ByteStreamTeeSourceAlgorithms>(teeState, TeeBranch::Branch1);
   teeState->SetBranch1(
-      CreateReadableByteStream(aCx, global, branch1Algorithms, aRv));
+      ReadableStream::CreateByteAbstract(aCx, global, branch1Algorithms, aRv));
   if (aRv.Failed()) {
     return;
   }
@@ -990,7 +992,7 @@ void ReadableByteStreamTee(JSContext* aCx, ReadableStream* aStream,
   auto branch2Algorithms =
       MakeRefPtr<ByteStreamTeeSourceAlgorithms>(teeState, TeeBranch::Branch2);
   teeState->SetBranch2(
-      CreateReadableByteStream(aCx, global, branch2Algorithms, aRv));
+      ReadableStream::CreateByteAbstract(aCx, global, branch2Algorithms, aRv));
   if (aRv.Failed()) {
     return;
   }
@@ -1002,4 +1004,6 @@ void ReadableByteStreamTee(JSContext* aCx, ReadableStream* aStream,
   aResult.AppendElement(teeState->Branch1());
   aResult.AppendElement(teeState->Branch2());
 }
+}  // namespace streams_abstract
+
 }  // namespace mozilla::dom

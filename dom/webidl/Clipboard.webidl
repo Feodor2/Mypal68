@@ -9,16 +9,15 @@
  * liability, trademark and document use rules apply.
  */
 
-
 [SecureContext, Exposed=Window, Pref="dom.events.asyncClipboard"]
 interface Clipboard : EventTarget {
-  [Pref="dom.events.asyncClipboard.dataTransfer", Throws, NeedsSubjectPrincipal]
+  [Pref="dom.events.asyncClipboard.dataTransfer", NewObject, NeedsSubjectPrincipal]
   Promise<DataTransfer> read();
-  [Func="Clipboard::ReadTextEnabled", Throws, NeedsSubjectPrincipal]
+  [Func="Clipboard::ReadTextEnabled", NewObject, NeedsSubjectPrincipal]
   Promise<DOMString> readText();
 
-  [Pref="dom.events.asyncClipboard.dataTransfer", Throws, NeedsSubjectPrincipal]
-  Promise<void> write(DataTransfer data);
-  [Throws, NeedsSubjectPrincipal]
-  Promise<void> writeText(DOMString data);
+  [Pref="dom.events.asyncClipboard.dataTransfer", NewObject, NeedsSubjectPrincipal]
+  Promise<undefined> write(DataTransfer data);
+  [NewObject, NeedsSubjectPrincipal]
+  Promise<undefined> writeText(DOMString data);
 };

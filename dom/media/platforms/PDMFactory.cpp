@@ -69,6 +69,7 @@ class PDMFactoryImpl final {
 #ifdef MOZ_FFMPEG
     FFmpegRuntimeLinker::Init();
 #endif
+    RemoteDecoderModule::Init();
   }
 };
 
@@ -199,15 +200,7 @@ already_AddRefed<MediaDataDecoder> PDMFactory::CreateDecoder(
     if (diagnostics) {
       // If libraries failed to load, the following loop over mCurrentPDMs
       // will not even try to use them. So we record failures now.
-      if (mWMFFailedToLoad) {
-        diagnostics->SetWMFFailedToLoad();
-      }
-      if (mFFmpegFailedToLoad) {
-        diagnostics->SetFFmpegFailedToLoad();
-      }
-      if (mGMPPDMFailedToStartup) {
-        diagnostics->SetGMPPDMFailedToStartup();
-      }
+      diagnostics->SetFailureFlags(mFailureFlags);
     }
 
     for (auto& current : mCurrentPDMs) {
@@ -319,6 +312,26 @@ bool PDMFactory::Supports(const TrackInfo& aTrackInfo,
   return !!current;
 }
 
+#if defined(MOZ_FFMPEG)
+static DecoderDoctorDiagnostics::Flags GetFailureFlagBasedOnFFmpegStatus(
+    const FFmpegRuntimeLinker::LinkStatus& aStatus) {
+  switch (aStatus) {
+    case FFmpegRuntimeLinker::LinkStatus_INVALID_FFMPEG_CANDIDATE:
+    case FFmpegRuntimeLinker::LinkStatus_UNUSABLE_LIBAV57:
+    case FFmpegRuntimeLinker::LinkStatus_INVALID_LIBAV_CANDIDATE:
+    case FFmpegRuntimeLinker::LinkStatus_OBSOLETE_FFMPEG:
+    case FFmpegRuntimeLinker::LinkStatus_OBSOLETE_LIBAV:
+    case FFmpegRuntimeLinker::LinkStatus_INVALID_CANDIDATE:
+      return DecoderDoctorDiagnostics::Flags::LibAVCodecUnsupported;
+    default:
+      MOZ_DIAGNOSTIC_ASSERT(
+          aStatus == FFmpegRuntimeLinker::LinkStatus_NOT_FOUND,
+          "Only call this method when linker fails.");
+      return DecoderDoctorDiagnostics::Flags::FFmpegNotFound;
+  }
+}
+#endif
+
 void PDMFactory::CreatePDMs() {
   RefPtr<PlatformDecoderModule> m;
 
@@ -351,10 +364,13 @@ void PDMFactory::CreatePDMs() {
     m = new WMFDecoderModule();
     RefPtr<PlatformDecoderModule> remote = new GpuDecoderModule(m);
     StartupPDM(remote);
-    mWMFFailedToLoad = !StartupPDM(m);
+    if (!StartupPDM(m)) {
+      mFailureFlags += DecoderDoctorDiagnostics::Flags::WMFFailedToLoad;
+    }
   } else {
-    mWMFFailedToLoad =
-        StaticPrefs::media_decoder_doctor_wmf_disabled_is_failure();
+    if (StaticPrefs::media_decoder_doctor_wmf_disabled_is_failure()) {
+      mFailureFlags += DecoderDoctorDiagnostics::Flags::WMFFailedToLoad;
+    }
   }
 #endif
 #ifdef MOZ_OMX
@@ -372,9 +388,9 @@ void PDMFactory::CreatePDMs() {
 #ifdef MOZ_FFMPEG
   if (StaticPrefs::media_ffmpeg_enabled()) {
     m = FFmpegRuntimeLinker::CreateDecoderModule();
-    mFFmpegFailedToLoad = !StartupPDM(m);
-  } else {
-    mFFmpegFailedToLoad = false;
+    if (!StartupPDM(m))
+      mFailureFlags += GetFailureFlagBasedOnFFmpegStatus(
+          FFmpegRuntimeLinker::LinkStatusCode());
   }
 #endif
 #ifdef MOZ_APPLEMEDIA
@@ -393,9 +409,10 @@ void PDMFactory::CreatePDMs() {
 
   if (StaticPrefs::media_gmp_decoder_enabled()) {
     m = new GMPDecoderModule();
-    mGMPPDMFailedToStartup = !StartupPDM(m);
+    if (!StartupPDM(m)) goto GMPPDMFailedToStartup;
   } else {
-    mGMPPDMFailedToStartup = false;
+GMPPDMFailedToStartup:
+    mFailureFlags += DecoderDoctorDiagnostics::Flags::GMPPDMFailedToStartup;
   }
 }
 
@@ -422,15 +439,7 @@ already_AddRefed<PlatformDecoderModule> PDMFactory::GetDecoder(
   if (aDiagnostics) {
     // If libraries failed to load, the following loop over mCurrentPDMs
     // will not even try to use them. So we record failures now.
-    if (mWMFFailedToLoad) {
-      aDiagnostics->SetWMFFailedToLoad();
-    }
-    if (mFFmpegFailedToLoad) {
-      aDiagnostics->SetFFmpegFailedToLoad();
-    }
-    if (mGMPPDMFailedToStartup) {
-      aDiagnostics->SetGMPPDMFailedToStartup();
-    }
+    aDiagnostics->SetFailureFlags(mFailureFlags);
   }
 
   RefPtr<PlatformDecoderModule> pdm;

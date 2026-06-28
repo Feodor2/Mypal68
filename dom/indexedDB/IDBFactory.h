@@ -7,7 +7,6 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/StorageTypeBinding.h"
 #include "mozilla/UniquePtr.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
@@ -48,9 +47,8 @@ class LoggingInfo;
 }  // namespace indexedDB
 
 class IDBFactory final : public nsISupports, public nsWrapperCache {
-  typedef mozilla::dom::StorageType StorageType;
-  typedef mozilla::ipc::PBackgroundChild PBackgroundChild;
-  typedef mozilla::ipc::PrincipalInfo PrincipalInfo;
+  using PBackgroundChild = mozilla::ipc::PBackgroundChild;
+  using PrincipalInfo = mozilla::ipc::PrincipalInfo;
 
   class BackgroundCreateCallback;
   struct PendingRequestInfo;
@@ -196,8 +194,7 @@ class IDBFactory final : public nsISupports, public nsWrapperCache {
 
   [[nodiscard]] RefPtr<IDBOpenDBRequest> OpenInternal(
       JSContext* aCx, nsIPrincipal* aPrincipal, const nsAString& aName,
-      const Optional<uint64_t>& aVersion,
-      const Optional<StorageType>& aStorageType, bool aDeleting,
+      const Optional<uint64_t>& aVersion, bool aDeleting,
       CallerType aCallerType, ErrorResult& aRv);
 
   nsresult InitiateRequest(const NotNull<RefPtr<IDBOpenDBRequest>>& aRequest,

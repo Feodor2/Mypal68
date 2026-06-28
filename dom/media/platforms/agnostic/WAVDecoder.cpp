@@ -2,11 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "WAVDecoder.h"
+
 #include "AudioSampleFormat.h"
 #include "BufferReader.h"
-#include "WAVDecoder.h"
-#include "mozilla/SyncRunnable.h"
 #include "VideoUtils.h"
+#include "mozilla/Casting.h"
+#include "mozilla/SyncRunnable.h"
 
 namespace mozilla {
 
@@ -40,27 +42,21 @@ int16_t DecodeULawSample(uint8_t aValue) {
 }
 
 WaveDataDecoder::WaveDataDecoder(const CreateDecoderParams& aParams)
-    : mInfo(aParams.AudioConfig()), mTaskQueue(aParams.mTaskQueue) {}
+    : mInfo(aParams.AudioConfig()) {}
 
 RefPtr<ShutdownPromise> WaveDataDecoder::Shutdown() {
-  RefPtr<WaveDataDecoder> self = this;
-  return InvokeAsync(mTaskQueue, __func__, [self]() {
-    return ShutdownPromise::CreateAndResolve(true, __func__);
-  });
+  MOZ_ASSERT(mThread->IsOnCurrentThread());
+  return ShutdownPromise::CreateAndResolve(true, __func__);
 }
 
 RefPtr<MediaDataDecoder::InitPromise> WaveDataDecoder::Init() {
+  mThread = GetCurrentSerialEventTarget();
   return InitPromise::CreateAndResolve(TrackInfo::kAudioTrack, __func__);
 }
 
 RefPtr<MediaDataDecoder::DecodePromise> WaveDataDecoder::Decode(
     MediaRawData* aSample) {
-  return InvokeAsync<MediaRawData*>(mTaskQueue, this, __func__,
-                                    &WaveDataDecoder::ProcessDecode, aSample);
-}
-
-RefPtr<MediaDataDecoder::DecodePromise> WaveDataDecoder::ProcessDecode(
-    MediaRawData* aSample) {
+  MOZ_ASSERT(mThread->IsOnCurrentThread());
   size_t aLength = aSample->Size();
   BufferReader aReader(aSample->Data(), aLength);
   int64_t aOffset = aSample->mOffset;
@@ -74,7 +70,16 @@ RefPtr<MediaDataDecoder::DecodePromise> WaveDataDecoder::ProcessDecode(
   }
   for (int i = 0; i < frames; ++i) {
     for (unsigned int j = 0; j < mInfo.mChannels; ++j) {
-      if (mInfo.mProfile == 6) {  // ALAW Data
+      if (mInfo.mProfile == 3) {  // IEEE Float Data
+        auto res = aReader.ReadLEU32();
+        if (res.isErr()) {
+          return DecodePromise::CreateAndReject(
+              MediaResult(res.unwrapErr(), __func__), __func__);
+        }
+        float sample = BitwiseCast<float>(res.unwrap());
+        buffer[i * mInfo.mChannels + j] =
+            FloatToAudioSample<AudioDataValue>(sample);
+      } else if (mInfo.mProfile == 6) {  // ALAW Data
         auto res = aReader.ReadU8();
         if (res.isErr()) {
           return DecodePromise::CreateAndReject(
@@ -129,15 +134,13 @@ RefPtr<MediaDataDecoder::DecodePromise> WaveDataDecoder::ProcessDecode(
 }
 
 RefPtr<MediaDataDecoder::DecodePromise> WaveDataDecoder::Drain() {
-  return InvokeAsync(mTaskQueue, __func__, [] {
-    return DecodePromise::CreateAndResolve(DecodedData(), __func__);
-  });
+  MOZ_ASSERT(mThread->IsOnCurrentThread());
+  return DecodePromise::CreateAndResolve(DecodedData(), __func__);
 }
 
 RefPtr<MediaDataDecoder::FlushPromise> WaveDataDecoder::Flush() {
-  return InvokeAsync(mTaskQueue, __func__, []() {
-    return FlushPromise::CreateAndResolve(true, __func__);
-  });
+  MOZ_ASSERT(mThread->IsOnCurrentThread());
+  return FlushPromise::CreateAndResolve(true, __func__);
 }
 
 /* static */
@@ -146,6 +149,7 @@ bool WaveDataDecoder::IsWave(const nsACString& aMimeType) {
   // WAVdemuxer uses "audio/wave; codecs=aNum".
   return aMimeType.EqualsLiteral("audio/x-wav") ||
          aMimeType.EqualsLiteral("audio/wave; codecs=1") ||
+         aMimeType.EqualsLiteral("audio/wave; codecs=3") ||
          aMimeType.EqualsLiteral("audio/wave; codecs=6") ||
          aMimeType.EqualsLiteral("audio/wave; codecs=7") ||
          aMimeType.EqualsLiteral("audio/wave; codecs=65534");

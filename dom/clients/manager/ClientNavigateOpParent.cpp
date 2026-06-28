@@ -4,8 +4,7 @@
 
 #include "ClientNavigateOpParent.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using mozilla::ipc::IPCResult;
 
@@ -42,5 +41,4 @@ ClientNavigateOpParent::~ClientNavigateOpParent() {
   MOZ_DIAGNOSTIC_ASSERT(!mPromise);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

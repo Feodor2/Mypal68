@@ -27,11 +27,11 @@
 #include "mozilla/dom/nsCSPContext.h"
 
 #ifdef MOZ_WIDGET_ANDROID
-#  include "GeneratedJNIWrappers.h"
+#  include "mozilla/java/GeckoResultWrappers.h"
+#  include "mozilla/java/GeckoRuntimeWrappers.h"
 #endif
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 
@@ -468,5 +468,4 @@ RefPtr<ClientOpPromise> ClientOpenWindowInCurrentProcess(
   return promise;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

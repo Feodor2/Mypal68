@@ -59,7 +59,7 @@ class GMPParent final
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GMPParent)
 
-  explicit GMPParent(AbstractThread* aMainThread);
+  GMPParent();
 
   RefPtr<GenericPromise> Init(GeckoMediaPluginServiceParent* aService,
                               nsIFile* aPluginDir);
@@ -149,7 +149,7 @@ class GMPParent final
   RefPtr<GenericPromise> ReadGMPMetaData();
   RefPtr<GenericPromise> ReadGMPInfoFile(nsIFile* aFile);
   void AddCrashAnnotations();
-  bool GetCrashID(nsString& aResult);
+  void GetCrashID(nsString& aResult);
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
   mozilla::ipc::IPCResult RecvPGMPStorageConstructor(
@@ -177,7 +177,7 @@ class GMPParent final
   nsCString mDescription;  // description of plugin for display to users
   nsCString mVersion;
   nsString mAdapter;
-  uint32_t mPluginId;
+  const uint32_t mPluginId;
   nsTArray<GMPCapability> mCapabilities;
   GMPProcessParent* mProcess;
   bool mDeleteProcessOnlyOnUnload;
@@ -206,7 +206,7 @@ class GMPParent final
   // to terminate gracefully.
   bool mHoldingSelfRef;
 
-  const RefPtr<AbstractThread> mMainThread;
+  const nsCOMPtr<nsISerialEventTarget> mMainThread;
 };
 
 }  // namespace gmp

@@ -6,7 +6,9 @@
 
 #include "ErrorList.h"
 #include "mozilla/dom/ContentParent.h"
+#include "mozilla/dom/QMResult.h"
 #include "mozilla/dom/cache/ManagerId.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/PBackgroundParent.h"
 #include "mozilla/ipc/BackgroundUtils.h"
@@ -99,7 +101,7 @@ void PrincipalVerifier::VerifyOnMainThread() {
   // this method.
   RefPtr<ContentParent> actor = std::move(mActor);
 
-  CACHE_TRY_INSPECT(
+  QM_TRY_INSPECT(
       const auto& principal, PrincipalInfoToPrincipal(mPrincipalInfo), QM_VOID,
       [this](const nsresult result) { DispatchToInitiatingThread(result); });
 
@@ -175,8 +177,8 @@ void PrincipalVerifier::DispatchToInitiatingThread(nsresult aRv) {
   // This will result in a new CacheStorage object delaying operations until
   // shutdown completes and the browser goes away.  This is as graceful as
   // we can get here.
-  QM_WARNONLY_TRY(
-      mInitiatingEventTarget->Dispatch(this, nsIThread::DISPATCH_NORMAL));
+  QM_WARNONLY_TRY(QM_TO_RESULT(
+      mInitiatingEventTarget->Dispatch(this, nsIThread::DISPATCH_NORMAL)));
 }
 
 }  // namespace mozilla::dom::cache

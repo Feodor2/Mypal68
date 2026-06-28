@@ -242,13 +242,20 @@ load 1528675.html
 load structured_clone_container_throws.html
 load xhr_empty_datauri.html
 load xhr_html_nullresponse.html
+asserts(0-1) load 1517025.html # see bug 1666910 for assert
 load xhr-with-pagehide-1.html
-pref(layout.css.resizeobserver.enabled,true) load 1555786.html
+load 1555786.html
 load 1577191.html
+load eventSource_invalid_scheme_worker_shutdown.html
 load 1291535.html
 skip-if(!isDebugBuild||xulRuntime.OS!="Linux") load 1611853.html
 asserts(0-1) load 1623918.html # May hit an assertion if the <input> element's anonymous tree hasn't been flushed when IMEContentObserver handles focus
-load 1712198.html
+skip-if(Android) load 1665792.html # Print preview on android doesn't fly
+skip-if(ThreadSanitizer) load 1693049.html
+skip-if(winWidget||Android) pref(print.always_print_silent,true) pref(print.print_to_file,true) pref(print.print_to_filename,"/dev/null") load 1697256.html # Windows seemingly requires pref(print_printer,"Mozilla Save to PDF") but pref() doesn't allow space. Android doesn't support print.
+skip-if(ThreadSanitizer||Android) load 1712198.html # Mysterious failure that should be investigated (bug 1712866).
+skip-if(Android) HTTP load 1728670-1.html
+load 1757923.html
 load 1811939.html
 load 1822717.html
 skip-if(Android) load 1838484.html

@@ -28,7 +28,6 @@ namespace mozilla::dom {
 class ReadableStream;
 class ReadableStreamDefaultReader;
 struct UnderlyingSource;
-class UnderlyingSourceAlgorithms;
 class ReadableStreamGenericReader;
 
 class ReadableStreamDefaultController final : public ReadableStreamController,
@@ -70,11 +69,6 @@ class ReadableStreamDefaultController final : public ReadableStreamController,
   void ReleaseSteps() override;
 
   // Internal Slot Accessors
-  UnderlyingSourceAlgorithmsBase* GetAlgorithms() { return mAlgorithms; }
-  void SetAlgorithms(UnderlyingSourceAlgorithmsBase* aAlgorithms) {
-    mAlgorithms = aAlgorithms;
-  }
-
   bool CloseRequested() const { return mCloseRequested; }
   void SetCloseRequested(bool aCloseRequested) {
     mCloseRequested = aCloseRequested;
@@ -106,12 +100,8 @@ class ReadableStreamDefaultController final : public ReadableStreamController,
     mStrategySizeAlgorithm = aStrategySizeAlgorithm;
   }
 
-  ReadableStream* GetStream() { return mStream; }
-  void SetStream(ReadableStream* aStream);
-
  private:
   // Internal Slots:
-  RefPtr<UnderlyingSourceAlgorithmsBase> mAlgorithms;
   bool mCloseRequested = false;
   bool mPullAgain = false;
   bool mPulling = false;
@@ -120,8 +110,9 @@ class ReadableStreamDefaultController final : public ReadableStreamController,
   bool mStarted = false;
   double mStrategyHWM = false;
   RefPtr<QueuingStrategySize> mStrategySizeAlgorithm;
-  RefPtr<ReadableStream> mStream;
 };
+
+namespace streams_abstract {
 
 MOZ_CAN_RUN_SCRIPT void SetUpReadableStreamDefaultController(
     JSContext* aCx, ReadableStream* aStream,
@@ -152,9 +143,6 @@ void ReadableStreamDefaultControllerError(
     JSContext* aCx, ReadableStreamDefaultController* aController,
     JS::Handle<JS::Value> aValue, ErrorResult& aRv);
 
-void ReadableStreamDefaultControllerClearAlgorithms(
-    ReadableStreamDefaultController* aController);
-
 Nullable<double> ReadableStreamDefaultControllerGetDesiredSize(
     ReadableStreamDefaultController* aController);
 
@@ -166,6 +154,8 @@ bool ReadableStreamDefaultControllerCanCloseOrEnqueueAndThrow(
 
 bool ReadableStreamDefaultControllerShouldCallPull(
     ReadableStreamDefaultController* aController);
+
+}  // namespace streams_abstract
 
 }  // namespace mozilla::dom
 

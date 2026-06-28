@@ -246,4 +246,4 @@ var Manifests = {
   },
 };
 
-var EXPORTED_SYMBOLS = ["Manifests"]; // jshint ignore:line
+var EXPORTED_SYMBOLS = ["Manifests"];

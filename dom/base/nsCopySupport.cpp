@@ -45,6 +45,7 @@
 #  include "nsEscape.h"
 #  include "nsIMIMEInfo.h"
 #  include "nsIMIMEService.h"
+#  include "nsIURIMutator.h"
 #  include "nsIURL.h"
 #  include "nsReadableUtils.h"
 #  include "nsXULAppAPI.h"

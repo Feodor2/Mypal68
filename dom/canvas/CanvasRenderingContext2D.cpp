@@ -18,6 +18,7 @@
 #include "mozilla/SVGObserverUtils.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
+#include "mozilla/dom/GeneratePlaceholderCanvasData.h"
 #include "nsPresContext.h"
 
 #include "nsIInterfaceRequestorUtils.h"
@@ -702,8 +703,7 @@ void CanvasPattern::SetTransform(const DOMMatrix2DInit& aInit,
 void CanvasGradient::AddColorStop(float aOffset, const nsACString& aColorstr,
                                   ErrorResult& aRv) {
   if (aOffset < 0.0 || aOffset > 1.0) {
-    aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
-    return;
+    return aRv.ThrowIndexSizeError("Offset out of 0-1.0 range");
   }
 
   PresShell* presShell = mContext ? mContext->GetPresShell() : nullptr;
@@ -713,8 +713,7 @@ void CanvasGradient::AddColorStop(float aOffset, const nsACString& aColorstr,
   bool ok = ServoCSSParser::ComputeColor(styleSet, NS_RGB(0, 0, 0), aColorstr,
                                          &color);
   if (!ok) {
-    aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
-    return;
+    return aRv.ThrowSyntaxError("Invalid color");
   }
 
   mStops = nullptr;
@@ -833,12 +832,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(CanvasRenderingContext2D)
     }
     ImplCycleCollectionUnlink(tmp->mStyleStack[i].autoSVGFiltersObserver);
   }
-  for (size_t x = 0; x < tmp->mHitRegionsOptions.Length(); x++) {
-    RegionInfo& info = tmp->mHitRegionsOptions[x];
-    if (info.mElement) {
-      ImplCycleCollectionUnlink(info.mElement);
-    }
-  }
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -860,13 +853,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(CanvasRenderingContext2D)
                                 "Fill CanvasGradient");
     ImplCycleCollectionTraverse(cb, tmp->mStyleStack[i].autoSVGFiltersObserver,
                                 "RAII SVG Filters Observer");
-  }
-  for (size_t x = 0; x < tmp->mHitRegionsOptions.Length(); x++) {
-    RegionInfo& info = tmp->mHitRegionsOptions[x];
-    if (info.mElement) {
-      ImplCycleCollectionTraverse(cb, info.mElement,
-                                  "Hit region fallback element");
-    }
   }
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
@@ -911,6 +897,7 @@ CanvasRenderingContext2D::ContextState::ContextState(const ContextState& aOther)
       font(aOther.font),
       textAlign(aOther.textAlign),
       textBaseline(aOther.textBaseline),
+      textDirection(aOther.textDirection),
       shadowColor(aOther.shadowColor),
       transform(aOther.transform),
       shadowOffset(aOther.shadowOffset),
@@ -1029,9 +1016,6 @@ nsresult CanvasRenderingContext2D::Reset() {
   ReturnTarget(forceReset);
   mTarget = nullptr;
   mBufferProvider = nullptr;
-
-  // reset hit regions
-  mHitRegionsOptions.ClearAndRetainStorage();
 
   // Since the target changes the backing texture will change, and this will
   // no longer be valid.
@@ -1666,17 +1650,6 @@ UniquePtr<uint8_t[]> CanvasRenderingContext2D::GetImageBuffer(
   return ret;
 }
 
-nsString CanvasRenderingContext2D::GetHitRegion(
-    const mozilla::gfx::Point& aPoint) {
-  for (size_t x = 0; x < mHitRegionsOptions.Length(); x++) {
-    RegionInfo& info = mHitRegionsOptions[x];
-    if (info.mPath->ContainsPoint(aPoint, Matrix())) {
-      return info.mId;
-    }
-  }
-  return nsString();
-}
-
 NS_IMETHODIMP
 CanvasRenderingContext2D::GetInputStream(const char* aMimeType,
                                          const nsAString& aEncoderOptions,
@@ -2040,7 +2013,7 @@ already_AddRefed<CanvasGradient> CanvasRenderingContext2D::CreateRadialGradient(
     double aX0, double aY0, double aR0, double aX1, double aY1, double aR1,
     ErrorResult& aError) {
   if (aR0 < 0.0 || aR1 < 0.0) {
-    aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    aError.ThrowIndexSizeError("Negative radius");
     return nullptr;
   }
 
@@ -2064,7 +2037,7 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
   } else if (aRepeat.EqualsLiteral("no-repeat")) {
     repeatMode = CanvasPattern::RepeatMode::NOREPEAT;
   } else {
-    aError.Throw(NS_ERROR_DOM_SYNTAX_ERR);
+    aError.ThrowSyntaxError("Invalid pattern keyword");
     return nullptr;
   }
 
@@ -2085,18 +2058,14 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
     }
 
     // Special case for Canvas, which could be an Azure canvas!
-    nsICanvasRenderingContextInternal* srcCanvas = canvas->GetContextAtIndex(0);
+    nsICanvasRenderingContextInternal* srcCanvas = canvas->GetCurrentContext();
     if (srcCanvas) {
       // This might not be an Azure canvas!
       RefPtr<SourceSurface> srcSurf = srcCanvas->GetSurfaceSnapshot();
       if (!srcSurf) {
-        JSContext* context = nsContentUtils::GetCurrentJSContext();
-        if (context) {
-          JS::WarnASCII(context,
-                        "CanvasRenderingContext2D.createPattern() failed to "
-                        "snapshot source canvas.");
-        }
-        aError.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+        aError.ThrowInvalidStateError(
+            "CanvasRenderingContext2D.createPattern() failed to snapshot source"
+            "canvas.");
         return nullptr;
       }
 
@@ -2933,8 +2902,7 @@ void CanvasRenderingContext2D::ArcTo(double aX1, double aY1, double aX2,
                                      double aY2, double aRadius,
                                      ErrorResult& aError) {
   if (aRadius < 0) {
-    aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
-    return;
+    return aError.ThrowIndexSizeError("Negative radius");
   }
 
   EnsureWritablePath();
@@ -3007,8 +2975,7 @@ void CanvasRenderingContext2D::Arc(double aX, double aY, double aR,
                                    double aStartAngle, double aEndAngle,
                                    bool aAnticlockwise, ErrorResult& aError) {
   if (aR < 0.0) {
-    aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
-    return;
+    return aError.ThrowIndexSizeError("Negative radius");
   }
 
   EnsureWritablePath();
@@ -3046,8 +3013,7 @@ void CanvasRenderingContext2D::Ellipse(double aX, double aY, double aRadiusX,
                                        bool aAnticlockwise,
                                        ErrorResult& aError) {
   if (aRadiusX < 0.0 || aRadiusY < 0.0) {
-    aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
-    return;
+    return aError.ThrowIndexSizeError("Negative radius");
   }
 
   EnsureWritablePath();
@@ -3314,6 +3280,30 @@ void CanvasRenderingContext2D::GetTextBaseline(nsAString& aTextBaseline) {
   }
 }
 
+void CanvasRenderingContext2D::SetDirection(const nsAString& aDirection) {
+  if (aDirection.EqualsLiteral("ltr")) {
+    CurrentState().textDirection = TextDirection::LTR;
+  } else if (aDirection.EqualsLiteral("rtl")) {
+    CurrentState().textDirection = TextDirection::RTL;
+  } else if (aDirection.EqualsLiteral("inherit")) {
+    CurrentState().textDirection = TextDirection::INHERIT;
+  }
+}
+
+void CanvasRenderingContext2D::GetDirection(nsAString& aDirection) {
+  switch (CurrentState().textDirection) {
+    case TextDirection::LTR:
+      aDirection.AssignLiteral("ltr");
+      break;
+    case TextDirection::RTL:
+      aDirection.AssignLiteral("rtl");
+      break;
+    case TextDirection::INHERIT:
+      aDirection.AssignLiteral("inherit");
+      break;
+  }
+}
+
 /*
  * Helper function that replaces the whitespace characters in a string
  * with U+0020 SPACE. The whitespace characters are defined as U+0020 SPACE,
@@ -3350,98 +3340,6 @@ TextMetrics* CanvasRenderingContext2D::MeasureText(const nsAString& aRawText,
                            aError);
 }
 
-void CanvasRenderingContext2D::AddHitRegion(const HitRegionOptions& aOptions,
-                                            ErrorResult& aError) {
-  RefPtr<gfx::Path> path;
-  if (aOptions.mPath) {
-    EnsureTarget();
-    if (!IsTargetValid()) {
-      return;
-    }
-    path = aOptions.mPath->GetPath(CanvasWindingRule::Nonzero, mTarget);
-  }
-
-  if (!path) {
-    // check if the path is valid
-    EnsureUserSpacePath(CanvasWindingRule::Nonzero);
-    path = mPath;
-  }
-
-  if (!path) {
-    aError.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return;
-  }
-
-  // get the bounds of the current path. They are relative to the canvas
-  gfx::Rect bounds(path->GetBounds(mTarget->GetTransform()));
-  if ((bounds.width == 0) || (bounds.height == 0) || !bounds.IsFinite()) {
-    // The specified region has no pixels.
-    aError.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return;
-  }
-
-  // remove old hit region first
-  RemoveHitRegion(aOptions.mId);
-
-  if (aOptions.mControl) {
-    // also remove regions with this control
-    for (size_t x = 0; x < mHitRegionsOptions.Length(); x++) {
-      RegionInfo& info = mHitRegionsOptions[x];
-      if (info.mElement == aOptions.mControl) {
-        mHitRegionsOptions.RemoveElementAt(x);
-        break;
-      }
-    }
-#ifdef ACCESSIBILITY
-    aOptions.mControl->SetProperty(nsGkAtoms::hitregion, new bool(true),
-                                   nsINode::DeleteProperty<bool>);
-#endif
-  }
-
-  // finally, add the region to the list
-  RegionInfo info;
-  info.mId = aOptions.mId;
-  info.mElement = aOptions.mControl;
-  RefPtr<PathBuilder> pathBuilder =
-      path->TransformedCopyToBuilder(mTarget->GetTransform());
-  info.mPath = pathBuilder->Finish();
-
-  mHitRegionsOptions.InsertElementAt(0, info);
-}
-
-void CanvasRenderingContext2D::RemoveHitRegion(const nsAString& aId) {
-  if (aId.Length() == 0) {
-    return;
-  }
-
-  for (size_t x = 0; x < mHitRegionsOptions.Length(); x++) {
-    RegionInfo& info = mHitRegionsOptions[x];
-    if (info.mId == aId) {
-      mHitRegionsOptions.RemoveElementAt(x);
-
-      return;
-    }
-  }
-}
-
-void CanvasRenderingContext2D::ClearHitRegions() { mHitRegionsOptions.Clear(); }
-
-bool CanvasRenderingContext2D::GetHitRegionRect(Element* aElement,
-                                                nsRect& aRect) {
-  for (unsigned int x = 0; x < mHitRegionsOptions.Length(); x++) {
-    RegionInfo& info = mHitRegionsOptions[x];
-    if (info.mElement == aElement) {
-      gfx::Rect bounds(info.mPath->GetBounds());
-      gfxRect rect(bounds.x, bounds.y, bounds.width, bounds.height);
-      aRect = nsLayoutUtils::RoundGfxRectToAppRect(rect, AppUnitsPerCSSPixel());
-
-      return true;
-    }
-  }
-
-  return false;
-}
-
 /**
  * Used for nsBidiPresUtils::ProcessText
  */
@@ -3472,11 +3370,11 @@ struct MOZ_STACK_CLASS CanvasBidiProcessor
   using ContextState = CanvasRenderingContext2D::ContextState;
 
   virtual void SetText(const char16_t* aText, int32_t aLength,
-                       mozilla::intl::BidiDirection aDirection) override {
+                       intl::BidiDirection aDirection) override {
     mFontgrp->UpdateUserFonts();  // ensure user font generation is current
     // adjust flags for current direction run
     gfx::ShapedTextFlags flags = mTextRunFlags;
-    if (aDirection == mozilla::intl::BidiDirection::RTL) {
+    if (aDirection == intl::BidiDirection::RTL) {
       flags |= gfx::ShapedTextFlags::TEXT_IS_RTL;
     } else {
       flags &= ~gfx::ShapedTextFlags::TEXT_IS_RTL;
@@ -3735,9 +3633,6 @@ TextMetrics* CanvasRenderingContext2D::DrawOrMeasureText(
     textToDraw.Truncate();
   }
 
-  // for now, default to ltr if not in doc
-  bool isRTL = false;
-
   RefPtr<ComputedStyle> canvasStyle;
   if (mCanvasElement && mCanvasElement->IsInComposedDoc()) {
     // try to find the closest context
@@ -3746,11 +3641,25 @@ TextMetrics* CanvasRenderingContext2D::DrawOrMeasureText(
       aError = NS_ERROR_FAILURE;
       return nullptr;
     }
+  }
 
-    isRTL = canvasStyle->StyleVisibility()->mDirection == StyleDirection::Rtl;
-  } else {
-    isRTL = GET_BIDI_OPTION_DIRECTION(document->GetBidiOptions()) ==
-            IBMBIDI_TEXTDIRECTION_RTL;
+  // Get text direction, either from the property or inherited from context.
+  const ContextState& state = CurrentState();
+  bool isRTL;
+  switch (state.textDirection) {
+    case TextDirection::LTR:
+      isRTL = false;
+      break;
+    case TextDirection::RTL:
+      isRTL = true;
+      break;
+    case TextDirection::INHERIT:
+      isRTL = canvasStyle
+                  ? canvasStyle->StyleVisibility()->mDirection ==
+                        StyleDirection::Rtl
+                  : GET_BIDI_OPTION_DIRECTION(document->GetBidiOptions()) ==
+                        IBMBIDI_TEXTDIRECTION_RTL;
+      break;
   }
 
   // This is only needed to know if we can know the drawing bounding box easily.
@@ -3831,8 +3740,7 @@ TextMetrics* CanvasRenderingContext2D::DrawOrMeasureText(
   // bounding boxes before rendering anything
   aError = nsBidiPresUtils::ProcessText(
       textToDraw.get(), textToDraw.Length(),
-      isRTL ? mozilla::intl::BidiEmbeddingLevel::RTL()
-            : mozilla::intl::BidiEmbeddingLevel::LTR(),
+      isRTL ? intl::BidiEmbeddingLevel::RTL() : intl::BidiEmbeddingLevel::LTR(),
       presShell->GetPresContext(), processor, nsBidiPresUtils::MODE_MEASURE,
       nullptr, 0, &totalWidthCoord, &mBidiEngine);
   if (aError.Failed()) {
@@ -3844,7 +3752,6 @@ TextMetrics* CanvasRenderingContext2D::DrawOrMeasureText(
   // offset pt.x based on text align
   gfxFloat anchorX;
 
-  const ContextState& state = CurrentState();
   if (state.textAlign == TextAlign::CENTER) {
     anchorX = .5;
   } else if (state.textAlign == TextAlign::LEFT ||
@@ -3972,8 +3879,7 @@ TextMetrics* CanvasRenderingContext2D::DrawOrMeasureText(
 
   aError = nsBidiPresUtils::ProcessText(
       textToDraw.get(), textToDraw.Length(),
-      isRTL ? mozilla::intl::BidiEmbeddingLevel::RTL()
-            : mozilla::intl::BidiEmbeddingLevel::LTR(),
+      isRTL ? intl::BidiEmbeddingLevel::RTL() : intl::BidiEmbeddingLevel::LTR(),
       presShell->GetPresContext(), processor, nsBidiPresUtils::MODE_DRAW,
       nullptr, 0, nullptr, &mBidiEngine);
 
@@ -4431,8 +4337,7 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
     element = canvas;
     nsIntSize size = canvas->GetSize();
     if (size.width == 0 || size.height == 0) {
-      aError.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
-      return;
+      return aError.ThrowInvalidStateError("Passed-in canvas is empty");
     }
 
     if (canvas->IsWriteOnly()) {
@@ -4443,6 +4348,9 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
     srcSurf = imageBitmap.PrepareForDrawTarget(mTarget);
 
     if (!srcSurf) {
+      if (imageBitmap.IsClosed()) {
+        aError.ThrowInvalidStateError("Passed-in ImageBitmap is closed");
+      }
       return;
     }
 
@@ -4493,7 +4401,7 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
       //   - The image is bad, but it's not in the broken state (i.e., we could
       //     decode the headers and get the size).
       if (!res.mIsStillLoading && !res.mHasSize) {
-        aError.Throw(NS_ERROR_NOT_AVAILABLE);
+        aError.ThrowInvalidStateError("Passed-in image is \"broken\"");
       }
       return;
     }
@@ -4945,7 +4853,7 @@ void CanvasRenderingContext2D::DrawWindow(nsGlobalWindowInner& aWindow,
 //
 
 already_AddRefed<ImageData> CanvasRenderingContext2D::GetImageData(
-    JSContext* aCx, double aSx, double aSy, double aSw, double aSh,
+    JSContext* aCx, int32_t aSx, int32_t aSy, int32_t aSw, int32_t aSh,
     nsIPrincipal& aSubjectPrincipal, ErrorResult& aError) {
   if (!mCanvasElement && !mDocShell) {
     NS_ERROR("No canvas element and no docshell in GetImageData!!!");
@@ -4962,35 +4870,25 @@ already_AddRefed<ImageData> CanvasRenderingContext2D::GetImageData(
     return nullptr;
   }
 
-  if (!IsFinite(aSx) || !IsFinite(aSy) || !IsFinite(aSw) || !IsFinite(aSh)) {
-    aError.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return nullptr;
-  }
-
   if (!aSw || !aSh) {
     aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
     return nullptr;
   }
 
-  int32_t x = JS::ToInt32(aSx);
-  int32_t y = JS::ToInt32(aSy);
-  int32_t wi = JS::ToInt32(aSw);
-  int32_t hi = JS::ToInt32(aSh);
-
   // Handle negative width and height by flipping the rectangle over in the
   // relevant direction.
   uint32_t w, h;
   if (aSw < 0) {
-    w = -wi;
-    x -= w;
+    w = -aSw;
+    aSx -= w;
   } else {
-    w = wi;
+    w = aSw;
   }
   if (aSh < 0) {
-    h = -hi;
-    y -= h;
+    h = -aSh;
+    aSy -= h;
   } else {
-    h = hi;
+    h = aSh;
   }
 
   if (w == 0) {
@@ -5001,15 +4899,13 @@ already_AddRefed<ImageData> CanvasRenderingContext2D::GetImageData(
   }
 
   JS::Rooted<JSObject*> array(aCx);
-  aError =
-      GetImageDataArray(aCx, x, y, w, h, aSubjectPrincipal, array.address());
+  aError = GetImageDataArray(aCx, aSx, aSy, w, h, aSubjectPrincipal,
+                             array.address());
   if (aError.Failed()) {
     return nullptr;
   }
   MOZ_ASSERT(array);
-
-  RefPtr<ImageData> imageData = new ImageData(w, h, *array);
-  return imageData.forget();
+  return MakeAndAddRef<ImageData>(w, h, *array);
 }
 
 nsresult CanvasRenderingContext2D::GetImageDataArray(
@@ -5088,20 +4984,27 @@ nsresult CanvasRenderingContext2D::GetImageDataArray(
   }
 
   do {
+    uint8_t* randomData;
+    if (usePlaceholder) {
+      // Since we cannot call any GC-able functions (like requesting the RNG
+      // service) after we call JS_GetUint8ClampedArrayData, we will
+      // pre-generate the randomness required for GeneratePlaceholderCanvasData.
+      randomData = TryToGenerateRandomDataForPlaceholderCanvasData();
+    }
+
     JS::AutoCheckCannotGC nogc;
     bool isShared;
     uint8_t* data = JS_GetUint8ClampedArrayData(darray, &isShared, nogc);
     MOZ_ASSERT(!isShared);  // Should not happen, data was created above
 
+    if (usePlaceholder) {
+      FillPlaceholderCanvas(randomData, len.value(), data);
+      break;
+    }
+
     uint32_t srcStride = rawData.mStride;
     uint8_t* src =
         rawData.mData + srcReadRect.y * srcStride + srcReadRect.x * 4;
-
-    // Return all-white, opaque pixel data if no permission.
-    if (usePlaceholder) {
-      memset(data, 0xFF, len.value());
-      break;
-    }
 
     uint8_t* dst = data + dstWriteRect.y * (aWidth * 4) + dstWriteRect.x * 4;
 
@@ -5141,39 +5044,38 @@ void CanvasRenderingContext2D::FillRuleChanged() {
   }
 }
 
-void CanvasRenderingContext2D::PutImageData(ImageData& aImageData, double aDx,
-                                            double aDy, ErrorResult& aError) {
+void CanvasRenderingContext2D::PutImageData(ImageData& aImageData, int32_t aDx,
+                                            int32_t aDy, ErrorResult& aError) {
   RootedSpiderMonkeyInterface<Uint8ClampedArray> arr(RootingCx());
   DebugOnly<bool> inited = arr.Init(aImageData.GetDataObject());
   MOZ_ASSERT(inited);
 
-  aError = PutImageData_explicit(JS::ToInt32(aDx), JS::ToInt32(aDy),
-                                 aImageData.Width(), aImageData.Height(), &arr,
-                                 false, 0, 0, 0, 0);
+  PutImageData_explicit(aDx, aDy, aImageData.Width(), aImageData.Height(), &arr,
+                        false, 0, 0, 0, 0, aError);
 }
 
-void CanvasRenderingContext2D::PutImageData(ImageData& aImageData, double aDx,
-                                            double aDy, double aDirtyX,
-                                            double aDirtyY, double aDirtyWidth,
-                                            double aDirtyHeight,
+void CanvasRenderingContext2D::PutImageData(ImageData& aImageData, int32_t aDx,
+                                            int32_t aDy, int32_t aDirtyX,
+                                            int32_t aDirtyY,
+                                            int32_t aDirtyWidth,
+                                            int32_t aDirtyHeight,
                                             ErrorResult& aError) {
   RootedSpiderMonkeyInterface<Uint8ClampedArray> arr(RootingCx());
   DebugOnly<bool> inited = arr.Init(aImageData.GetDataObject());
   MOZ_ASSERT(inited);
 
-  aError = PutImageData_explicit(JS::ToInt32(aDx), JS::ToInt32(aDy),
-                                 aImageData.Width(), aImageData.Height(), &arr,
-                                 true, JS::ToInt32(aDirtyX),
-                                 JS::ToInt32(aDirtyY), JS::ToInt32(aDirtyWidth),
-                                 JS::ToInt32(aDirtyHeight));
+  PutImageData_explicit(aDx, aDy, aImageData.Width(), aImageData.Height(), &arr,
+                        true, aDirtyX, aDirtyY, aDirtyWidth, aDirtyHeight,
+                        aError);
 }
 
-nsresult CanvasRenderingContext2D::PutImageData_explicit(
+void CanvasRenderingContext2D::PutImageData_explicit(
     int32_t aX, int32_t aY, uint32_t aW, uint32_t aH,
     dom::Uint8ClampedArray* aArray, bool aHasDirtyRect, int32_t aDirtyX,
-    int32_t aDirtyY, int32_t aDirtyWidth, int32_t aDirtyHeight) {
+    int32_t aDirtyY, int32_t aDirtyWidth, int32_t aDirtyHeight,
+    ErrorResult& aRv) {
   if (aW == 0 || aH == 0) {
-    return NS_ERROR_DOM_INVALID_STATE_ERR;
+    return aRv.ThrowInvalidStateError("Passed-in image is empty");
   }
 
   IntRect dirtyRect;
@@ -5182,22 +5084,30 @@ nsresult CanvasRenderingContext2D::PutImageData_explicit(
   if (aHasDirtyRect) {
     // fix up negative dimensions
     if (aDirtyWidth < 0) {
-      NS_ENSURE_TRUE(aDirtyWidth != INT_MIN, NS_ERROR_DOM_INDEX_SIZE_ERR);
+      if (aDirtyWidth == INT_MIN) {
+        return aRv.ThrowInvalidStateError("Dirty width is invalid");
+      }
 
       CheckedInt32 checkedDirtyX = CheckedInt32(aDirtyX) + aDirtyWidth;
 
-      if (!checkedDirtyX.isValid()) return NS_ERROR_DOM_INDEX_SIZE_ERR;
+      if (!checkedDirtyX.isValid()) {
+        return aRv.ThrowInvalidStateError("Dirty width is invalid");
+      }
 
       aDirtyX = checkedDirtyX.value();
       aDirtyWidth = -aDirtyWidth;
     }
 
     if (aDirtyHeight < 0) {
-      NS_ENSURE_TRUE(aDirtyHeight != INT_MIN, NS_ERROR_DOM_INDEX_SIZE_ERR);
+      if (aDirtyHeight == INT_MIN) {
+        return aRv.ThrowInvalidStateError("Dirty height is invalid");
+      }
 
       CheckedInt32 checkedDirtyY = CheckedInt32(aDirtyY) + aDirtyHeight;
 
-      if (!checkedDirtyY.isValid()) return NS_ERROR_DOM_INDEX_SIZE_ERR;
+      if (!checkedDirtyY.isValid()) {
+        return aRv.ThrowInvalidStateError("Dirty height is invalid");
+      }
 
       aDirtyY = checkedDirtyY.value();
       aDirtyHeight = -aDirtyHeight;
@@ -5207,7 +5117,9 @@ nsresult CanvasRenderingContext2D::PutImageData_explicit(
     dirtyRect = imageDataRect.Intersect(
         IntRect(aDirtyX, aDirtyY, aDirtyWidth, aDirtyHeight));
 
-    if (dirtyRect.Width() <= 0 || dirtyRect.Height() <= 0) return NS_OK;
+    if (dirtyRect.Width() <= 0 || dirtyRect.Height() <= 0) {
+      return;
+    }
   } else {
     dirtyRect = imageDataRect;
   }
@@ -5216,7 +5128,7 @@ nsresult CanvasRenderingContext2D::PutImageData_explicit(
   dirtyRect = IntRect(0, 0, mWidth, mHeight).Intersect(dirtyRect);
 
   if (dirtyRect.Width() <= 0 || dirtyRect.Height() <= 0) {
-    return NS_OK;
+    return;
   }
 
   aArray->ComputeState();
@@ -5225,7 +5137,7 @@ nsresult CanvasRenderingContext2D::PutImageData_explicit(
 
   uint32_t len = aW * aH * 4;
   if (dataLen != len) {
-    return NS_ERROR_DOM_INVALID_STATE_ERR;
+    return aRv.ThrowInvalidStateError("Invalid width or height");
   }
 
   // The canvas spec says that the current path, transformation matrix, shadow
@@ -5235,7 +5147,7 @@ nsresult CanvasRenderingContext2D::PutImageData_explicit(
   EnsureTarget(&putRect);
 
   if (!IsTargetValid()) {
-    return NS_ERROR_FAILURE;
+    return aRv.Throw(NS_ERROR_FAILURE);
   }
 
   DataSourceSurface::MappedSurface map;
@@ -5256,15 +5168,15 @@ nsresult CanvasRenderingContext2D::PutImageData_explicit(
     // investigation hasn't been done to determine the underlying cause.  We
     // will just handle the failure to allocate the surface to avoid a crash.
     if (!sourceSurface) {
-      return NS_ERROR_FAILURE;
+      return aRv.Throw(NS_ERROR_FAILURE);
     }
     if (!sourceSurface->Map(DataSourceSurface::READ_WRITE, &map)) {
-      return NS_ERROR_FAILURE;
+      return aRv.Throw(NS_ERROR_FAILURE);
     }
 
     dstData = map.mData;
     if (!dstData) {
-      return NS_ERROR_OUT_OF_MEMORY;
+      return aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     }
     dstStride = map.mStride;
     dstFormat = sourceSurface->GetFormat();
@@ -5288,8 +5200,6 @@ nsresult CanvasRenderingContext2D::PutImageData_explicit(
 
   Redraw(
       gfx::Rect(dirtyRect.x, dirtyRect.y, dirtyRect.width, dirtyRect.height));
-
-  return NS_OK;
 }
 
 static already_AddRefed<ImageData> CreateImageData(
@@ -5302,41 +5212,37 @@ static already_AddRefed<ImageData> CreateImageData(
   // in dom::TypedArray::ComputeState.
   CheckedInt<uint32_t> len = CheckedInt<uint32_t>(aW) * aH * 4;
   if (!len.isValid() || len.value() > INT32_MAX) {
-    aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    aError.ThrowIndexSizeError("Invalid width or height");
     return nullptr;
   }
 
   // Create the fast typed array; it's initialized to 0 by default.
   JSObject* darray = Uint8ClampedArray::Create(aCx, aContext, len.value());
   if (!darray) {
+    // TODO: Should use OOMReporter.
     aError.Throw(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
   }
 
-  RefPtr<mozilla::dom::ImageData> imageData =
-      new mozilla::dom::ImageData(aW, aH, *darray);
-  return imageData.forget();
+  return do_AddRef(new ImageData(aW, aH, *darray));
 }
 
 already_AddRefed<ImageData> CanvasRenderingContext2D::CreateImageData(
-    JSContext* aCx, double aSw, double aSh, ErrorResult& aError) {
+    JSContext* aCx, int32_t aSw, int32_t aSh, ErrorResult& aError) {
   if (!aSw || !aSh) {
-    aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    aError.ThrowIndexSizeError("Invalid width or height");
     return nullptr;
   }
 
-  int32_t wi = JS::ToInt32(aSw);
-  int32_t hi = JS::ToInt32(aSh);
-
-  uint32_t w = Abs(wi);
-  uint32_t h = Abs(hi);
-  return mozilla::dom::CreateImageData(aCx, this, w, h, aError);
+  uint32_t w = Abs(aSw);
+  uint32_t h = Abs(aSh);
+  return dom::CreateImageData(aCx, this, w, h, aError);
 }
 
 already_AddRefed<ImageData> CanvasRenderingContext2D::CreateImageData(
     JSContext* aCx, ImageData& aImagedata, ErrorResult& aError) {
-  return mozilla::dom::CreateImageData(aCx, this, aImagedata.Width(),
-                                       aImagedata.Height(), aError);
+  return dom::CreateImageData(aCx, this, aImagedata.Width(),
+                              aImagedata.Height(), aError);
 }
 
 static uint8_t g2DContextLayerUserData;
@@ -5630,8 +5536,7 @@ void CanvasPath::BezierCurveTo(double aCp1x, double aCp1y, double aCp2x,
 void CanvasPath::ArcTo(double aX1, double aY1, double aX2, double aY2,
                        double aRadius, ErrorResult& aError) {
   if (aRadius < 0) {
-    aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
-    return;
+    return aError.ThrowIndexSizeError("Negative radius");
   }
 
   EnsurePathBuilder();
@@ -5701,8 +5606,7 @@ void CanvasPath::Arc(double aX, double aY, double aRadius, double aStartAngle,
                      double aEndAngle, bool aAnticlockwise,
                      ErrorResult& aError) {
   if (aRadius < 0.0) {
-    aError.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
-    return;
+    return aError.ThrowIndexSizeError("Negative radius");
   }
 
   EnsurePathBuilder();
@@ -5713,10 +5617,9 @@ void CanvasPath::Arc(double aX, double aY, double aRadius, double aStartAngle,
 
 void CanvasPath::Ellipse(double x, double y, double radiusX, double radiusY,
                          double rotation, double startAngle, double endAngle,
-                         bool anticlockwise, ErrorResult& error) {
+                         bool anticlockwise, ErrorResult& aError) {
   if (radiusX < 0.0 || radiusY < 0.0) {
-    error.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
-    return;
+    return aError.ThrowIndexSizeError("Negative radius");
   }
 
   EnsurePathBuilder();

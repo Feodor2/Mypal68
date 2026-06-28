@@ -66,8 +66,8 @@ Result<IndexUpdateInfo, nsresult> MakeIndexUpdateInfo(
   indexUpdateInfo.indexId() = aIndexID;
   indexUpdateInfo.value() = aKey;
   if (!aLocale.IsEmpty()) {
-    IDB_TRY_UNWRAP(indexUpdateInfo.localizedValue(),
-                   aKey.ToLocaleAwareKey(aLocale));
+    QM_TRY_UNWRAP(indexUpdateInfo.localizedValue(),
+                  aKey.ToLocaleAwareKey(aLocale));
   }
   return indexUpdateInfo;
 }
@@ -514,9 +514,9 @@ void IDBObjectStore::AppendIndexUpdateInfo(
       return;
     }
 
-    IDB_TRY_UNWRAP(auto item, MakeIndexUpdateInfo(aIndexID, key, aLocale),
-                   QM_VOID,
-                   [aRv](const nsresult tryResult) { aRv->Throw(tryResult); });
+    QM_TRY_UNWRAP(auto item, MakeIndexUpdateInfo(aIndexID, key, aLocale),
+                  QM_VOID,
+                  [aRv](const nsresult tryResult) { aRv->Throw(tryResult); });
 
     aUpdateInfoArray->AppendElement(std::move(item));
     return;
@@ -580,9 +580,9 @@ void IDBObjectStore::AppendIndexUpdateInfo(
         continue;
       }
 
-      IDB_TRY_UNWRAP(
-          auto item, MakeIndexUpdateInfo(aIndexID, value, aLocale), QM_VOID,
-          [aRv](const nsresult tryResult) { aRv->Throw(tryResult); });
+      QM_TRY_UNWRAP(auto item, MakeIndexUpdateInfo(aIndexID, value, aLocale),
+                    QM_VOID,
+                    [aRv](const nsresult tryResult) { aRv->Throw(tryResult); });
 
       aUpdateInfoArray->AppendElement(std::move(item));
     }
@@ -597,9 +597,9 @@ void IDBObjectStore::AppendIndexUpdateInfo(
       return;
     }
 
-    IDB_TRY_UNWRAP(auto item, MakeIndexUpdateInfo(aIndexID, value, aLocale),
-                   QM_VOID,
-                   [aRv](const nsresult tryResult) { aRv->Throw(tryResult); });
+    QM_TRY_UNWRAP(auto item, MakeIndexUpdateInfo(aIndexID, value, aLocale),
+                  QM_VOID,
+                  [aRv](const nsresult tryResult) { aRv->Throw(tryResult); });
 
     aUpdateInfoArray->AppendElement(std::move(item));
   }
@@ -826,7 +826,7 @@ RefPtr<IDBRequest> IDBObjectStore::AddOrPut(JSContext* aCx,
   commonParams.indexUpdateInfos() = std::move(updateInfos);
 
   // Convert any blobs or mutable files into FileAddInfo.
-  IDB_TRY_UNWRAP(
+  QM_TRY_UNWRAP(
       commonParams.fileAddInfos(),
       TransformIntoNewArrayAbortOnErr(
           cloneWriteInfo.mFiles,
@@ -1385,11 +1385,11 @@ RefPtr<IDBIndex> IDBObjectStore::CreateIndex(
     return keyPath;
   };
 
-  QM_NOTEONLY_TRY_UNWRAP(
+  QM_INFOONLY_TRY_UNWRAP(
       const auto maybeKeyPath,
       ([&aKeyPath, checkValid]() -> Result<KeyPath, nsresult> {
         if (aKeyPath.IsString()) {
-          IDB_TRY_RETURN(
+          QM_TRY_RETURN(
               KeyPath::Parse(aKeyPath.GetAsString()).andThen(checkValid));
         }
 
@@ -1398,7 +1398,7 @@ RefPtr<IDBIndex> IDBObjectStore::CreateIndex(
           return Err(NS_ERROR_DOM_SYNTAX_ERR);
         }
 
-        IDB_TRY_RETURN(
+        QM_TRY_RETURN(
             KeyPath::Parse(aKeyPath.GetAsStringSequence()).andThen(checkValid));
       })());
   if (!maybeKeyPath) {

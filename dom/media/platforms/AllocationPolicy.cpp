@@ -87,20 +87,8 @@ static int32_t MediaDecoderLimitDefault() {
 
 StaticMutex GlobalAllocPolicy::sMutex;
 
-NotNull<AllocPolicy*> GlobalAllocPolicy::Instance(TrackType aTrack) {
+NotNull<AllocPolicy*> GlobalAllocPolicy::Instance() {
   StaticMutexAutoLock lock(sMutex);
-  if (aTrack == TrackType::kAudioTrack) {
-    static RefPtr<AllocPolicyImpl> sAudioPolicy = []() {
-      SystemGroup::Dispatch(
-          TaskCategory::Other,
-          NS_NewRunnableFunction(
-              "GlobalAllocPolicy::GlobalAllocPolicy:Audio", []() {
-                ClearOnShutdown(&sAudioPolicy, ShutdownPhase::ShutdownThreads);
-              }));
-      return new AllocPolicyImpl(MediaDecoderLimitDefault());
-    }();
-    return WrapNotNull(sAudioPolicy.get());
-  }
   static RefPtr<AllocPolicyImpl> sVideoPolicy = []() {
     SystemGroup::Dispatch(
         TaskCategory::Other,
@@ -137,7 +125,7 @@ auto SingleAllocPolicy::Alloc() -> RefPtr<Promise> {
       [self](RefPtr<Token> aToken) {
         RefPtr<Token> localToken = std::move(aToken);
         RefPtr<Promise> p = self->mPendingPromise.Ensure(__func__);
-        GlobalAllocPolicy::Instance(self->mTrack)
+        GlobalAllocPolicy::Instance()
             ->Alloc()
             ->Then(
                 self->mOwnerThread, __func__,
@@ -187,7 +175,7 @@ RefPtr<ShutdownPromise> AllocationWrapper::Shutdown() {
   RefPtr<MediaDataDecoder> decoder = std::move(mDecoder);
   RefPtr<Token> token = std::move(mToken);
   return decoder->Shutdown()->Then(
-      AbstractThread::GetCurrent(), __func__,
+      GetCurrentSerialEventTarget(), __func__,
       [token]() { return ShutdownPromise::CreateAndResolve(true, __func__); });
 }
 /* static */ RefPtr<AllocationWrapper::AllocateDecoderPromise>
@@ -196,22 +184,20 @@ AllocationWrapper::CreateDecoder(const CreateDecoderParams& aParams,
   // aParams.mConfig is guaranteed to stay alive during the lifetime of the
   // MediaDataDecoder, so keeping a pointer to the object is safe.
   const TrackInfo* config = &aParams.mConfig;
-  RefPtr<TaskQueue> taskQueue = aParams.mTaskQueue;
   DecoderDoctorDiagnostics* diagnostics = aParams.mDiagnostics;
   RefPtr<layers::ImageContainer> imageContainer = aParams.mImageContainer;
   RefPtr<layers::KnowsCompositor> knowsCompositor = aParams.mKnowsCompositor;
   RefPtr<GMPCrashHelper> crashHelper = aParams.mCrashHelper;
   CreateDecoderParams::UseNullDecoder useNullDecoder = aParams.mUseNullDecoder;
   CreateDecoderParams::NoWrapper noWrapper = aParams.mNoWrapper;
-  TrackInfo::TrackType type = aParams.mType;
   CreateDecoderParams::OptionSet options = aParams.mOptions;
   CreateDecoderParams::VideoFrameRate rate = aParams.mRate;
 
   RefPtr<AllocateDecoderPromise> p =
-      (aPolicy ? aPolicy : GlobalAllocPolicy::Instance(aParams.mType))
+      (aPolicy ? aPolicy : GlobalAllocPolicy::Instance())
           ->Alloc()
           ->Then(
-              AbstractThread::GetCurrent(), __func__,
+              GetCurrentSerialEventTarget(), __func__,
               [=](RefPtr<Token> aToken) {
                 // result may not always be updated by
                 // PDMFactory::CreateDecoder either when the creation
@@ -219,11 +205,9 @@ AllocationWrapper::CreateDecoder(const CreateDecoderParams& aParams,
                 // fatal error by default.
                 MediaResult result =
                     MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
-                                nsPrintfCString("error creating %s decoder",
-                                                TrackTypeToStr(type)));
+                                nsPrintfCString("error creating decoder"));
                 RefPtr<PDMFactory> pdm = new PDMFactory();
                 CreateDecoderParams params{*config,
-                                           taskQueue,
                                            diagnostics,
                                            imageContainer,
                                            &result,
@@ -231,7 +215,6 @@ AllocationWrapper::CreateDecoder(const CreateDecoderParams& aParams,
                                            crashHelper,
                                            useNullDecoder,
                                            noWrapper,
-                                           type,
                                            options,
                                            rate};
                 RefPtr<MediaDataDecoder> decoder = pdm->CreateDecoder(params);

@@ -399,22 +399,17 @@ nsFocusManager::GetFocusedElement(Element** aFocusedElement) {
   return NS_OK;
 }
 
+uint32_t nsFocusManager::GetLastFocusMethod(nsPIDOMWindowOuter* aWindow) const {
+  nsPIDOMWindowOuter* window = aWindow ? aWindow : mFocusedWindow.get();
+  uint32_t method = window ? window->GetFocusMethod() : 0;
+  NS_ASSERTION((method & METHOD_MASK) == method, "invalid focus method");
+  return method;
+}
+
 NS_IMETHODIMP
 nsFocusManager::GetLastFocusMethod(mozIDOMWindowProxy* aWindow,
                                    uint32_t* aLastFocusMethod) {
-  // the focus method is stored on the inner window
-  nsCOMPtr<nsPIDOMWindowOuter> window;
-  if (aWindow) {
-    window = nsPIDOMWindowOuter::From(aWindow);
-  }
-  if (!window) {
-    window = mFocusedWindow;
-  }
-
-  *aLastFocusMethod = window ? window->GetFocusMethod() : 0;
-
-  NS_ASSERTION((*aLastFocusMethod & METHOD_MASK) == *aLastFocusMethod,
-               "invalid focus method");
+  *aLastFocusMethod = GetLastFocusMethod(nsPIDOMWindowOuter::From(aWindow));
   return NS_OK;
 }
 
@@ -1113,10 +1108,20 @@ void nsFocusManager::NotifyFocusStateChange(Element* aElement,
       eventStateToAdd |= NS_EVENT_STATE_FOCUSRING;
     }
     aElement->AddStates(eventStateToAdd);
+
+    for (nsIContent* host = aElement->GetContainingShadowHost(); host;
+         host = host->GetContainingShadowHost()) {
+      host->AsElement()->AddStates(NS_EVENT_STATE_FOCUS);
+    }
   } else {
     EventStates eventStateToRemove =
         NS_EVENT_STATE_FOCUS | NS_EVENT_STATE_FOCUSRING;
     aElement->RemoveStates(eventStateToRemove);
+
+    for (nsIContent* host = aElement->GetContainingShadowHost(); host;
+         host = host->GetContainingShadowHost()) {
+      host->AsElement()->RemoveStates(NS_EVENT_STATE_FOCUS);
+    }
   }
 
   for (nsIContent* content = aElement; content && content != commonAncestor;
@@ -1377,11 +1382,11 @@ void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
                             (aFlags & (FLAG_SHOWRING | FLAG_NOSHOWRING));
     newWindow->SetFocusedElement(elementToFocus, focusMethod);
     if (aFocusChanged) {
-      nsCOMPtr<nsIDocShell> docShell = newWindow->GetDocShell();
-
-      RefPtr<PresShell> presShell = docShell->GetPresShell();
-      if (presShell && presShell->DidInitialize()) {
-        ScrollIntoView(presShell, elementToFocus, aFlags);
+      if (nsCOMPtr<nsIDocShell> docShell = newWindow->GetDocShell()) {
+        RefPtr<PresShell> presShell = docShell->GetPresShell();
+        if (presShell && presShell->DidInitialize()) {
+          ScrollIntoView(presShell, elementToFocus, aFlags);
+        }
       }
     }
 
@@ -1599,7 +1604,36 @@ Element* nsFocusManager::FlushAndCheckIfFocusable(Element* aElement,
                                                                    : nullptr;
   }
 
-  return frame->IsFocusable(aFlags & FLAG_BYMOUSE) ? aElement : nullptr;
+  if (frame->IsFocusable(aFlags & FLAG_BYMOUSE)) {
+    return aElement;
+  }
+
+  if (ShadowRoot* root = aElement->GetShadowRoot()) {
+    if (root->DelegatesFocus()) {
+      // If focus target is a shadow-including inclusive ancestor of the
+      // currently focused area of a top-level browsing context's DOM anchor,
+      // then return null.
+      if (nsPIDOMWindowInner* innerWindow =
+              aElement->OwnerDoc()->GetInnerWindow()) {
+        BrowsingContext* bc = innerWindow->GetBrowsingContext();
+        if (bc && bc->IsTop()) {
+          if (Element* focusedElement = innerWindow->GetFocusedElement()) {
+            if (focusedElement->IsShadowIncludingInclusiveDescendantOf(
+                    aElement)) {
+              return nullptr;
+            }
+          }
+        }
+      }
+
+      if (Element* firstFocusable =
+              root->GetFirstFocusable(aFlags & FLAG_BYMOUSE)) {
+        return firstFocusable;
+      }
+    }
+  }
+
+  return nullptr;
 }
 
 bool nsFocusManager::Blur(nsPIDOMWindowOuter* aWindowToClear,

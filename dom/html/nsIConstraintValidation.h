@@ -6,14 +6,12 @@
 #define nsIConstraintValidition_h___
 
 #include "nsISupports.h"
-#include "nsString.h"
 
-namespace mozilla {
-class ErrorResult;
-namespace dom {
+class nsIContent;
+
+namespace mozilla::dom {
 class ValidityState;
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #define NS_ICONSTRAINTVALIDATION_IID                 \
   {                                                  \
@@ -45,9 +43,6 @@ class nsIConstraintValidation : public nsISupports {
     return !mBarredFromConstraintValidation;
   }
 
-  void GetValidationMessage(nsAString& aValidationMessage,
-                            mozilla::ErrorResult& aError);
-
   enum ValidityStateType {
     VALIDITY_STATE_VALUE_MISSING = 0x1 << 0,
     VALIDITY_STATE_TYPE_MISMATCH = 0x1 << 1,
@@ -63,18 +58,26 @@ class nsIConstraintValidation : public nsISupports {
 
   void SetValidityState(ValidityStateType aState, bool aValue);
 
+  /**
+   * Check the validity of this object. If it is not valid, file a "invalid"
+   * event on the aEventTarget.
+   *
+   * @param aEventTarget   The target of the event.
+   * @param aDefaultAction Set to true if default action should be taken,
+   *                       see EventTarget::DispatchEvent.
+   * @return whether it's valid.
+   */
+  bool CheckValidity(nsIContent& aEventTarget,
+                     bool* aEventDefaultAction = nullptr);
+
   // Web IDL binding methods
   bool WillValidate() const { return IsCandidateForConstraintValidation(); }
   mozilla::dom::ValidityState* Validity();
-  bool CheckValidity();
   bool ReportValidity();
 
  protected:
   // You can't instantiate an object from that class.
   nsIConstraintValidation();
-
-  nsresult CheckValidity(bool* aValidity);
-  void SetCustomValidity(const nsAString& aError);
 
   bool GetValidityState(ValidityStateType aState) const {
     return mValidityBitField & aState;
@@ -82,12 +85,6 @@ class nsIConstraintValidation : public nsISupports {
 
   void SetBarredFromConstraintValidation(bool aBarred);
 
-  virtual nsresult GetValidationMessage(nsAString& aValidationMessage,
-                                        ValidityStateType aType) {
-    return NS_OK;
-  }
-
- protected:
   /**
    * A pointer to the ValidityState object.
    */
@@ -104,11 +101,6 @@ class nsIConstraintValidation : public nsISupports {
    * Keeps track whether the element is barred from constraint validation.
    */
   bool mBarredFromConstraintValidation;
-
-  /**
-   * The string representing the custom error.
-   */
-  nsString mCustomValidity;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIConstraintValidation,

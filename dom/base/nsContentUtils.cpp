@@ -105,7 +105,6 @@
 #include "mozilla/Result.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/ScrollbarPreferences.h"
-#include "mozilla/Services.h"
 #include "mozilla/Span.h"
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -415,7 +414,6 @@ nsIXPConnect* nsContentUtils::sXPConnect;
 nsIScriptSecurityManager* nsContentUtils::sSecurityManager;
 nsIPrincipal* nsContentUtils::sSystemPrincipal;
 nsIPrincipal* nsContentUtils::sNullSubjectPrincipal;
-nsNameSpaceManager* nsContentUtils::sNameSpaceManager;
 nsIIOService* nsContentUtils::sIOService;
 nsIUUIDGenerator* nsContentUtils::sUUIDGenerator;
 nsIConsoleService* nsContentUtils::sConsoleService;
@@ -716,9 +714,6 @@ nsresult nsContentUtils::Init() {
 
   nsHTMLTags::AddRefTable();
 
-  sNameSpaceManager = nsNameSpaceManager::GetInstance();
-  NS_ENSURE_TRUE(sNameSpaceManager, NS_ERROR_OUT_OF_MEMORY);
-
   sXPConnect = nsXPConnect::XPConnect();
   // We hold a strong ref to sXPConnect to ensure that it does not go away until
   // nsLayoutStatics::Shutdown is happening.  Otherwise ~nsXPConnect can be
@@ -847,7 +842,7 @@ void nsContentUtils::GetModifierSeparatorText(nsAString& text) {
 void nsContentUtils::InitializeModifierStrings() {
   // load the display strings for the keyboard accelerators
   nsCOMPtr<nsIStringBundleService> bundleService =
-      mozilla::services::GetStringBundleService();
+      mozilla::components::StringBundle::Service();
   nsCOMPtr<nsIStringBundle> bundle;
   DebugOnly<nsresult> rv = NS_OK;
   if (bundleService) {
@@ -1291,11 +1286,14 @@ nsContentUtils::InternalSerializeAutocompleteAttribute(
 }
 
 // Parse an integer according to HTML spec
-int32_t nsContentUtils::ParseHTMLInteger(const nsAString& aValue,
-                                         ParseHTMLIntegerResultFlags* aResult) {
+template <class StringT>
+int32_t nsContentUtils::ParseHTMLIntegerImpl(
+    const StringT& aValue, ParseHTMLIntegerResultFlags* aResult) {
+  using CharT = typename StringT::char_type;
+
   int result = eParseHTMLInteger_NoFlags;
 
-  nsAString::const_iterator iter, end;
+  typename StringT::const_iterator iter, end;
   aValue.BeginReading(iter);
   aValue.EndReading(end);
 
@@ -1311,11 +1309,11 @@ int32_t nsContentUtils::ParseHTMLInteger(const nsAString& aValue,
   }
 
   int sign = 1;
-  if (*iter == char16_t('-')) {
+  if (*iter == CharT('-')) {
     sign = -1;
     result |= eParseHTMLInteger_Negative;
     ++iter;
-  } else if (*iter == char16_t('+')) {
+  } else if (*iter == CharT('+')) {
     result |= eParseHTMLInteger_NonStandard;
     ++iter;
   }
@@ -1326,7 +1324,7 @@ int32_t nsContentUtils::ParseHTMLInteger(const nsAString& aValue,
   // Check for leading zeros first.
   uint64_t leadingZeros = 0;
   while (iter != end) {
-    if (*iter != char16_t('0')) {
+    if (*iter != CharT('0')) {
       break;
     }
 
@@ -1336,8 +1334,8 @@ int32_t nsContentUtils::ParseHTMLInteger(const nsAString& aValue,
   }
 
   while (iter != end) {
-    if (*iter >= char16_t('0') && *iter <= char16_t('9')) {
-      value = (value * 10) + (*iter - char16_t('0')) * sign;
+    if (*iter >= CharT('0') && *iter <= CharT('9')) {
+      value = (value * 10) + (*iter - CharT('0')) * sign;
       ++iter;
       if (!value.isValid()) {
         result |= eParseHTMLInteger_Error | eParseHTMLInteger_ErrorOverflow;
@@ -1365,6 +1363,17 @@ int32_t nsContentUtils::ParseHTMLInteger(const nsAString& aValue,
 
   *aResult = (ParseHTMLIntegerResultFlags)result;
   return value.isValid() ? value.value() : 0;
+}
+
+// Parse an integer according to HTML spec
+int32_t nsContentUtils::ParseHTMLInteger(const nsAString& aValue,
+                                         ParseHTMLIntegerResultFlags* aResult) {
+  return ParseHTMLIntegerImpl(aValue, aResult);
+}
+
+int32_t nsContentUtils::ParseHTMLInteger(const nsACString& aValue,
+                                         ParseHTMLIntegerResultFlags* aResult) {
+  return ParseHTMLIntegerImpl(aValue, aResult);
 }
 
 #define SKIP_WHITESPACE(iter, end_iter, end_res)                 \
@@ -3045,7 +3054,7 @@ void nsContentUtils::GenerateStateKey(nsIContent* aContent, Document* aDocument,
 
         if (appendedForm) {
           // Append the index of the control in the form
-          int32_t index = formElement->IndexOfControl(control);
+          int32_t index = formElement->IndexOfContent(aContent);
 
           if (index > -1) {
             KeyAppendInt(index, aKey);
@@ -3311,7 +3320,7 @@ nsresult nsContentUtils::SplitQName(const nsIContent* aNamespaceResolver,
         Substring(aQName.get(), colon), nameSpace);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    *aNamespace = NameSpaceManager()->GetNameSpaceID(
+    *aNamespace = nsNameSpaceManager::GetInstance()->GetNameSpaceID(
         nameSpace, nsContentUtils::IsChromeDoc(aNamespaceResolver->OwnerDoc()));
     if (*aNamespace == kNameSpaceID_Unknown) return NS_ERROR_FAILURE;
 
@@ -3335,7 +3344,7 @@ nsresult nsContentUtils::GetNodeInfoFromQName(
   NS_ENSURE_SUCCESS(rv, rv);
 
   int32_t nsID;
-  sNameSpaceManager->RegisterNameSpace(aNamespaceURI, nsID);
+  nsNameSpaceManager::GetInstance()->RegisterNameSpace(aNamespaceURI, nsID);
   if (colon) {
     const char16_t* end;
     qName.EndReading(end);
@@ -3386,12 +3395,8 @@ void nsContentUtils::SplitExpatName(const char16_t* aExpatName,
 
   const char16_t* nameStart;
   if (uriEnd) {
-    if (sNameSpaceManager) {
-      sNameSpaceManager->RegisterNameSpace(
-          nsDependentSubstring(aExpatName, uriEnd), *aNameSpaceID);
-    } else {
-      *aNameSpaceID = kNameSpaceID_Unknown;
-    }
+    nsNameSpaceManager::GetInstance()->RegisterNameSpace(
+        nsDependentSubstring(aExpatName, uriEnd), *aNameSpaceID);
 
     nameStart = (uriEnd + 1);
     if (nameEnd) {
@@ -3740,7 +3745,8 @@ static bool TestSitePerm(nsIPrincipal* aPrincipal, const nsACString& aType,
     return aPerm != nsIPermissionManager::ALLOW_ACTION;
   }
 
-  nsCOMPtr<nsIPermissionManager> permMgr = services::GetPermissionManager();
+  nsCOMPtr<nsIPermissionManager> permMgr =
+      components::PermissionManager::Service();
   NS_ENSURE_TRUE(permMgr, false);
 
   uint32_t perm;
@@ -4112,9 +4118,7 @@ nsIContentPolicy* nsContentUtils::GetContentPolicy() {
 // static
 bool nsContentUtils::IsEventAttributeName(nsAtom* aName, int32_t aType) {
   const char16_t* name = aName->GetUTF16String();
-  if (name[0] != 'o' || name[1] != 'n' ||
-      (aName == nsGkAtoms::onformdata &&
-       !mozilla::StaticPrefs::dom_formdata_event_enabled())) {
+  if (name[0] != 'o' || name[1] != 'n') {
     return false;
   }
 
@@ -5480,8 +5484,7 @@ bool nsContentUtils::SchemeIs(nsIURI* aURI, const char* aScheme) {
 }
 
 bool nsContentUtils::IsExpandedPrincipal(nsIPrincipal* aPrincipal) {
-  nsCOMPtr<nsIExpandedPrincipal> ep = do_QueryInterface(aPrincipal);
-  return !!ep;
+  return aPrincipal && aPrincipal->GetIsExpandedPrincipal();
 }
 
 bool nsContentUtils::IsSystemOrExpandedPrincipal(nsIPrincipal* aPrincipal) {
@@ -9587,16 +9590,14 @@ void nsContentUtils::EnqueueUpgradeReaction(
 /* static */
 void nsContentUtils::EnqueueLifecycleCallback(
     ElementCallbackType aType, Element* aCustomElement,
-    LifecycleCallbackArgs* aArgs,
-    LifecycleAdoptedCallbackArgs* aAdoptedCallbackArgs,
-    CustomElementDefinition* aDefinition) {
+    const LifecycleCallbackArgs& aArgs, CustomElementDefinition* aDefinition) {
   // No DocGroup means no custom element reactions stack.
   if (!aCustomElement->OwnerDoc()->GetDocGroup()) {
     return;
   }
 
-  CustomElementRegistry::EnqueueLifecycleCallback(
-      aType, aCustomElement, aArgs, aAdoptedCallbackArgs, aDefinition);
+  CustomElementRegistry::EnqueueLifecycleCallback(aType, aCustomElement, aArgs,
+                                                  aDefinition);
 }
 
 /* static */

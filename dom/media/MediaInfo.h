@@ -76,7 +76,6 @@ class TrackInfo {
   nsCString mMimeType;
   media::TimeUnit mDuration;
   media::TimeUnit mMediaTime;
-  CryptoTrack mCrypto;
 
   nsTArray<MetadataTag> mTags;
 
@@ -113,7 +112,6 @@ class TrackInfo {
     mMimeType = aOther.mMimeType;
     mDuration = aOther.mDuration;
     mMediaTime = aOther.mMediaTime;
-    mCrypto = aOther.mCrypto;
     mIsRenderedExternally = aOther.mIsRenderedExternally;
     mType = aOther.mType;
     mTags = aOther.mTags;
@@ -143,8 +141,7 @@ class VideoInfo : public TrackInfo {
       : VideoInfo(gfx::IntSize(aWidth, aHeight)) {}
 
   explicit VideoInfo(const gfx::IntSize& aSize)
-      : TrackInfo(kVideoTrack, u"2"_ns, u"main"_ns, EmptyString(),
-                  EmptyString(), true, 2),
+      : TrackInfo(kVideoTrack, u"2"_ns, u"main"_ns, u""_ns, u""_ns, true, 2),
         mDisplay(aSize),
         mStereoMode(StereoMode::MONO),
         mImage(aSize),
@@ -261,8 +258,7 @@ class VideoInfo : public TrackInfo {
 class AudioInfo : public TrackInfo {
  public:
   AudioInfo()
-      : TrackInfo(kAudioTrack, u"1"_ns, u"main"_ns, EmptyString(),
-                  EmptyString(), true, 1),
+      : TrackInfo(kAudioTrack, u"1"_ns, u"main"_ns, u""_ns, u""_ns, true, 1),
         mRate(0),
         mChannels(0),
         mChannelMap(AudioConfig::ChannelLayout::UNKNOWN_MAP),
@@ -314,50 +310,6 @@ class AudioInfo : public TrackInfo {
   RefPtr<MediaByteBuffer> mExtraData;
 };
 
-class EncryptionInfo {
- public:
-  EncryptionInfo() : mEncrypted(false) {}
-
-  struct InitData {
-    template <typename AInitDatas>
-    InitData(const nsAString& aType, AInitDatas&& aInitData)
-        : mType(aType), mInitData(std::forward<AInitDatas>(aInitData)) {}
-
-    // Encryption type to be passed to JS. Usually `cenc'.
-    nsString mType;
-
-    // Encryption data.
-    nsTArray<uint8_t> mInitData;
-  };
-  typedef nsTArray<InitData> InitDatas;
-
-  // True if the stream has encryption metadata
-  bool IsEncrypted() const { return mEncrypted; }
-
-  void Reset() {
-    mEncrypted = false;
-    mInitDatas.Clear();
-  }
-
-  template <typename AInitDatas>
-  void AddInitData(const nsAString& aType, AInitDatas&& aInitData) {
-    mInitDatas.AppendElement(
-        InitData(aType, std::forward<AInitDatas>(aInitData)));
-    mEncrypted = true;
-  }
-
-  void AddInitData(const EncryptionInfo& aInfo) {
-    mInitDatas.AppendElements(aInfo.mInitDatas);
-    mEncrypted = !!mInitDatas.Length();
-  }
-
-  // One 'InitData' per encrypted buffer.
-  InitDatas mInitDatas;
-
- private:
-  bool mEncrypted;
-};
-
 class MediaInfo {
  public:
   bool HasVideo() const { return mVideo.IsValid(); }
@@ -383,11 +335,6 @@ class MediaInfo {
     mAudio.mRate = 44100;
   }
 
-  bool IsEncrypted() const {
-    return (HasAudio() && mAudio.mCrypto.IsEncrypted()) ||
-           (HasVideo() && mVideo.mCrypto.IsEncrypted());
-  }
-
   bool HasValidMedia() const { return HasVideo() || HasAudio(); }
 
   // TODO: Store VideoInfo and AudioIndo in arrays to support multi-tracks.
@@ -407,8 +354,6 @@ class MediaInfo {
 
   // True if the media is only seekable within its buffered ranges.
   bool mMediaSeekableOnlyInBufferedRanges = false;
-
-  EncryptionInfo mCrypto;
 
   // The minimum of start times of audio and video tracks.
   // Use to map the zero time on the media timeline to the first frame.

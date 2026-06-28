@@ -4,18 +4,18 @@
 
 #include "BiquadFilterNode.h"
 #include "AlignmentUtils.h"
-#include "AudioDestinationNode.h"
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
 #include "AudioParamTimeline.h"
+#include "AudioDestinationNode.h"
 #include "PlayingRefChangeHandler.h"
 #include "WebAudioUtils.h"
 #include "blink/Biquad.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/ErrorResult.h"
+#include "AudioParamTimeline.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(BiquadFilterNode, AudioNode, mFrequency,
                                    mDetune, mQ, mGain)
@@ -250,10 +250,10 @@ BiquadFilterNode::Create(AudioContext &aAudioContext,
   }
 
   audioNode->SetType(aOptions.mType);
-  audioNode->Q()->SetValue(aOptions.mQ);
-  audioNode->Detune()->SetValue(aOptions.mDetune);
-  audioNode->Frequency()->SetValue(aOptions.mFrequency);
-  audioNode->Gain()->SetValue(aOptions.mGain);
+  audioNode->Q()->SetInitialValue(aOptions.mQ);
+  audioNode->Detune()->SetInitialValue(aOptions.mDetune);
+  audioNode->Frequency()->SetInitialValue(aOptions.mFrequency);
+  audioNode->Gain()->SetInitialValue(aOptions.mGain);
 
   return audioNode.forget();
 }
@@ -341,5 +341,4 @@ void BiquadFilterNode::GetFrequencyResponse(const Float32Array &aFrequencyHz,
                               aMagResponse.Data(), aPhaseResponse.Data());
 }
 
-} // namespace dom
-} // namespace mozilla
+}  // namespace mozilla::dom

@@ -75,6 +75,11 @@ LOCAL_INCLUDES += [
     '/dom/html',
     '/dom/indexedDB',
     '/dom/media/webaudio',
+    '/dom/media/webrtc',
+    '/dom/media/webrtc/common/time_profiling',
+    '/dom/media/webrtc/jsapi',
+    '/dom/media/webrtc/libwebrtcglue',
+    '/dom/media/webrtc/transport',
     '/dom/media/webspeech/recognition',
     '/dom/svg',
     '/dom/xml',
@@ -86,12 +91,10 @@ LOCAL_INCLUDES += [
     '/layout/generic',
     '/layout/style',
     '/layout/xul/tree',
-    '/media/mtransport',
     '/media/webrtc/',
-    '/media/webrtc/signaling/src/common/time_profiling',
-    '/media/webrtc/signaling/src/peerconnection',
     '/media/webrtc/trunk/',
-    '/netwerk/base/'
+    '/media/webrtc/trunk/webrtc/',
+    '/netwerk/base/',
 ]
 
 DEFINES["GOOGLE_PROTOBUF_NO_RTTI"] = True
@@ -169,10 +172,6 @@ SPHINX_PYTHON_PACKAGE_DIRS += ["mozwebidlcodegen"]
 
 with Files("mozwebidlcodegen/**.py"):
     SCHEDULES.inclusive += ["docs"]
-
-if CONFIG["MOZ_BUILD_APP"] in ["browser", "mobile/android", "xulrunner"]:
-    # This is needed for Window.webidl
-    DEFINES["HAVE_SIDEBAR"] = True
 
 
 PYTHON_UNITTEST_MANIFESTS += [

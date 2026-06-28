@@ -11,13 +11,14 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/dom/Response.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/CacheBinding.h"
 #include "mozilla/dom/cache/AutoUtils.h"
 #include "mozilla/dom/cache/CacheChild.h"
 #include "mozilla/dom/cache/CacheCommon.h"
 #include "mozilla/dom/cache/CacheWorkerRef.h"
-#include "mozilla/dom/cache/ReadStream.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Unused.h"
@@ -128,30 +129,28 @@ class Cache::FetchHandler final : public PromiseNativeHandler {
     const auto failOnErr = [this](const auto) { Fail(); };
 
     bool isArray;
-    CACHE_TRY(OkIf(JS::IsArrayObject(aCx, aValue, &isArray)), QM_VOID,
-              failOnErr);
-    CACHE_TRY(OkIf(isArray), QM_VOID, failOnErr);
+    QM_TRY(OkIf(JS::IsArrayObject(aCx, aValue, &isArray)), QM_VOID, failOnErr);
+    QM_TRY(OkIf(isArray), QM_VOID, failOnErr);
 
     JS::Rooted<JSObject*> obj(aCx, &aValue.toObject());
 
     uint32_t length;
-    CACHE_TRY(OkIf(JS::GetArrayLength(aCx, obj, &length)), QM_VOID, failOnErr);
+    QM_TRY(OkIf(JS::GetArrayLength(aCx, obj, &length)), QM_VOID, failOnErr);
 
     for (uint32_t i = 0; i < length; ++i) {
       JS::Rooted<JS::Value> value(aCx);
 
-      CACHE_TRY(OkIf(JS_GetElement(aCx, obj, i, &value)), QM_VOID, failOnErr);
+      QM_TRY(OkIf(JS_GetElement(aCx, obj, i, &value)), QM_VOID, failOnErr);
 
-      CACHE_TRY(OkIf(value.isObject()), QM_VOID, failOnErr);
+      QM_TRY(OkIf(value.isObject()), QM_VOID, failOnErr);
 
       JS::Rooted<JSObject*> responseObj(aCx, &value.toObject());
 
       RefPtr<Response> response;
-      CACHE_TRY((UNWRAP_OBJECT(Response, responseObj, response)), QM_VOID,
-                failOnErr);
+      QM_TRY(MOZ_TO_RESULT(UNWRAP_OBJECT(Response, responseObj, response)),
+             QM_VOID, failOnErr);
 
-      CACHE_TRY(OkIf(response->Type() != ResponseType::Error), QM_VOID,
-                failOnErr);
+      QM_TRY(OkIf(response->Type() != ResponseType::Error), QM_VOID, failOnErr);
 
       // Do not allow the convenience methods .add()/.addAll() to store failed
       // or invalid responses.  A consequence of this is that these methods

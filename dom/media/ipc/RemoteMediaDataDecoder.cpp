@@ -50,8 +50,17 @@ RefPtr<MediaDataDecoder::DecodePromise> RemoteMediaDataDecoder::Decode(
   return InvokeAsync(
       RemoteDecoderManagerChild::GetManagerThread(), __func__,
       [self, sample]() {
-        return self->mChild->Decode(sample);
+        return self->mChild->Decode(nsTArray<RefPtr<MediaRawData>>{sample});
       });
+}
+
+RefPtr<MediaDataDecoder::DecodePromise> RemoteMediaDataDecoder::DecodeBatch(
+    nsTArray<RefPtr<MediaRawData>>&& aSamples) {
+  RefPtr<RemoteMediaDataDecoder> self = this;
+  return InvokeAsync(RemoteDecoderManagerChild::GetManagerThread(), __func__,
+                     [self, samples = std::move(aSamples)]() {
+                       return self->mChild->Decode(samples);
+                     });
 }
 
 RefPtr<MediaDataDecoder::FlushPromise> RemoteMediaDataDecoder::Flush() {

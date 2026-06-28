@@ -43,6 +43,17 @@ struct Nullable;
 class OwningIDBObjectStoreOrIDBIndexOrIDBCursor;
 class StrongWorkerRef;
 
+namespace detail {
+// This class holds the IID for use with NS_GET_IID.
+class PrivateIDBRequest {
+ public:
+  NS_DECLARE_STATIC_IID_ACCESSOR(PRIVATE_IDBREQUEST_IID)
+};
+
+NS_DEFINE_STATIC_IID_ACCESSOR(PrivateIDBRequest, PRIVATE_IDBREQUEST_IID)
+
+}  // namespace detail
+
 class IDBRequest : public DOMEventTargetHelper {
  protected:
   // mSourceAsObjectStore and mSourceAsIndex are exclusive and one must always
@@ -258,8 +269,6 @@ class IDBOpenDBRequest final : public IDBRequest {
   void NoteComplete();
 
   // EventTarget
-  virtual nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
-
   IMPL_EVENT_HANDLER(blocked);
   IMPL_EVENT_HANDLER(upgradeneeded);
 

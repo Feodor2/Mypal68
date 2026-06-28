@@ -48,7 +48,6 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ContentBlockingUserInteraction.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/Components.h"
 #include "mozilla/DataStorage.h"
 #include "mozilla/GlobalStyleSheetCache.h"
 #include "mozilla/HangDetails.h"
@@ -61,7 +60,8 @@
 #include "mozilla/RDDProcessManager.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/ScriptPreloader.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
+#include "mozilla/SpinEventLoopUntil.h" //MY
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_media.h"
@@ -169,11 +169,11 @@
 #include "nsIAlertsService.h"
 #include "nsIAppStartup.h"
 #include "nsIBidiKeyboard.h"
-#include "nsICaptivePortalService.h"
 #include "nsIClipboard.h"
 #include "nsIContentProcess.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsICookie.h"
+#include "nsICrashService.h"
 #include "nsICycleCollectorListener.h"
 #include "nsIDOMChromeWindow.h"
 #include "nsIDocShell.h"
@@ -221,7 +221,7 @@
 #include "private/pprio.h"
 
 #ifdef MOZ_WEBRTC
-#  include "signaling/src/peerconnection/WebrtcGlobalParent.h"
+#  include "jsapi/WebrtcGlobalParent.h"
 #endif
 
 #if defined(XP_MACOSX)
@@ -290,15 +290,6 @@
 
 // For VP9Benchmark::sBenchmarkFpsPref
 #include "Benchmark.h"
-
-// XXX need another bug to move this to a common header.
-#ifdef DISABLE_ASSERTS_FOR_FUZZING
-#  define ASSERT_UNLESS_FUZZING(...) \
-    do {                             \
-    } while (0)
-#else
-#  define ASSERT_UNLESS_FUZZING(...) MOZ_ASSERT(false, __VA_ARGS__)
-#endif
 
 static NS_DEFINE_CID(kCClipboardCID, NS_CLIPBOARD_CID);
 
@@ -597,7 +588,8 @@ static const char* sObserverTopics[] = {
     "profile-before-change",
     NS_IPC_IOSERVICE_SET_OFFLINE_TOPIC,
     NS_IPC_IOSERVICE_SET_CONNECTIVITY_TOPIC,
-    NS_IPC_CAPTIVE_PORTAL_SET_STATE,
+    "application-background",
+    "application-foreground",
     "memory-pressure",
     "child-gc-request",
     "child-cc-request",
@@ -1525,11 +1517,10 @@ void ContentParent::ActorDestroy(ActorDestroyReason why) {
     props->SetPropertyAsUint64(u"childID"_ns, mChildID);
 
     if (AbnormalShutdown == why) {
-      Telemetry::Accumulate(Telemetry::SUBPROCESS_ABNORMAL_ABORT, "content"_ns,
-                            1);
 
       props->SetPropertyAsBool(u"abnormal"_ns, true);
 
+      nsAutoString dumpID;
       // There's a window in which child processes can crash
       // after IPC is established, but before a crash reporter
       // is created.
@@ -1540,14 +1531,15 @@ void ContentParent::ActorDestroy(ActorDestroyReason why) {
           mCrashReporter->GenerateCrashReport(OtherPid());
         }
 
-        nsAutoString dumpID;
         if (mCrashReporter->HasMinidump()) {
           dumpID = mCrashReporter->MinidumpID();
         }
-        props->SetPropertyAsAString(u"dumpID"_ns, dumpID);
       } else {
-        CrashReporter::FinalizeOrphanedMinidump(OtherPid(),
-                                                GeckoProcessType_Content);
+        HandleOrphanedMinidump(&dumpID);
+      }
+
+      if (!dumpID.IsEmpty()) {
+        props->SetPropertyAsAString(u"dumpID"_ns, dumpID);
       }
     }
     nsAutoString cpId;
@@ -2161,13 +2153,6 @@ bool ContentParent::InitInternal(ProcessPriority aInitialPriority) {
   rv = io->GetConnectivity(&xpcomInit.isConnected());
   MOZ_ASSERT(NS_SUCCEEDED(rv), "Failed getting connectivity?");
 
-  xpcomInit.captivePortalState() = nsICaptivePortalService::UNKNOWN;
-  nsCOMPtr<nsICaptivePortalService> cps =
-      do_GetService(NS_CAPTIVEPORTAL_CONTRACTID);
-  if (cps) {
-    cps->GetState(&xpcomInit.captivePortalState());
-  }
-
   nsIBidiKeyboard* bidi = nsContentUtils::GetBidiKeyboard();
 
   xpcomInit.isLangRTL() = false;
@@ -2251,7 +2236,7 @@ bool ContentParent::InitInternal(ProcessPriority aInitialPriority) {
   // 3. Start listening for gfxVars updates, to notify content process later on.
   gfxVars::AddReceiver(this);
 
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
   if (gfxInfo) {
     for (int32_t i = 1; i <= nsIGfxInfo::FEATURE_MAX_VALUE; ++i) {
       int32_t status = 0;
@@ -2300,7 +2285,7 @@ bool ContentParent::InitInternal(ProcessPriority aInitialPriority) {
   chromeRegistry->SendRegisteredChrome(this);
 
   nsCOMPtr<nsIStringBundleService> stringBundleService =
-      services::GetStringBundleService();
+      components::StringBundle::Service();
   stringBundleService->SendContentBundles(this);
 
   if (gAppData) {
@@ -2848,6 +2833,10 @@ ContentParent::Observe(nsISupports* aSubject, const char* aTopic,
   // listening for memory pressure event
   if (!strcmp(aTopic, "memory-pressure")) {
     Unused << SendFlushMemory(nsDependentString(aData));
+  } else if (!strcmp(aTopic, "application-background")) {
+    Unused << SendApplicationBackground();
+  } else if (!strcmp(aTopic, "application-foreground")) {
+    Unused << SendApplicationForeground();
   } else if (!strcmp(aTopic, NS_IPC_IOSERVICE_SET_OFFLINE_TOPIC)) {
     NS_ConvertUTF16toUTF8 dataStr(aData);
     const char* offline = dataStr.get();
@@ -2856,17 +2845,6 @@ ContentParent::Observe(nsISupports* aSubject, const char* aTopic,
     }
   } else if (!strcmp(aTopic, NS_IPC_IOSERVICE_SET_CONNECTIVITY_TOPIC)) {
     if (!SendSetConnectivity(u"true"_ns.Equals(aData))) {
-      return NS_ERROR_NOT_AVAILABLE;
-    }
-  } else if (!strcmp(aTopic, NS_IPC_CAPTIVE_PORTAL_SET_STATE)) {
-    nsCOMPtr<nsICaptivePortalService> cps = do_QueryInterface(aSubject);
-    MOZ_ASSERT(cps, "Should QI to a captive portal service");
-    if (!cps) {
-      return NS_ERROR_FAILURE;
-    }
-    int32_t state;
-    cps->GetState(&state);
-    if (!SendSetCaptivePortalState(state)) {
       return NS_ERROR_NOT_AVAILABLE;
     }
   }
@@ -3046,7 +3024,7 @@ bool ContentParent::CanOpenBrowser(const IPCTabContext& aContext) {
   // windows. This is enforced in MaybeInvalidTabContext.
   if (aContext.type() != IPCTabContext::TPopupIPCTabContext &&
       aContext.type() != IPCTabContext::TUnsafeIPCTabContext) {
-    ASSERT_UNLESS_FUZZING(
+    MOZ_CRASH_UNLESS_FUZZING(
         "Unexpected IPCTabContext type.  Aborting AllocPBrowserParent.");
     return false;
   }
@@ -3054,7 +3032,7 @@ bool ContentParent::CanOpenBrowser(const IPCTabContext& aContext) {
   if (aContext.type() == IPCTabContext::TPopupIPCTabContext) {
     const PopupIPCTabContext& popupContext = aContext.get_PopupIPCTabContext();
     if (popupContext.opener().type() != PBrowserOrId::TPBrowserParent) {
-      ASSERT_UNLESS_FUZZING(
+      MOZ_CRASH_UNLESS_FUZZING(
           "Unexpected PopupIPCTabContext type.  Aborting AllocPBrowserParent.");
       return false;
     }
@@ -3062,7 +3040,7 @@ bool ContentParent::CanOpenBrowser(const IPCTabContext& aContext) {
     auto opener =
         BrowserParent::GetFrom(popupContext.opener().get_PBrowserParent());
     if (!opener) {
-      ASSERT_UNLESS_FUZZING(
+      MOZ_CRASH_UNLESS_FUZZING(
           "Got null opener from child; aborting AllocPBrowserParent.");
       return false;
     }
@@ -3212,6 +3190,19 @@ void ContentParent::GeneratePairedMinidump(const char* aReason) {
   }
 }
 
+void ContentParent::HandleOrphanedMinidump(nsString* aDumpId) {
+  if (CrashReporter::FinalizeOrphanedMinidump(
+          OtherPid(), GeckoProcessType_Content, aDumpId)) {
+    CrashReporterHost::RecordCrash(GeckoProcessType_Content,
+                                   nsICrashService::CRASH_TYPE_CRASH, *aDumpId);
+  } else {
+    NS_WARNING(nsPrintfCString("content process pid = %d crashed without "
+                               "leaving a minidump behind",
+                               OtherPid())
+                   .get());
+  }
+}
+
 // WARNING: aReason appears in telemetry, so any new value passed in requires
 // data review.
 void ContentParent::KillHard(const char* aReason) {
@@ -3265,9 +3256,9 @@ void ContentParent::FriendlyName(nsAString& aName, bool aAnonymize) {
 }
 
 mozilla::ipc::IPCResult ContentParent::RecvInitCrashReporter(
-    Shmem&& aShmem, const NativeThreadId& aThreadId) {
-  mCrashReporter = MakeUnique<CrashReporterHost>(GeckoProcessType_Content,
-                                                 aShmem, aThreadId);
+    const NativeThreadId& aThreadId) {
+  mCrashReporter =
+      MakeUnique<CrashReporterHost>(GeckoProcessType_Content, aThreadId);
 
   return IPC_OK();
 }
@@ -3512,7 +3503,7 @@ mozilla::ipc::IPCResult ContentParent::RecvPSpeechSynthesisConstructor(
 
 mozilla::ipc::IPCResult ContentParent::RecvStartVisitedQueries(
     const nsTArray<RefPtr<nsIURI>>& aUris) {
-  nsCOMPtr<IHistory> history = services::GetHistory();
+  nsCOMPtr<IHistory> history = components::History::Service();
   if (!history) {
     return IPC_OK();
   }
@@ -3530,7 +3521,7 @@ mozilla::ipc::IPCResult ContentParent::RecvSetURITitle(nsIURI* uri,
   if (!uri) {
     return IPC_FAIL_NO_REASON(this);
   }
-  nsCOMPtr<IHistory> history = services::GetHistory();
+  nsCOMPtr<IHistory> history = components::History::Service();
   if (history) {
     history->SetURITitle(uri, title);
   }
@@ -3645,7 +3636,7 @@ mozilla::ipc::IPCResult ContentParent::RecvOpenNotificationSettings(
 mozilla::ipc::IPCResult ContentParent::RecvNotificationEvent(
     const nsString& aType, const NotificationEventData& aData) {
   nsCOMPtr<nsIServiceWorkerManager> swm =
-      mozilla::services::GetServiceWorkerManager();
+      mozilla::components::ServiceWorkerManager::Service();
   if (NS_WARN_IF(!swm)) {
     // Probably shouldn't happen, but no need to crash the child process.
     return IPC_OK();
@@ -4310,13 +4301,13 @@ bool ContentParent::DeallocPWebBrowserPersistDocumentParent(
 
 mozilla::ipc::IPCResult ContentParent::CommonCreateWindow(
     PBrowserParent* aThisTab, bool aSetOpener, const uint32_t& aChromeFlags,
-    const bool& aCalledFromJS, const bool& aPositionSpecified,
-    const bool& aSizeSpecified, nsIURI* aURIToLoad, const nsCString& aFeatures,
-    const float& aFullZoom, uint64_t aNextRemoteTabId, const nsString& aName,
-    nsresult& aResult, nsCOMPtr<nsIRemoteTab>& aNewBrowserParent,
-    bool* aWindowIsNew, int32_t& aOpenLocation,
-    nsIPrincipal* aTriggeringPrincipal, nsIReferrerInfo* aReferrerInfo,
-    bool aLoadURI, nsIContentSecurityPolicy* aCsp)
+    const bool& aCalledFromJS, const bool& aWidthSpecified, nsIURI* aURIToLoad,
+    const nsCString& aFeatures, const float& aFullZoom,
+    uint64_t aNextRemoteTabId, const nsString& aName, nsresult& aResult,
+    nsCOMPtr<nsIRemoteTab>& aNewBrowserParent, bool* aWindowIsNew,
+    int32_t& aOpenLocation, nsIPrincipal* aTriggeringPrincipal,
+    nsIReferrerInfo* aReferrerInfo, bool aLoadURI,
+    nsIContentSecurityPolicy* aCsp)
 
 {
   // The content process should never be in charge of computing whether or
@@ -4367,8 +4358,7 @@ mozilla::ipc::IPCResult ContentParent::CommonCreateWindow(
   }
 
   aOpenLocation = nsWindowWatcher::GetWindowOpenLocation(
-      outerWin, aChromeFlags, aCalledFromJS, aPositionSpecified,
-      aSizeSpecified);
+      outerWin, aChromeFlags, aCalledFromJS, aWidthSpecified);
 
   MOZ_ASSERT(aOpenLocation == nsIBrowserDOMWindow::OPEN_NEWTAB ||
              aOpenLocation == nsIBrowserDOMWindow::OPEN_NEWWINDOW);
@@ -4510,8 +4500,7 @@ mozilla::ipc::IPCResult ContentParent::CommonCreateWindow(
 mozilla::ipc::IPCResult ContentParent::RecvCreateWindow(
     PBrowserParent* aThisTab, PBrowserParent* aNewTab,
     const uint32_t& aChromeFlags, const bool& aCalledFromJS,
-    const bool& aPositionSpecified, const bool& aSizeSpecified,
-    nsIURI* aURIToLoad, const nsCString& aFeatures,
+    const bool& aWidthSpecified, nsIURI* aURIToLoad, const nsCString& aFeatures,
     const float& aFullZoom, const IPC::Principal& aTriggeringPrincipal,
     nsIContentSecurityPolicy* aCsp, nsIReferrerInfo* aReferrerInfo,
     CreateWindowResolver&& aResolve) {
@@ -4555,9 +4544,9 @@ mozilla::ipc::IPCResult ContentParent::RecvCreateWindow(
   int32_t openLocation = nsIBrowserDOMWindow::OPEN_NEWWINDOW;
   mozilla::ipc::IPCResult ipcResult = CommonCreateWindow(
       aThisTab, /* aSetOpener = */ true, aChromeFlags, aCalledFromJS,
-      aPositionSpecified, aSizeSpecified, aURIToLoad, aFeatures, aFullZoom,
-      nextRemoteTabId, VoidString(), rv, newRemoteTab, &cwi.windowOpened(),
-      openLocation, aTriggeringPrincipal, aReferrerInfo,
+      aWidthSpecified, aURIToLoad, aFeatures, aFullZoom, nextRemoteTabId,
+      VoidString(), rv, newRemoteTab, &cwi.windowOpened(), openLocation,
+      aTriggeringPrincipal, aReferrerInfo,
       /* aLoadUri = */ false, aCsp);
   if (!ipcResult) {
     return ipcResult;
@@ -4588,10 +4577,9 @@ mozilla::ipc::IPCResult ContentParent::RecvCreateWindow(
 
 mozilla::ipc::IPCResult ContentParent::RecvCreateWindowInDifferentProcess(
     PBrowserParent* aThisTab, const uint32_t& aChromeFlags,
-    const bool& aCalledFromJS, const bool& aPositionSpecified,
-    const bool& aSizeSpecified, nsIURI* aURIToLoad,
+    const bool& aCalledFromJS, const bool& aWidthSpecified, nsIURI* aURIToLoad,
     const nsCString& aFeatures, const float& aFullZoom, const nsString& aName,
-    const IPC::Principal& aTriggeringPrincipal, nsIContentSecurityPolicy* aCsp,
+    nsIPrincipal* aTriggeringPrincipal, nsIContentSecurityPolicy* aCsp,
     nsIReferrerInfo* aReferrerInfo) {
   MOZ_DIAGNOSTIC_ASSERT(!nsContentUtils::IsSpecialName(aName));
 
@@ -4599,10 +4587,35 @@ mozilla::ipc::IPCResult ContentParent::RecvCreateWindowInDifferentProcess(
   bool windowIsNew;
   int32_t openLocation = nsIBrowserDOMWindow::OPEN_NEWWINDOW;
 
+  // If we have enough data, check the schemes of the loader and loadee
+  // to make sure they make sense.
+  if (aURIToLoad && aURIToLoad->SchemeIs("file") &&
+      GetRemoteType() != FILE_REMOTE_TYPE &&
+      Preferences::GetBool("browser.tabs.remote.enforceRemoteTypeRestrictions",
+                           false)) {
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+#  ifdef DEBUG
+    nsAutoCString uriToLoadStr;
+    nsAutoCString triggeringUriStr;
+    aURIToLoad->GetAsciiSpec(uriToLoadStr);
+    aTriggeringPrincipal->GetAsciiSpec(triggeringUriStr);
+
+    NS_WARNING(nsPrintfCString(
+                   "RecvCreateWindowInDifferentProcess blocked loading file "
+                   "scheme from non-file remotetype: %s tried to load %s",
+                   triggeringUriStr.get(), uriToLoadStr.get())
+                   .get());
+#  endif
+    MOZ_CRASH(
+        "RecvCreateWindowInDifferentProcess blocked loading improper scheme");
+#endif
+    return IPC_OK();
+  }
+
   nsresult rv;
   mozilla::ipc::IPCResult ipcResult = CommonCreateWindow(
       aThisTab, /* aSetOpener = */ false, aChromeFlags, aCalledFromJS,
-      aPositionSpecified, aSizeSpecified, aURIToLoad, aFeatures, aFullZoom,
+      aWidthSpecified, aURIToLoad, aFeatures, aFullZoom,
       /* aNextRemoteTabId = */ 0, aName, rv, newRemoteTab, &windowIsNew,
       openLocation, aTriggeringPrincipal, aReferrerInfo,
       /* aLoadUri = */ true, aCsp);

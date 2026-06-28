@@ -18,6 +18,33 @@ dictionary FileSourceOptions {
 };
 
 /**
+ * A `ResourceId` refers to a localization resource that is either required
+ * or optional. The default for a `ResourceId` is that the resource is required.
+ *
+ * If a required resource is missing for a given locale, then the L10nRegistry
+ * will not generate a bundle for that locale, because the resource is required
+ * to be present in order for the bundle to be considered valid.
+ *
+ * If an optional resource is missing for a given locale, then the L10nRegistry
+ * will still generate a bundle for that locale, but entries for the missing
+ * optional resource will be missing in the bundle.
+ *
+ * It is recommended to only use this sparingly, since marking many resources as
+ * optional will increase the state space that the L10nRegistry solver has to cover,
+ * and it will have a negative impact on performance.
+ *
+ * We should also strive to have valid resources for all supported locales, so using
+ * optional resources should be reserved for exceptional circumstances such as
+ * experimental features and features under development.
+ */
+dictionary ResourceId {
+  required UTF8String path;
+  boolean _optional = false;
+};
+
+typedef (UTF8String or ResourceId) L10nResourceId;
+
+/**
  * The interface represents a single source location for
  * the registry.
  *
@@ -96,7 +123,7 @@ interface L10nFileSource {
 
   [Throws]
   L10nFileSourceHasFileStatus hasFile(UTF8String locale, UTF8String path);
-  [Throws]
+  [NewObject]
   Promise<FluentResource?> fetchFile(UTF8String locale, UTF8String path);
   [Throws]
   FluentResource? fetchFileSync(UTF8String locale, UTF8String path);
@@ -116,6 +143,7 @@ interface FluentBundleIterator {
 
 [LegacyNoInterfaceObject, Exposed=Window]
 interface FluentBundleAsyncIterator {
+  [NewObject]
   Promise<FluentBundleIteratorResult> next();
   [Alias="@@asyncIterator"] FluentBundleAsyncIterator values();
 };
@@ -132,20 +160,20 @@ interface L10nRegistry {
 
   sequence<UTF8String> getAvailableLocales();
 
-  void registerSources(sequence<L10nFileSource> aSources);
-  void updateSources(sequence<L10nFileSource> aSources);
-  void removeSources(sequence<UTF8String> aSources);
+  undefined registerSources(sequence<L10nFileSource> aSources);
+  undefined updateSources(sequence<L10nFileSource> aSources);
+  undefined removeSources(sequence<UTF8String> aSources);
 
   [Throws]
   boolean hasSource(UTF8String aName);
   [Throws]
   L10nFileSource? getSource(UTF8String aName);
   sequence<UTF8String> getSourceNames();
-  void clearSources();
+  undefined clearSources();
 
   [Throws, NewObject]
-  FluentBundleIterator generateBundlesSync(sequence<UTF8String> aLocales, sequence<UTF8String> aResourceIds);
+  FluentBundleIterator generateBundlesSync(sequence<UTF8String> aLocales, sequence<L10nResourceId> aResourceIds);
 
   [Throws, NewObject]
-  FluentBundleAsyncIterator generateBundles(sequence<UTF8String> aLocales, sequence<UTF8String> aResourceIds);
+  FluentBundleAsyncIterator generateBundles(sequence<UTF8String> aLocales, sequence<L10nResourceId> aResourceIds);
 };

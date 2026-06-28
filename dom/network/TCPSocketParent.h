@@ -19,8 +19,7 @@
     }                                                \
   }
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class TCPSocket;
 
@@ -47,7 +46,7 @@ class TCPSocketParent : public mozilla::net::PTCPSocketParent,
  public:
   NS_IMETHOD_(MozExternalRefCountType) Release() override;
 
-  TCPSocketParent() {}
+  TCPSocketParent() = default;
 
   mozilla::ipc::IPCResult RecvOpen(const nsString& aHost, const uint16_t& aPort,
                                    const bool& useSSL,
@@ -77,7 +76,6 @@ class TCPSocketParent : public mozilla::net::PTCPSocketParent,
                  TCPReadyState aReadyState);
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif

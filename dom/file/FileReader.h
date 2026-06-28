@@ -21,8 +21,7 @@
 class nsITimer;
 class nsIEventTarget;
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class Blob;
 class DOMException;
@@ -201,7 +200,6 @@ class FileReader final : public DOMEventTargetHelper,
 
 NS_DEFINE_STATIC_IID_ACCESSOR(FileReader, FILEREADER_ID)
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_FileReader_h

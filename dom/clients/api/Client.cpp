@@ -12,12 +12,11 @@
 #include "mozilla/dom/DOMMozPromiseRequestHolder.h"
 #include "mozilla/dom/MessagePortBinding.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerScope.h"
+#include "nsIDUtils.h"
 #include "nsIGlobalObject.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using mozilla::dom::ipc::StructuredCloneData;
 
@@ -73,12 +72,7 @@ void Client::GetUrl(nsAString& aUrlOut) const {
 }
 
 void Client::GetId(nsAString& aIdOut) const {
-  char buf[NSID_LENGTH];
-  mData->info().id().ToProvidedString(buf);
-  NS_ConvertASCIItoUTF16 uuid(buf);
-
-  // Remove {} and the null terminator
-  aIdOut.Assign(Substring(uuid, 1, NSID_LENGTH - 3));
+  aIdOut = NSID_TrimBracketsUTF16(mData->info().id());
 }
 
 ClientType Client::Type() const { return mData->info().type(); }
@@ -183,7 +177,8 @@ already_AddRefed<Promise> Client::Navigate(const nsAString& aURL,
   }
 
   ClientNavigateArgs args(mData->info(), NS_ConvertUTF16toUTF8(aURL),
-                          workerPrivate->GetLocationInfo().mHref);
+                          workerPrivate->GetLocationInfo().mHref,
+                          workerPrivate->GetServiceWorkerDescriptor().ToIPC());
   RefPtr<Client> self = this;
 
   StartClientManagerOp(
@@ -205,5 +200,4 @@ already_AddRefed<Promise> Client::Navigate(const nsAString& aURL,
   return outerPromise.forget();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

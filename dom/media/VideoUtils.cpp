@@ -212,9 +212,6 @@ already_AddRefed<SharedThreadPool> GetMediaThreadPool(MediaThreadType aType) {
     case MediaThreadType::PLATFORM_DECODER:
       name = "MediaPDecoder";
       break;
-    case MediaThreadType::MTG_CONTROL:
-      name = "MTGControl";
-      break;
     case MediaThreadType::WEBRTC_DECODER:
       name = "WebRTCPD";
       break;
@@ -227,8 +224,8 @@ already_AddRefed<SharedThreadPool> GetMediaThreadPool(MediaThreadType aType) {
       break;
     default:
       MOZ_FALLTHROUGH_ASSERT("Unexpected MediaThreadType");
-    case MediaThreadType::PLAYBACK:
-      name = "MediaPlayback";
+    case MediaThreadType::CONTROLLER:
+      name = "MediaController";
       break;
   }
 
@@ -287,7 +284,7 @@ bool ExtractVPXCodecDetails(const nsAString& aCodec, uint8_t& aProfile,
       return false;
     }
     *(fields[fieldsCount]) = static_cast<uint8_t>(
-        PromiseFlatString((*fieldsItr)).ToInteger(&rv, 10));
+        (*fieldsItr).ToInteger(&rv, 10));
     // We got invalid field value, parsing error.
     NS_ENSURE_SUCCESS(rv, false);
   }
@@ -433,15 +430,15 @@ bool ExtractH264CodecDetails(const nsAString& aCodec, uint8_t& aProfile,
 
   // Extract the profile_idc, constraint_flags and level_idc.
   nsresult rv = NS_OK;
-  aProfile = PromiseFlatString(Substring(aCodec, 5, 2)).ToInteger(&rv, 16);
+  aProfile = Substring(aCodec, 5, 2).ToInteger(&rv, 16);
   NS_ENSURE_SUCCESS(rv, false);
 
   // Constraint flags are stored on the 6 most significant bits, first two bits
   // are reserved_zero_2bits.
-  aConstraint = PromiseFlatString(Substring(aCodec, 7, 2)).ToInteger(&rv, 16);
+  aConstraint = Substring(aCodec, 7, 2).ToInteger(&rv, 16);
   NS_ENSURE_SUCCESS(rv, false);
 
-  aLevel = PromiseFlatString(Substring(aCodec, 9, 2)).ToInteger(&rv, 16);
+  aLevel = Substring(aCodec, 9, 2).ToInteger(&rv, 16);
   NS_ENSURE_SUCCESS(rv, false);
 
   if (aLevel == 9) {

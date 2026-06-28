@@ -4,18 +4,19 @@
 
 #include "DecoderDoctorDiagnostics.h"
 
-#include "mozilla/dom/DecoderDoctorNotificationBinding.h"
+#include "VideoUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/dom/DecoderDoctorNotificationBinding.h"
+#include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
 #include "nsGkAtoms.h"
-#include "mozilla/dom/Document.h"
 #include "nsIObserverService.h"
 #include "nsIScriptError.h"
 #include "nsITimer.h"
 #include "nsPluginHost.h"
 #include "nsPrintfCString.h"
-#include "VideoUtils.h"
 
 #if defined(MOZ_FFMPEG)
 #  include "FFmpegRuntimeLinker.h"
@@ -83,17 +84,21 @@ class DecoderDoctorDocumentWatcher : public nsITimerCallback, public nsINamed {
   dom::Document* mDocument;
 
   struct Diagnostics {
-    Diagnostics(DecoderDoctorDiagnostics&& aDiagnostics, const char* aCallSite)
+    Diagnostics(DecoderDoctorDiagnostics&& aDiagnostics, const char* aCallSite,
+                mozilla::TimeStamp aTimeStamp)
         : mDecoderDoctorDiagnostics(std::move(aDiagnostics)),
-          mCallSite(aCallSite) {}
+          mCallSite(aCallSite),
+          mTimeStamp(aTimeStamp) {}
     Diagnostics(const Diagnostics&) = delete;
     Diagnostics(Diagnostics&& aOther)
         : mDecoderDoctorDiagnostics(
               std::move(aOther.mDecoderDoctorDiagnostics)),
-          mCallSite(std::move(aOther.mCallSite)) {}
+          mCallSite(std::move(aOther.mCallSite)),
+          mTimeStamp(aOther.mTimeStamp) {}
 
     const DecoderDoctorDiagnostics mDecoderDoctorDiagnostics;
     const nsCString mCallSite;
+    const mozilla::TimeStamp mTimeStamp;
   };
   typedef nsTArray<Diagnostics> DiagnosticsSequence;
   DiagnosticsSequence mDiagnosticsSequence;
@@ -242,7 +247,7 @@ static const NotificationAndReportStringId sMediaWMFNeeded = {
     dom::DecoderDoctorNotificationType::Platform_decoder_not_found,
     "MediaWMFNeeded",
     {ReportParam::Formats}};
-static const NotificationAndReportStringId sMediaPlatformDecoderNotFound = {
+static const NotificationAndReportStringId sMediaFFMpegNotFound = {
     dom::DecoderDoctorNotificationType::Platform_decoder_not_found,
     "MediaPlatformDecoderNotFound",
     {ReportParam::Formats}};
@@ -272,14 +277,12 @@ static const NotificationAndReportStringId sMediaDecodeWarning = {
     {ReportParam::ResourceURL, ReportParam::DecodeIssue}};
 
 static const NotificationAndReportStringId* const
-    sAllNotificationsAndReportStringIds[] = {&sMediaWMFNeeded,
-                                             &sMediaPlatformDecoderNotFound,
-                                             &sMediaCannotPlayNoDecoders,
-                                             &sMediaNoDecoders,
-                                             &sCannotInitializePulseAudio,
-                                             &sUnsupportedLibavcodec,
-                                             &sMediaDecodeError,
-                                             &sMediaDecodeWarning};
+    sAllNotificationsAndReportStringIds[] = {
+        &sMediaWMFNeeded,
+        &sMediaFFMpegNotFound,   &sMediaCannotPlayNoDecoders,
+        &sMediaNoDecoders,       &sCannotInitializePulseAudio,
+        &sUnsupportedLibavcodec, &sMediaDecodeError,
+        &sMediaDecodeWarning};
 
 // Create a webcompat-friendly description of a MediaResult.
 static nsString MediaResultDescription(const MediaResult& aResult,
@@ -347,10 +350,10 @@ static void ReportToConsole(dom::Document* aDocument,
       aDocument, aConsoleStringId,
       aParams.IsEmpty() ? "<no params>"
                         : NS_ConvertUTF16toUTF8(aParams[0]).get(),
-      (aParams.Length() < 1 || aParams[1].IsEmpty()) ? "" : ", ",
-      (aParams.Length() < 1 || aParams[1].IsEmpty())
+      (aParams.Length() < 1 || aParams[0].IsEmpty()) ? "" : ", ",
+      (aParams.Length() < 1 || aParams[0].IsEmpty())
           ? ""
-          : NS_ConvertUTF16toUTF8(aParams[1]).get(),
+          : NS_ConvertUTF16toUTF8(aParams[0]).get(),
       aParams.Length() < 2 ? "" : ", ...");
   nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "Media"_ns,
                                   aDocument, nsContentUtils::eDOM_PROPERTIES,
@@ -476,6 +479,22 @@ static bool FormatsListContains(const nsAString& aList,
   return StringListContains(aList, CleanItemForFormatsList(aItem));
 }
 
+static const char* GetLinkStatusLibraryName() {
+#if defined(MOZ_FFMPEG)
+  return FFmpegRuntimeLinker::LinkStatusLibraryName();
+#else
+  return "no library (ffmpeg disabled during build)";
+#endif
+}
+
+static const char* GetLinkStatusString() {
+#if defined(MOZ_FFMPEG)
+  return FFmpegRuntimeLinker::LinkStatusString();
+#else
+  return "no link (ffmpeg disabled during build)";
+#endif
+}
+
 void DecoderDoctorDocumentWatcher::SynthesizeAnalysis() {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -487,6 +506,7 @@ void DecoderDoctorDocumentWatcher::SynthesizeAnalysis() {
 #endif
 #if defined(MOZ_FFMPEG)
   nsAutoString formatsRequiringFFMpeg;
+  nsAutoString formatsLibAVCodecUnsupported;
 #endif
   // Only deal with one decode error per document (the first one found).
   const MediaResult* firstDecodeError = nullptr;
@@ -511,8 +531,11 @@ void DecoderDoctorDocumentWatcher::SynthesizeAnalysis() {
           }
 #endif
 #if defined(MOZ_FFMPEG)
-          if (diag.mDecoderDoctorDiagnostics.DidFFmpegFailToLoad()) {
+          if (diag.mDecoderDoctorDiagnostics.DidFFmpegNotFound()) {
             AppendToFormatsList(formatsRequiringFFMpeg,
+                                diag.mDecoderDoctorDiagnostics.Format());
+          } else if (diag.mDecoderDoctorDiagnostics.IsLibAVCodecUnsupported()) {
+            AppendToFormatsList(formatsLibAVCodecUnsupported,
                                 diag.mDecoderDoctorDiagnostics.Format());
           }
 #endif
@@ -614,41 +637,30 @@ void DecoderDoctorDocumentWatcher::SynthesizeAnalysis() {
 #endif
 #if defined(MOZ_FFMPEG)
       if (!formatsRequiringFFMpeg.IsEmpty()) {
-        switch (FFmpegRuntimeLinker::LinkStatusCode()) {
-          case FFmpegRuntimeLinker::LinkStatus_INVALID_FFMPEG_CANDIDATE:
-          case FFmpegRuntimeLinker::LinkStatus_UNUSABLE_LIBAV57:
-          case FFmpegRuntimeLinker::LinkStatus_INVALID_LIBAV_CANDIDATE:
-          case FFmpegRuntimeLinker::LinkStatus_OBSOLETE_FFMPEG:
-          case FFmpegRuntimeLinker::LinkStatus_OBSOLETE_LIBAV:
-          case FFmpegRuntimeLinker::LinkStatus_INVALID_CANDIDATE:
-            DD_INFO(
-                "DecoderDoctorDocumentWatcher[%p, "
-                "doc=%p]::SynthesizeAnalysis() - unplayable formats: %s -> "
-                "Cannot play media because of unsupported %s (Reason: %s)",
-                this, mDocument,
-                NS_ConvertUTF16toUTF8(formatsRequiringFFMpeg).get(),
-                FFmpegRuntimeLinker::LinkStatusLibraryName(),
-                FFmpegRuntimeLinker::LinkStatusString());
-            ReportAnalysis(mDocument, sUnsupportedLibavcodec, false,
-                           formatsRequiringFFMpeg);
-            return;
-          case FFmpegRuntimeLinker::LinkStatus_INIT:
-            MOZ_FALLTHROUGH_ASSERT("Unexpected LinkStatus_INIT");
-          case FFmpegRuntimeLinker::LinkStatus_SUCCEEDED:
-            MOZ_FALLTHROUGH_ASSERT("Unexpected LinkStatus_SUCCEEDED");
-          case FFmpegRuntimeLinker::LinkStatus_NOT_FOUND:
-            DD_INFO(
-                "DecoderDoctorDocumentWatcher[%p, "
-                "doc=%p]::SynthesizeAnalysis() - unplayable formats: %s -> "
-                "Cannot play media because platform decoder was not found "
-                "(Reason: %s)",
-                this, mDocument,
-                NS_ConvertUTF16toUTF8(formatsRequiringFFMpeg).get(),
-                FFmpegRuntimeLinker::LinkStatusString());
-            ReportAnalysis(mDocument, sMediaPlatformDecoderNotFound, false,
-                           formatsRequiringFFMpeg);
-            return;
-        }
+        MOZ_DIAGNOSTIC_ASSERT(formatsLibAVCodecUnsupported.IsEmpty());
+        DD_INFO(
+            "DecoderDoctorDocumentWatcher[%p, "
+            "doc=%p]::SynthesizeAnalysis() - unplayable formats: %s -> "
+            "Cannot play media because ffmpeg was not found (Reason: %s)",
+            this, mDocument,
+            NS_ConvertUTF16toUTF8(formatsRequiringFFMpeg).get(),
+            GetLinkStatusString());
+        ReportAnalysis(mDocument, sMediaFFMpegNotFound, false,
+                       formatsRequiringFFMpeg);
+        return;
+      }
+      if (!formatsLibAVCodecUnsupported.IsEmpty()) {
+        MOZ_DIAGNOSTIC_ASSERT(formatsRequiringFFMpeg.IsEmpty());
+        DD_INFO(
+            "DecoderDoctorDocumentWatcher[%p, "
+            "doc=%p]::SynthesizeAnalysis() - unplayable formats: %s -> "
+            "Cannot play media because of unsupported %s (Reason: %s)",
+            this, mDocument,
+            NS_ConvertUTF16toUTF8(formatsLibAVCodecUnsupported).get(),
+            GetLinkStatusLibraryName(), GetLinkStatusString());
+        ReportAnalysis(mDocument, sUnsupportedLibavcodec, false,
+                       formatsLibAVCodecUnsupported);
+        return;
       }
 #endif
       DD_INFO(
@@ -711,12 +723,28 @@ void DecoderDoctorDocumentWatcher::AddDiagnostics(
     return;
   }
 
+  const mozilla::TimeStamp now = mozilla::TimeStamp::Now();
+
+  constexpr size_t MaxDiagnostics = 128;
+  constexpr double MaxSeconds = 10.0;
+  while (
+      mDiagnosticsSequence.Length() > MaxDiagnostics ||
+      (!mDiagnosticsSequence.IsEmpty() &&
+       (now - mDiagnosticsSequence[0].mTimeStamp).ToSeconds() > MaxSeconds)) {
+    // Too many, or too old.
+    mDiagnosticsSequence.RemoveElementAt(0);
+    if (mDiagnosticsHandled != 0) {
+      // Make sure Notify picks up the new element added below.
+      --mDiagnosticsHandled;
+    }
+  }
+
   DD_DEBUG(
       "DecoderDoctorDocumentWatcher[%p, "
       "doc=%p]::AddDiagnostics(DecoderDoctorDiagnostics{%s}, call site '%s')",
       this, mDocument, aDiagnostics.GetDescription().Data(), aCallSite);
   mDiagnosticsSequence.AppendElement(
-      Diagnostics(std::move(aDiagnostics), aCallSite));
+      Diagnostics(std::move(aDiagnostics), aCallSite, now));
   EnsureTimerIsStarted();
 }
 
@@ -770,6 +798,15 @@ void DecoderDoctorDiagnostics::StoreFormatDiagnostics(dom::Document* aDocument,
   MOZ_ASSERT(mDiagnosticsType == eUnsaved);
   mDiagnosticsType = eFormatSupportCheck;
 
+  if (NS_WARN_IF(aFormat.Length() > 2048)) {
+    DD_WARN(
+        "DecoderDoctorDiagnostics[%p]::StoreFormatDiagnostics(Document* "
+        "aDocument=%p, format= TOO LONG! '%s', can-play=%d, call site '%s')",
+        aDocument, this, NS_ConvertUTF16toUTF8(aFormat).get(), aCanPlay,
+        aCallSite);
+    return;
+  }
+
   if (NS_WARN_IF(!aDocument)) {
     DD_WARN(
         "DecoderDoctorDiagnostics[%p]::StoreFormatDiagnostics(Document* "
@@ -799,7 +836,11 @@ void DecoderDoctorDiagnostics::StoreFormatDiagnostics(dom::Document* aDocument,
   }
 
   mFormat = aFormat;
-  mCanPlay = aCanPlay;
+  if (aCanPlay) {
+    mFlags -= Flags::CanPlay;
+  } else {
+    mFlags += Flags::CanPlay;
+  }
 
   // StoreDiagnostics should only be called once, after all data is available,
   // so it is safe to std::move() from this object.
@@ -856,6 +897,24 @@ void DecoderDoctorDiagnostics::StoreDecodeError(dom::Document* aDocument,
   // Make sure we only store once.
   MOZ_ASSERT(mDiagnosticsType == eUnsaved);
   mDiagnosticsType = eDecodeError;
+
+  if (NS_WARN_IF(aError.Message().Length() > 2048)) {
+    DD_WARN(
+        "DecoderDoctorDiagnostics[%p]::StoreDecodeError(Document* "
+        "aDocument=%p, aError= TOO LONG! '%s', aMediaSrc=<provided>, call site "
+        "'%s')",
+        aDocument, this, aError.Description().get(), aCallSite);
+    return;
+  }
+
+  if (NS_WARN_IF(aMediaSrc.Length() > 2048)) {
+    DD_WARN(
+        "DecoderDoctorDiagnostics[%p]::StoreDecodeError(Document* "
+        "aDocument=%p, aError=%s, aMediaSrc= TOO LONG! <provided>, call site "
+        "'%s')",
+        aDocument, this, aError.Description().get(), aCallSite);
+    return;
+  }
 
   if (NS_WARN_IF(!aDocument)) {
     DD_WARN(
@@ -947,20 +1006,20 @@ nsCString DecoderDoctorDiagnostics::GetDescription() const {
     case eFormatSupportCheck:
       s = "format='";
       s += NS_ConvertUTF16toUTF8(mFormat).get();
-      s += mCanPlay ? "', can play" : "', cannot play";
-      if (mVideoNotSupported) {
+      s += mFlags.contains(Flags::CanPlay) ? "', can play" : "', cannot play";
+      if (mFlags.contains(Flags::VideoNotSupported)) {
         s += ", but video format not supported";
       }
-      if (mAudioNotSupported) {
+      if (mFlags.contains(Flags::AudioNotSupported)) {
         s += ", but audio format not supported";
       }
-      if (mWMFFailedToLoad) {
+      if (mFlags.contains(Flags::WMFFailedToLoad)) {
         s += ", Windows platform decoder failed to load";
       }
-      if (mFFmpegFailedToLoad) {
-        s += ", Linux platform decoder failed to load";
+      if (mFlags.contains(Flags::FFmpegNotFound)) {
+        s += ", Linux platform decoder not found";
       }
-      if (mGMPPDMFailedToStartup) {
+      if (mFlags.contains(Flags::GMPPDMFailedToStartup)) {
         s += ", GMP PDM failed to startup";
       } else if (!mGMP.IsEmpty()) {
         s += ", Using GMP '";

@@ -10,7 +10,6 @@
 #include "mozilla/TimelineConsumers.h"
 #include "mozilla/WorkerTimelineMarker.h"
 #include "nsQueryObject.h"
-#include "WorkerPrivate.h"
 #include "WorkerScope.h"
 
 namespace mozilla {

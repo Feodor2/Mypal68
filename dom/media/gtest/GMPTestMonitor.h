@@ -6,6 +6,7 @@
 
 #include "nsThreadUtils.h"
 #include "mozilla/SystemGroup.h"
+#include "mozilla/SpinEventLoopUntil.h"
 
 class GMPTestMonitor {
  public:

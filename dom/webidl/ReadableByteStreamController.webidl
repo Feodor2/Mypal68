@@ -6,7 +6,7 @@
  * https://streams.spec.whatwg.org/#rbs-controller-class-definition
  */
 
-[Exposed=*, Pref="dom.streams.byte_streams.enabled"]
+[Exposed=*]
 interface ReadableByteStreamController {
   [Throws] // Throws on OOM
   readonly attribute ReadableStreamBYOBRequest? byobRequest;
@@ -14,11 +14,11 @@ interface ReadableByteStreamController {
   readonly attribute unrestricted double? desiredSize;
 
   [Throws]
-  void close();
+  undefined close();
 
   [Throws]
-  void enqueue(ArrayBufferView chunk);
+  undefined enqueue(ArrayBufferView chunk);
 
   [Throws]
-  void error(optional any e);
+  undefined error(optional any e);
 };

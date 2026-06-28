@@ -24,6 +24,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/LSValue.h"
@@ -44,12 +45,6 @@
 #include "nscore.h"
 
 namespace mozilla::dom {
-
-namespace {
-
-const uint32_t kSnapshotTimeoutMs = 20000;
-
-}  // namespace
 
 /**
  * Coalescing manipulation queue used by `LSSnapshot`.  Used by `LSSnapshot` to
@@ -138,13 +133,14 @@ LSSnapshot::LSSnapshot(LSDatabase* aDatabase)
       mActor(nullptr),
       mInitLength(0),
       mLength(0),
-      mExactUsage(0),
+      mUsage(0),
       mPeakUsage(0),
       mLoadState(LoadState::Initial),
+      mHasOtherProcessDatabases(false),
       mHasOtherProcessObservers(false),
       mExplicit(false),
       mHasPendingStableStateCallback(false),
-      mHasPendingTimerCallback(false),
+      mHasPendingIdleTimerCallback(false),
       mDirty(false)
 #ifdef DEBUG
       ,
@@ -159,7 +155,7 @@ LSSnapshot::~LSSnapshot() {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mDatabase);
   MOZ_ASSERT(!mHasPendingStableStateCallback);
-  MOZ_ASSERT(!mHasPendingTimerCallback);
+  MOZ_ASSERT(!mHasPendingIdleTimerCallback);
   MOZ_ASSERT_IF(mInitialized, mSentFinish);
 
   if (mActor) {
@@ -214,11 +210,12 @@ nsresult LSSnapshot::Init(const nsAString& aKey,
     MOZ_ASSERT(loadState == LoadState::AllOrderedItems);
   }
 
-  mExactUsage = aInitInfo.initialUsage();
+  mUsage = aInitInfo.usage();
   mPeakUsage = aInitInfo.peakUsage();
 
   mLoadState = aInitInfo.loadState();
 
+  mHasOtherProcessDatabases = aInitInfo.hasOtherProcessDatabases();
   mHasOtherProcessObservers = aInitInfo.hasOtherProcessObservers();
 
   mExplicit = aExplicit;
@@ -234,8 +231,8 @@ nsresult LSSnapshot::Init(const nsAString& aKey,
   }
 
   if (!mExplicit) {
-    mTimer = NS_NewTimer();
-    MOZ_ASSERT(mTimer);
+    mIdleTimer = NS_NewTimer();
+    MOZ_ASSERT(mIdleTimer);
 
     ScheduleStableStateCallback();
   }
@@ -515,7 +512,16 @@ nsresult LSSnapshot::Clear(LSNotifyInfo& aNotifyInfo) {
   } else {
     changed = true;
 
-    DebugOnly<nsresult> rv = UpdateUsage(-mExactUsage);
+    int64_t delta = 0;
+    for (const auto& entry : mValues) {
+      const nsAString& key = entry.GetKey();
+      const nsString& value = entry.GetData();
+
+      delta += -static_cast<int64_t>(key.Length()) -
+               static_cast<int64_t>(value.Length());
+    }
+
+    DebugOnly<nsresult> rv = UpdateUsage(delta);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
 
     mValues.Clear();
@@ -551,22 +557,39 @@ void LSSnapshot::MarkDirty() {
   mDirty = true;
 
   if (!mExplicit && !mHasPendingStableStateCallback) {
-    CancelTimer();
+    CancelIdleTimer();
 
     MOZ_ALWAYS_SUCCEEDS(Checkpoint());
 
     MOZ_ALWAYS_SUCCEEDS(Finish());
   } else {
-    MOZ_ASSERT(!mHasPendingTimerCallback);
+    MOZ_ASSERT(!mHasPendingIdleTimerCallback);
   }
 }
 
-nsresult LSSnapshot::End() {
+nsresult LSSnapshot::ExplicitCheckpoint() {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mActor);
   MOZ_ASSERT(mExplicit);
   MOZ_ASSERT(!mHasPendingStableStateCallback);
-  MOZ_ASSERT(!mHasPendingTimerCallback);
+  MOZ_ASSERT(!mHasPendingIdleTimerCallback);
+  MOZ_ASSERT(mInitialized);
+  MOZ_ASSERT(!mSentFinish);
+
+  nsresult rv = Checkpoint(/* aSync */ true);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  return NS_OK;
+}
+
+nsresult LSSnapshot::ExplicitEnd() {
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(mActor);
+  MOZ_ASSERT(mExplicit);
+  MOZ_ASSERT(!mHasPendingStableStateCallback);
+  MOZ_ASSERT(!mHasPendingIdleTimerCallback);
   MOZ_ASSERT(mInitialized);
   MOZ_ASSERT(!mSentFinish);
 
@@ -577,25 +600,32 @@ nsresult LSSnapshot::End() {
 
   RefPtr<LSSnapshot> kungFuDeathGrip = this;
 
-  rv = Finish();
+  rv = Finish(/* aSync */ true);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
-  }
-
-  if (NS_WARN_IF(!mActor->SendPing())) {
-    return NS_ERROR_FAILURE;
   }
 
   return NS_OK;
 }
 
+#ifdef ENABLE_TESTS
+int64_t LSSnapshot::GetUsage() const {
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(mActor);
+  MOZ_ASSERT(mInitialized);
+  MOZ_ASSERT(!mSentFinish);
+
+  return mUsage;
+}
+#endif
+
 void LSSnapshot::ScheduleStableStateCallback() {
   AssertIsOnOwningThread();
-  MOZ_ASSERT(mTimer);
+  MOZ_ASSERT(mIdleTimer);
   MOZ_ASSERT(!mExplicit);
   MOZ_ASSERT(!mHasPendingStableStateCallback);
 
-  CancelTimer();
+  CancelIdleTimer();
 
   nsCOMPtr<nsIRunnable> runnable = this;
   nsContentUtils::RunInStableState(runnable.forget());
@@ -609,7 +639,7 @@ void LSSnapshot::MaybeScheduleStableStateCallback() {
   if (!mExplicit && !mHasPendingStableStateCallback) {
     ScheduleStableStateCallback();
   } else {
-    MOZ_ASSERT(!mHasPendingTimerCallback);
+    MOZ_ASSERT(!mHasPendingIdleTimerCallback);
   }
 }
 
@@ -883,17 +913,16 @@ nsresult LSSnapshot::UpdateUsage(int64_t aDelta) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mDatabase);
   MOZ_ASSERT(mActor);
-  MOZ_ASSERT(mPeakUsage >= mExactUsage);
+  MOZ_ASSERT(mPeakUsage >= mUsage);
   MOZ_ASSERT(mInitialized);
   MOZ_ASSERT(!mSentFinish);
 
-  int64_t newExactUsage = mExactUsage + aDelta;
-  if (newExactUsage > mPeakUsage) {
-    int64_t minSize = newExactUsage - mPeakUsage;
-    int64_t requestedSize = minSize + 4096;
+  int64_t newUsage = mUsage + aDelta;
+  if (newUsage > mPeakUsage) {
+    const int64_t minSize = newUsage - mPeakUsage;
+
     int64_t size;
-    if (NS_WARN_IF(
-            !mActor->SendIncreasePeakUsage(requestedSize, minSize, &size))) {
+    if (NS_WARN_IF(!mActor->SendIncreasePeakUsage(minSize, &size))) {
       return NS_ERROR_FAILURE;
     }
 
@@ -906,11 +935,11 @@ nsresult LSSnapshot::UpdateUsage(int64_t aDelta) {
     mPeakUsage += size;
   }
 
-  mExactUsage = newExactUsage;
+  mUsage = newUsage;
   return NS_OK;
 }
 
-nsresult LSSnapshot::Checkpoint() {
+nsresult LSSnapshot::Checkpoint(bool aSync) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mActor);
   MOZ_ASSERT(mInitialized);
@@ -920,7 +949,13 @@ nsresult LSSnapshot::Checkpoint() {
     MOZ_ASSERT(mWriteAndNotifyInfos);
 
     if (!mWriteAndNotifyInfos->IsEmpty()) {
-      MOZ_ALWAYS_TRUE(mActor->SendCheckpointAndNotify(*mWriteAndNotifyInfos));
+      if (aSync) {
+        MOZ_ALWAYS_TRUE(
+            mActor->SendSyncCheckpointAndNotify(*mWriteAndNotifyInfos));
+      } else {
+        MOZ_ALWAYS_TRUE(
+            mActor->SendAsyncCheckpointAndNotify(*mWriteAndNotifyInfos));
+      }
 
       mWriteAndNotifyInfos->Clear();
     }
@@ -933,7 +968,11 @@ nsresult LSSnapshot::Checkpoint() {
 
       MOZ_ASSERT(!writeInfos.IsEmpty());
 
-      MOZ_ALWAYS_TRUE(mActor->SendCheckpoint(writeInfos));
+      if (aSync) {
+        MOZ_ALWAYS_TRUE(mActor->SendSyncCheckpoint(writeInfos));
+      } else {
+        MOZ_ALWAYS_TRUE(mActor->SendAsyncCheckpoint(writeInfos));
+      }
 
       mWriteOptimizer->Reset();
     }
@@ -942,14 +981,18 @@ nsresult LSSnapshot::Checkpoint() {
   return NS_OK;
 }
 
-nsresult LSSnapshot::Finish() {
+nsresult LSSnapshot::Finish(bool aSync) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mDatabase);
   MOZ_ASSERT(mActor);
   MOZ_ASSERT(mInitialized);
   MOZ_ASSERT(!mSentFinish);
 
-  MOZ_ALWAYS_TRUE(mActor->SendFinish());
+  if (aSync) {
+    MOZ_ALWAYS_TRUE(mActor->SendSyncFinish());
+  } else {
+    MOZ_ALWAYS_TRUE(mActor->SendAsyncFinish());
+  }
 
   mDatabase->NoteFinishedSnapshot(this);
 
@@ -964,28 +1007,28 @@ nsresult LSSnapshot::Finish() {
   return NS_OK;
 }
 
-void LSSnapshot::CancelTimer() {
+void LSSnapshot::CancelIdleTimer() {
   AssertIsOnOwningThread();
-  MOZ_ASSERT(mTimer);
+  MOZ_ASSERT(mIdleTimer);
 
-  if (mHasPendingTimerCallback) {
-    MOZ_ALWAYS_SUCCEEDS(mTimer->Cancel());
-    mHasPendingTimerCallback = false;
+  if (mHasPendingIdleTimerCallback) {
+    MOZ_ALWAYS_SUCCEEDS(mIdleTimer->Cancel());
+    mHasPendingIdleTimerCallback = false;
   }
 }
 
 // static
-void LSSnapshot::TimerCallback(nsITimer* aTimer, void* aClosure) {
+void LSSnapshot::IdleTimerCallback(nsITimer* aTimer, void* aClosure) {
   MOZ_ASSERT(aTimer);
 
   auto* self = static_cast<LSSnapshot*>(aClosure);
   MOZ_ASSERT(self);
-  MOZ_ASSERT(self->mTimer);
-  MOZ_ASSERT(SameCOMIdentity(self->mTimer, aTimer));
+  MOZ_ASSERT(self->mIdleTimer);
+  MOZ_ASSERT(SameCOMIdentity(self->mIdleTimer, aTimer));
   MOZ_ASSERT(!self->mHasPendingStableStateCallback);
-  MOZ_ASSERT(self->mHasPendingTimerCallback);
+  MOZ_ASSERT(self->mHasPendingIdleTimerCallback);
 
-  self->mHasPendingTimerCallback = false;
+  self->mHasPendingIdleTimerCallback = false;
 
   MOZ_ALWAYS_SUCCEEDS(self->Finish());
 }
@@ -997,22 +1040,38 @@ LSSnapshot::Run() {
   AssertIsOnOwningThread();
   MOZ_ASSERT(!mExplicit);
   MOZ_ASSERT(mHasPendingStableStateCallback);
-  MOZ_ASSERT(!mHasPendingTimerCallback);
+  MOZ_ASSERT(!mHasPendingIdleTimerCallback);
 
   mHasPendingStableStateCallback = false;
 
   MOZ_ALWAYS_SUCCEEDS(Checkpoint());
 
-  if (mDirty || !Preferences::GetBool("dom.storage.snapshot_reusing")) {
+  // 1. The unused pre-incremented snapshot peak usage can't be undone when
+  //    there are other snapshots for the same database. We only add a pending
+  //    usage delta when a snapshot finishes and usage deltas are then applied
+  //    when the last database becomes inactive.
+  // 2. If there's a snapshot with pre-incremented peak usage, the next
+  //    snapshot will use that as a base for its usage.
+  // 3. When a task for given snapshot finishes, we try to reuse the snapshot
+  //    by only checkpointing the snapshot and delaying the finish by a timer.
+  // 4. If two or more tabs for the same origin use localStorage periodically
+  //    at the same time the usage gradually grows until it hits the quota
+  //    limit.
+  // 5. We prevent that from happening by finishing the snapshot immediatelly
+  //    if there are databases in other processess.
+
+  if (mDirty || mHasOtherProcessDatabases ||
+      !Preferences::GetBool("dom.storage.snapshot_reusing")) {
     MOZ_ALWAYS_SUCCEEDS(Finish());
-  } else if (!mExplicit) {
-    MOZ_ASSERT(mTimer);
+  } else {
+    MOZ_ASSERT(mIdleTimer);
 
-    MOZ_ALWAYS_SUCCEEDS(mTimer->InitWithNamedFuncCallback(
-        TimerCallback, this, kSnapshotTimeoutMs, nsITimer::TYPE_ONE_SHOT,
-        "LSSnapshot::TimerCallback"));
+    MOZ_ALWAYS_SUCCEEDS(mIdleTimer->InitWithNamedFuncCallback(
+        IdleTimerCallback, this,
+        StaticPrefs::dom_storage_snapshot_idle_timeout_ms(),
+        nsITimer::TYPE_ONE_SHOT, "LSSnapshot::IdleTimerCallback"));
 
-    mHasPendingTimerCallback = true;
+    mHasPendingIdleTimerCallback = true;
   }
 
   return NS_OK;

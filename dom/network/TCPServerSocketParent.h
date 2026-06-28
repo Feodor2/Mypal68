@@ -10,8 +10,7 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 class TCPServerSocket;
 class TCPServerSocketEvent;
@@ -48,7 +47,6 @@ class TCPServerSocketParent : public mozilla::net::PTCPServerSocketParent,
   bool mIPCOpen;
 };
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom
 
 #endif  // mozilla_dom_TCPServerSocketParent_h

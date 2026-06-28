@@ -212,11 +212,6 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
   TextMetrics* MeasureText(const nsAString& aRawText,
                            mozilla::ErrorResult& aError);
 
-  void AddHitRegion(const HitRegionOptions& aOptions,
-                    mozilla::ErrorResult& aError);
-  void RemoveHitRegion(const nsAString& aId);
-  void ClearHitRegions();
-
   void DrawImage(const CanvasImageSource& aImage, double aDx, double aDy,
                  mozilla::ErrorResult& aError) override {
     DrawImage(aImage, 0.0, 0.0, 0.0, 0.0, aDx, aDy, 0.0, 0.0, 0, aError);
@@ -234,21 +229,18 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
     DrawImage(aImage, aSx, aSy, aSw, aSh, aDx, aDy, aDw, aDh, 6, aError);
   }
 
-  already_AddRefed<ImageData> CreateImageData(JSContext* aCx, double aSw,
-                                              double aSh,
-                                              mozilla::ErrorResult& aError);
-  already_AddRefed<ImageData> CreateImageData(JSContext* aCx,
-                                              ImageData& aImagedata,
-                                              mozilla::ErrorResult& aError);
-  already_AddRefed<ImageData> GetImageData(JSContext* aCx, double aSx,
-                                           double aSy, double aSw, double aSh,
+  already_AddRefed<ImageData> CreateImageData(JSContext*, int32_t aSw,
+                                              int32_t aSh, ErrorResult&);
+  already_AddRefed<ImageData> CreateImageData(JSContext*, ImageData&,
+                                              ErrorResult&);
+  already_AddRefed<ImageData> GetImageData(JSContext*, int32_t aSx, int32_t aSy,
+                                           int32_t aSw, int32_t aSh,
                                            nsIPrincipal& aSubjectPrincipal,
-                                           mozilla::ErrorResult& aError);
-  void PutImageData(ImageData& aImageData, double aDx, double aDy,
-                    mozilla::ErrorResult& aError);
-  void PutImageData(ImageData& aImageData, double aDx, double aDy,
-                    double aDirtyX, double aDirtyY, double aDirtyWidth,
-                    double aDirtyHeight, mozilla::ErrorResult& aError);
+                                           ErrorResult&);
+  void PutImageData(ImageData&, int32_t aDx, int32_t aDy, ErrorResult&);
+  void PutImageData(ImageData&, int32_t aDx, int32_t aDy, int32_t aDirtyX,
+                    int32_t aDirtyY, int32_t aDirtyWidth, int32_t aDirtyHeight,
+                    ErrorResult&);
 
   double LineWidth() override { return CurrentState().lineWidth; }
 
@@ -278,6 +270,8 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
   void SetTextAlign(const nsAString& aTextAlign);
   void GetTextBaseline(nsAString& aTextBaseline);
   void SetTextBaseline(const nsAString& aTextBaseline);
+  void GetDirection(nsAString& aDirection);
+  void SetDirection(const nsAString& aDirection);
 
   void ClosePath() override {
     EnsureWritablePath();
@@ -497,12 +491,6 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
 
   virtual UniquePtr<uint8_t[]> GetImageBuffer(int32_t* aFormat) override;
 
-  // Given a point, return hit region ID if it exists
-  nsString GetHitRegion(const mozilla::gfx::Point& aPoint) override;
-
-  // return true and fills in the bound rect if element has a hit region.
-  bool GetHitRegionRect(Element* aElement, nsRect& aRect) override;
-
   void OnShutdown();
 
   /**
@@ -518,11 +506,11 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
                              nsIPrincipal& aSubjectPrincipal,
                              JSObject** aRetval);
 
-  nsresult PutImageData_explicit(int32_t aX, int32_t aY, uint32_t aW,
-                                 uint32_t aH, dom::Uint8ClampedArray* aArray,
-                                 bool aHasDirtyRect, int32_t aDirtyX,
-                                 int32_t aDirtyY, int32_t aDirtyWidth,
-                                 int32_t aDirtyHeight);
+  void PutImageData_explicit(int32_t aX, int32_t aY, uint32_t aW, uint32_t aH,
+                             dom::Uint8ClampedArray* aArray, bool aHasDirtyRect,
+                             int32_t aDirtyX, int32_t aDirtyY,
+                             int32_t aDirtyWidth, int32_t aDirtyHeight,
+                             ErrorResult&);
 
   bool CopyBufferProvider(layers::PersistentBufferProvider& aOld,
                           gfx::DrawTarget& aTarget, gfx::IntRect aCopyRect);
@@ -793,20 +781,6 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
   uint32_t mInvalidateCount;
   static const uint32_t kCanvasMaxInvalidateCount = 100;
 
-  /**
-   * State information for hit regions
-   */
-  struct RegionInfo {
-    nsString mId;
-    // fallback element for a11y
-    RefPtr<Element> mElement;
-    // Path of the hit region in the 2d context coordinate space (not user
-    // space)
-    RefPtr<gfx::Path> mPath;
-  };
-
-  nsTArray<RegionInfo> mHitRegionsOptions;
-
   mozilla::intl::Bidi mBidiEngine;
 
   /**
@@ -873,6 +847,8 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
   };
 
   enum class TextDrawOperation : uint8_t { FILL, STROKE, MEASURE };
+
+  enum class TextDirection : uint8_t { LTR, RTL, INHERIT };
 
  protected:
   gfxFontGroup* GetCurrentFontStyle();
@@ -953,6 +929,7 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
     nsCString font;
     TextAlign textAlign = TextAlign::START;
     TextBaseline textBaseline = TextBaseline::ALPHABETIC;
+    TextDirection textDirection = TextDirection::INHERIT;
 
     nscolor shadowColor = 0;
 

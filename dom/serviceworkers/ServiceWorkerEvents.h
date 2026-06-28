@@ -125,6 +125,7 @@ class FetchEvent final : public ExtendableEvent {
   nsMainThreadPtrHandle<nsIInterceptedChannel> mChannel;
   nsMainThreadPtrHandle<ServiceWorkerRegistrationInfo> mRegistration;
   RefPtr<Request> mRequest;
+  RefPtr<Promise> mHandled;
   nsCString mScriptSpec;
   nsCString mPreventDefaultScriptSpec;
   nsString mClientId;
@@ -167,6 +168,8 @@ class FetchEvent final : public ExtendableEvent {
   void GetResultingClientId(nsAString& aResultingClientId) const {
     aResultingClientId = mResultingClientId;
   }
+
+  Promise* Handled() const { return mHandled; }
 
   void RespondWith(JSContext* aCx, Promise& aArg, ErrorResult& aRv);
 

@@ -13,5 +13,5 @@
  Exposed=Window]
 interface CanvasCaptureMediaStream : MediaStream {
     readonly attribute HTMLCanvasElement canvas;
-    void requestFrame();
+    undefined requestFrame();
 };

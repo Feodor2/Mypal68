@@ -35,16 +35,16 @@ typedef enum {
   eXMLContentSinkState_InEpilog
 } XMLContentSinkState;
 
-struct StackNode {
-  nsCOMPtr<nsIContent> mContent;
-  uint32_t mNumFlushed;
-};
-
 class nsXMLContentSink : public nsContentSink,
                          public nsIXMLContentSink,
                          public nsITransformObserver,
                          public nsIExpatSink {
  public:
+  struct StackNode {
+    nsCOMPtr<nsIContent> mContent;
+    uint32_t mNumFlushed;
+  };
+
   nsXMLContentSink();
 
   nsresult Init(mozilla::dom::Document* aDoc, nsIURI* aURL,
@@ -53,8 +53,7 @@ class nsXMLContentSink : public nsContentSink,
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
 
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_NO_UNLINK(nsXMLContentSink,
-                                                     nsContentSink)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsXMLContentSink, nsContentSink)
 
   NS_DECL_NSIEXPATSINK
 
@@ -71,12 +70,17 @@ class nsXMLContentSink : public nsContentSink,
   virtual nsISupports* GetTarget() override;
   virtual bool IsScriptExecuting() override;
   virtual void ContinueInterruptedParsingAsync() override;
+  bool IsPrettyPrintXML() const override { return mPrettyPrintXML; }
+  bool IsPrettyPrintHasSpecialRoot() const override {
+    return mPrettyPrintHasSpecialRoot;
+  }
 
   // nsITransformObserver
-  NS_IMETHOD OnDocumentCreated(
-      mozilla::dom::Document* aResultDocument) override;
-  NS_IMETHOD OnTransformDone(nsresult aResult,
+  nsresult OnDocumentCreated(mozilla::dom::Document* aSourceDocument,
                              mozilla::dom::Document* aResultDocument) override;
+  nsresult OnTransformDone(mozilla::dom::Document* aSourceDocument,
+                           nsresult aResult,
+                           mozilla::dom::Document* aResultDocument) override;
 
   // nsICSSLoaderObserver
   NS_IMETHOD StyleSheetLoaded(mozilla::StyleSheet* aSheet, bool aWasDeferred,

@@ -6,8 +6,7 @@
 #include "AudioContext.h"
 #include "mozilla/dom/PeriodicWaveBinding.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(PeriodicWave, mContext)
 
@@ -27,8 +26,10 @@ PeriodicWave::PeriodicWave(AudioContext* aContext, const float* aRealData,
 
   // Copy coefficient data.
   // The SharedBuffer and two arrays share a single allocation.
-  RefPtr<SharedBuffer> buffer =
-      SharedBuffer::Create(sizeof(float) * aLength * 2, fallible);
+  CheckedInt<size_t> bufferSize(sizeof(float));
+  bufferSize *= aLength;
+  bufferSize *= 2;
+  RefPtr<SharedBuffer> buffer = SharedBuffer::Create(bufferSize, fallible);
   if (!buffer) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return;
@@ -127,5 +128,4 @@ JSObject* PeriodicWave::WrapObject(JSContext* aCx,
   return PeriodicWave_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

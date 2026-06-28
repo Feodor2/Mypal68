@@ -8,7 +8,7 @@ include protocol PGMPVideoEncoder;
 namespace mozilla {
 namespace gmp {
 
-intr protocol PGMPContent
+intr refcounted protocol PGMPContent
 {
   manages PGMPVideoDecoder;
   manages PGMPVideoEncoder;

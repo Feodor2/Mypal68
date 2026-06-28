@@ -9,6 +9,7 @@
 #include "nsCOMPtr.h"
 #include "nsWrapperCache.h"
 #include "nsTArray.h"
+#include "mozilla/dom/TestInterfaceJSMaplikeSetlikeIterableBinding.h"
 
 class nsPIDOMWindowInner;
 
@@ -39,27 +40,33 @@ class TestInterfaceAsyncIterableSingle : public nsISupports,
       const TestInterfaceAsyncIterableSingleOptions& aOptions, ErrorResult& rv);
 
   using Iterator = AsyncIterableIterator<TestInterfaceAsyncIterableSingle>;
-  void InitAsyncIterator(Iterator* aIterator, ErrorResult& aError);
-  void DestroyAsyncIterator(Iterator* aIterator);
-  already_AddRefed<Promise> GetNextPromise(Iterator* aIterator,
-                                           ErrorResult& aRv);
+  already_AddRefed<Promise> GetNextIterationResult(Iterator* aIterator,
+                                                   ErrorResult& aRv);
 
- protected:
   struct IteratorData {
+    void Traverse(nsCycleCollectionTraversalCallback& cb);
+    void Unlink();
+
     uint32_t mIndex = 0;
     uint32_t mMultiplier = 1;
     Sequence<OwningNonNull<Promise>> mBlockingPromises;
     size_t mBlockingPromisesIndex = 0;
+    uint32_t mFailNextAfter = 4294967295;
+    bool mThrowFromNext = false;
+    RefPtr<TestThrowingCallback> mThrowFromReturn;
   };
 
-  already_AddRefed<Promise> GetNextPromise(IterableIteratorBase* aIterator,
-                                           IteratorData* aData,
-                                           ErrorResult& aRv);
+  void InitAsyncIteratorData(IteratorData& aData, Iterator::IteratorType aType,
+                             ErrorResult& aError);
+
+ protected:
+  already_AddRefed<Promise> GetNextIterationResult(
+      IterableIteratorBase* aIterator, IteratorData& aData, ErrorResult& aRv);
 
   virtual ~TestInterfaceAsyncIterableSingle() = default;
 
  private:
-  void ResolvePromise(IterableIteratorBase* aIterator, IteratorData* aData,
+  void ResolvePromise(IterableIteratorBase* aIterator, IteratorData& aData,
                       Promise* aPromise);
 
   nsCOMPtr<nsPIDOMWindowInner> mParent;

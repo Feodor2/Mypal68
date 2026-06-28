@@ -74,9 +74,7 @@ class MediaChangeMonitor : public MediaDataDecoder,
  private:
   UniquePtr<CodecChangeMonitor> mChangeMonitor;
 
-  void AssertOnTaskQueue() const {
-    MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
-  }
+  void AssertOnThread() const { MOZ_ASSERT(mThread->IsOnCurrentThread()); }
 
   bool CanRecycleDecoder() const;
 
@@ -96,7 +94,7 @@ class MediaChangeMonitor : public MediaDataDecoder,
   VideoInfo mCurrentConfig;
   RefPtr<layers::KnowsCompositor> mKnowsCompositor;
   RefPtr<layers::ImageContainer> mImageContainer;
-  const RefPtr<TaskQueue> mTaskQueue;
+  nsCOMPtr<nsISerialEventTarget> mThread;
   RefPtr<MediaDataDecoder> mDecoder;
   MozPromiseRequestHolder<InitPromise> mInitPromiseRequest;
   MozPromiseHolder<InitPromise> mInitPromise;
@@ -113,7 +111,6 @@ class MediaChangeMonitor : public MediaDataDecoder,
   MediaResult mLastError;
   bool mNeedKeyframe = true;
   const bool mErrorIfNoInitializationData;
-  const TrackInfo::TrackType mType;
   const CreateDecoderParams::OptionSet mDecoderOptions;
   const CreateDecoderParams::VideoFrameRate mRate;
   Maybe<bool> mCanRecycleDecoder;

@@ -92,7 +92,8 @@ class XMLHttpRequestStringSnapshot final {
   XMLHttpRequestStringSnapshot();
   ~XMLHttpRequestStringSnapshot();
 
-  XMLHttpRequestStringSnapshot& operator=(const XMLHttpRequestStringSnapshot&);
+  XMLHttpRequestStringSnapshot& operator=(const XMLHttpRequestStringSnapshot&) =
+      delete;
 
   void Reset() { ResetInternal(false /* isVoid */); }
 

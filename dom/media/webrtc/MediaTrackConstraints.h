@@ -357,7 +357,7 @@ class MediaConstraintsHelper {
   // list)
   static const char* SelectSettings(const NormalizedConstraints& aConstraints,
                                     nsTArray<RefPtr<MediaDevice>>& aDevices,
-                                    bool aIsChrome);
+                                    dom::CallerType aCallerType);
 
   static const char* FindBadConstraint(
       const NormalizedConstraints& aConstraints,

@@ -336,7 +336,6 @@ HTMLVideoElement::GetVideoPlaybackQuality() {
   DOMHighResTimeStamp creationTime = 0;
   uint32_t totalFrames = 0;
   uint32_t droppedFrames = 0;
-  uint32_t corruptedFrames = 0;
 
   if (IsVideoStatsEnabled()) {
     if (nsPIDOMWindowInner* window = OwnerDoc()->GetInnerWindow()) {
@@ -351,7 +350,6 @@ HTMLVideoElement::GetVideoPlaybackQuality() {
         totalFrames = nsRFPService::GetSpoofedTotalFrames(TotalPlayTime());
         droppedFrames = nsRFPService::GetSpoofedDroppedFrames(
             TotalPlayTime(), VideoWidth(), VideoHeight());
-        corruptedFrames = 0;
       } else {
         FrameStatistics* stats = &mDecoder->GetFrameStatistics();
         if (sizeof(totalFrames) >= sizeof(stats->GetParsedFrames())) {
@@ -370,13 +368,12 @@ HTMLVideoElement::GetVideoPlaybackQuality() {
             droppedFrames = uint32_t(double(stats->GetDroppedFrames()) * ratio);
           }
         }
-        corruptedFrames = 0;
       }
     }
   }
 
-  RefPtr<VideoPlaybackQuality> playbackQuality = new VideoPlaybackQuality(
-      this, creationTime, totalFrames, droppedFrames, corruptedFrames);
+  RefPtr<VideoPlaybackQuality> playbackQuality =
+      new VideoPlaybackQuality(this, creationTime, totalFrames, droppedFrames);
   return playbackQuality.forget();
 }
 

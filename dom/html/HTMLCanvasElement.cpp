@@ -15,6 +15,7 @@
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/CanvasCaptureMediaStream.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
+#include "mozilla/dom/GeneratePlaceholderCanvasData.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/HTMLCanvasElementBinding.h"
@@ -98,8 +99,9 @@ class RequestedFrameRefreshObserver : public nsARefreshObserver {
     MOZ_ASSERT(data->GetFormat() == copy->GetFormat());
 
     if (aReturnPlaceholderData) {
-      // If returning placeholder data, fill the frame copy with white pixels.
-      memset(write.GetData(), 0xFF, write.GetStride() * copy->GetSize().height);
+      auto size = write.GetStride() * copy->GetSize().height;
+      auto* data = write.GetData();
+      GeneratePlaceholderCanvasData(size, data);
     } else {
       memcpy(write.GetData(), read.GetData(),
              write.GetStride() * copy->GetSize().height);
@@ -537,28 +539,6 @@ nsresult HTMLCanvasElement::CopyInnerTo(HTMLCanvasElement* aDest) {
   return rv;
 }
 
-void HTMLCanvasElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
-  if (aVisitor.mEvent->mClass == eMouseEventClass) {
-    WidgetMouseEventBase* evt = (WidgetMouseEventBase*)aVisitor.mEvent;
-    if (mCurrentContext) {
-      nsIFrame* frame = GetPrimaryFrame();
-      if (!frame) {
-        return;
-      }
-      nsPoint ptInRoot =
-          nsLayoutUtils::GetEventCoordinatesRelativeTo(evt, RelativeTo{frame});
-      nsRect paddingRect = frame->GetContentRectRelativeToSelf();
-      Point hitpoint;
-      hitpoint.x = (ptInRoot.x - paddingRect.x) / AppUnitsPerCSSPixel();
-      hitpoint.y = (ptInRoot.y - paddingRect.y) / AppUnitsPerCSSPixel();
-
-      evt->mRegion = mCurrentContext->GetHitRegion(hitpoint);
-      aVisitor.mCanHandle = true;
-    }
-  }
-  nsGenericHTMLElement::GetEventTargetParent(aVisitor);
-}
-
 nsChangeHint HTMLCanvasElement::GetAttributeChangeHint(const nsAtom* aAttribute,
                                                        int32_t aModType) const {
   nsChangeHint retval =
@@ -856,53 +836,6 @@ OffscreenCanvas* HTMLCanvasElement::TransferControlToOffscreen(
   return mOffscreenCanvas;
 }
 
-already_AddRefed<File> HTMLCanvasElement::MozGetAsFile(
-    const nsAString& aName, const nsAString& aType,
-    nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
-  // do a trust check if this is a write-only canvas
-  if (mWriteOnly && !aSubjectPrincipal.IsSystemPrincipal()) {
-    aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
-    return nullptr;
-  }
-
-  RefPtr<File> file;
-  aRv = MozGetAsFileImpl(aName, aType, aSubjectPrincipal, getter_AddRefs(file));
-  if (NS_WARN_IF(aRv.Failed())) {
-    return nullptr;
-  }
-  return file.forget();
-}
-
-nsresult HTMLCanvasElement::MozGetAsFileImpl(const nsAString& aName,
-                                             const nsAString& aType,
-                                             nsIPrincipal& aSubjectPrincipal,
-                                             File** aResult) {
-  nsCOMPtr<nsIInputStream> stream;
-  nsAutoString type(aType);
-  nsresult rv =
-      ExtractData(nsContentUtils::GetCurrentJSContext(), aSubjectPrincipal,
-                  type, u""_ns, getter_AddRefs(stream));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  uint64_t imgSize;
-  void* imgData = nullptr;
-  rv = NS_ReadInputStreamToBuffer(stream, &imgData, -1, &imgSize);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsPIDOMWindowInner> win =
-      do_QueryInterface(OwnerDoc()->GetScopeObject());
-
-  // The File takes ownership of the buffer
-  RefPtr<File> file = File::CreateMemoryFileWithLastModifiedNow(
-      win->AsGlobal(), imgData, imgSize, aName, type);
-  if (NS_WARN_IF(!file)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  file.forget(aResult);
-  return NS_OK;
-}
-
 nsresult HTMLCanvasElement::GetContext(const nsAString& aContextId,
                                        nsISupports** aContext) {
   ErrorResult rv;
@@ -1064,19 +997,6 @@ void HTMLCanvasElement::InvalidateCanvas() {
   if (!frame) return;
 
   frame->InvalidateFrame();
-}
-
-int32_t HTMLCanvasElement::CountContexts() {
-  if (mCurrentContext) return 1;
-
-  return 0;
-}
-
-nsICanvasRenderingContextInternal* HTMLCanvasElement::GetContextAtIndex(
-    int32_t index) {
-  if (mCurrentContext && index == 0) return mCurrentContext;
-
-  return nullptr;
 }
 
 bool HTMLCanvasElement::GetIsOpaque() {
@@ -1442,7 +1362,7 @@ HTMLCanvasElement::GetVRFrame() {
     return nullptr;
   }
 
-  WebGLContext* webgl = static_cast<WebGLContext*>(GetContextAtIndex(0));
+  WebGLContext* webgl = static_cast<WebGLContext*>(GetCurrentContext());
   if (!webgl) {
     return nullptr;
   }

@@ -549,7 +549,7 @@ class MediaStreamTrack : public DOMEventTargetHelper, public SupportsWeakPtr {
    * Forces the ready state to a particular value, for instance when we're
    * cloning an already ended track.
    */
-  void SetReadyState(MediaStreamTrackState aState);
+  virtual void SetReadyState(MediaStreamTrackState aState);
 
   /**
    * Notified by the MediaTrackGraph, through our owning MediaStream on the
@@ -591,6 +591,7 @@ class MediaStreamTrack : public DOMEventTargetHelper, public SupportsWeakPtr {
 
   /**
    * Sets this track's muted state without raising any events.
+   * Only really set by cloning. See MutedChanged for runtime changes.
    */
   void SetMuted(bool aMuted) { mMuted = aMuted; }
 

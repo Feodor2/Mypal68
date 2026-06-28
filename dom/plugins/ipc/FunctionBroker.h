@@ -11,7 +11,7 @@
 #include "base/task.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "FunctionBrokerChild.h"
-#include "mtransport/runnable_utils.h"
+#include "transport/runnable_utils.h"
 #include "PluginMessageUtils.h"
 #include "mozilla/Logging.h"
 #include "FunctionHook.h"
@@ -1128,7 +1128,7 @@ class FDMonitor : public Monitor2 {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FDMonitor)
 
  private:
-  ~FDMonitor() {}
+  ~FDMonitor() = default;
 };
 
 /**

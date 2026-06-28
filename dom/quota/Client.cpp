@@ -7,6 +7,7 @@
 // Global includes
 #include "BackgroundParent.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 
 namespace mozilla::dom::quota {

@@ -9,18 +9,19 @@
 [Exposed=(Window,Worker,AudioWorklet)]
 interface MessagePort : EventTarget {
   [Throws]
-  void postMessage(any message, sequence<object> transferable);
+  undefined postMessage(any message, sequence<object> transferable);
   [Throws]
-  void postMessage(any message, optional StructuredSerializeOptions options = {});
+  undefined postMessage(any message, optional StructuredSerializeOptions options = {});
 
-  void start();
-  void close();
+  undefined start();
+  undefined close();
 
   // event handlers
   attribute EventHandler onmessage;
   attribute EventHandler onmessageerror;
 };
 
+// Used to declare which objects should be transferred.
 dictionary StructuredSerializeOptions {
   sequence<object> transfer = [];
 };

@@ -15,7 +15,7 @@ interface DataTransfer {
 
   readonly attribute DataTransferItemList items;
 
-  void setDragImage(Element image, long x, long y);
+  undefined setDragImage(Element image, long x, long y);
 
   // ReturnValueNeedsContainsHack on .types because lots of extension
   // code was expecting .contains() back when it was a DOMStringList.
@@ -24,19 +24,11 @@ interface DataTransfer {
   [Throws, NeedsSubjectPrincipal]
   DOMString getData(DOMString format);
   [Throws, NeedsSubjectPrincipal]
-  void setData(DOMString format, DOMString data);
+  undefined setData(DOMString format, DOMString data);
   [Throws, NeedsSubjectPrincipal]
-  void clearData(optional DOMString format);
+  undefined clearData(optional DOMString format);
   [NeedsSubjectPrincipal]
   readonly attribute FileList? files;
-};
-
-partial interface DataTransfer {
-  [Throws, Pref="dom.input.dirpicker", NeedsSubjectPrincipal]
-  Promise<sequence<(File or Directory)>> getFilesAndDirectories();
-
-  [Throws, Pref="dom.input.dirpicker", NeedsSubjectPrincipal]
-  Promise<sequence<File>>                getFiles(optional boolean recursiveFlag = false);
 };
 
 // Mozilla specific stuff
@@ -50,12 +42,12 @@ partial interface DataTransfer {
    * @throws NO_MODIFICATION_ALLOWED_ERR if the item cannot be modified
    */
   [Throws]
-  void addElement(Element element);
+  undefined addElement(Element element);
 
   /**
    * The number of items being dragged.
    */
-  [Func="DataTransfer::MozAtAPIsEnabled"]
+  [ChromeOnly]
   readonly attribute unsigned long mozItemCount;
 
   /**
@@ -77,7 +69,7 @@ partial interface DataTransfer {
    * at the specified index. If the index is not in the range from 0 to
    * itemCount - 1, an empty string list is returned.
    */
-  [Throws, NeedsCallerType, Func="DataTransfer::MozAtAPIsEnabled"]
+  [Throws, ChromeOnly]
   DOMStringList mozTypesAt(unsigned long index);
 
   /**
@@ -94,8 +86,8 @@ partial interface DataTransfer {
    * @throws NS_ERROR_DOM_INDEX_SIZE_ERR if index is greater or equal than itemCount
    * @throws NO_MODIFICATION_ALLOWED_ERR if the item cannot be modified
    */
-  [Throws, NeedsSubjectPrincipal, Func="DataTransfer::MozAtAPIsEnabled"]
-  void mozClearDataAt(DOMString format, unsigned long index);
+  [Throws, ChromeOnly]
+  undefined mozClearDataAt(DOMString format, unsigned long index);
 
   /*
    * A data transfer may store multiple items, each at a given zero-based
@@ -118,8 +110,8 @@ partial interface DataTransfer {
    * @throws NS_ERROR_DOM_INDEX_SIZE_ERR if index is greater than itemCount
    * @throws NO_MODIFICATION_ALLOWED_ERR if the item cannot be modified
    */
-  [Throws, NeedsSubjectPrincipal, Func="DataTransfer::MozAtAPIsEnabled"]
-  void mozSetDataAt(DOMString format, any data, unsigned long index);
+  [Throws, ChromeOnly]
+  undefined mozSetDataAt(DOMString format, any data, unsigned long index);
 
   /**
    * Retrieve the data associated with the given format for an item at the
@@ -130,7 +122,7 @@ partial interface DataTransfer {
    * @returns the data of the given format, or null if it doesn't exist.
    * @throws NS_ERROR_DOM_INDEX_SIZE_ERR if index is greater or equal than itemCount
    */
-  [Throws, NeedsSubjectPrincipal, Func="DataTransfer::MozAtAPIsEnabled"]
+  [Throws, ChromeOnly]
   any mozGetDataAt(DOMString format, unsigned long index);
 
   /**
@@ -138,7 +130,7 @@ partial interface DataTransfer {
    * valid within the parent chrome process.
    */
   [ChromeOnly]
-  void updateDragImage(Element image, long x, long y);
+  undefined updateDragImage(Element image, long x, long y);
 
   /**
    * Will be true when the user has cancelled the drag (typically by pressing

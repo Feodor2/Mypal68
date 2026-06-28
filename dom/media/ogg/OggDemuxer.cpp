@@ -75,7 +75,7 @@ const nsString OggDemuxer::GetKind(const nsCString& aRole) {
   } else if (aRole.Find("video/subtitled") != -1) {
     return u"subtitles"_ns;
   }
-  return EmptyString();
+  return u""_ns;
 }
 
 void OggDemuxer::InitTrack(MessageField* aMsgInfo, TrackInfo* aInfo,
@@ -88,7 +88,7 @@ void OggDemuxer::InitTrack(MessageField* aMsgInfo, TrackInfo* aInfo,
   nsCString* sTitle = aMsgInfo->mValuesStore.Get(eTitle);
   nsCString* sLanguage = aMsgInfo->mValuesStore.Get(eLanguage);
   aInfo->Init(sName ? NS_ConvertUTF8toUTF16(*sName) : EmptyString(),
-              sRole ? GetKind(*sRole) : EmptyString(),
+              sRole ? GetKind(*sRole) : u""_ns,
               sTitle ? NS_ConvertUTF8toUTF16(*sTitle) : EmptyString(),
               sLanguage ? NS_ConvertUTF8toUTF16(*sLanguage) : EmptyString(),
               aEnable);
@@ -756,8 +756,6 @@ bool OggDemuxer::IsSeekable() const {
   return true;
 }
 
-UniquePtr<EncryptionInfo> OggDemuxer::GetCrypto() { return nullptr; }
-
 ogg_packet* OggDemuxer::GetNextPacket(TrackInfo::TrackType aType) {
   OggCodecState* state = GetTrackCodecState(aType);
   ogg_packet* packet = nullptr;
@@ -1236,7 +1234,8 @@ RefPtr<MediaRawData> OggTrackDemuxer::NextSample() {
   bool eos = packet->e_o_s;
   OggCodecState* state = mParent->GetTrackCodecState(mType);
   RefPtr<MediaRawData> data = state->PacketOutAsMediaRawData();
-  if (!data) {
+  // ogg allows 'nil' packets, that are EOS and of size 0.
+  if (!data || (data->mEOS && data->Size() == 0)) {
     return nullptr;
   }
   if (mType == TrackInfo::kAudioTrack) {

@@ -6,14 +6,14 @@
 [Exposed=Window]
 interface CustomElementRegistry {
   [CEReactions, Throws]
-  void define(DOMString name, CustomElementConstructor constructor,
-              optional ElementDefinitionOptions options = {});
+  undefined define(DOMString name, CustomElementConstructor constructor,
+                   optional ElementDefinitionOptions options = {});
   [ChromeOnly, Throws]
-  void setElementCreationCallback(DOMString name, CustomElementCreationCallback callback);
+  undefined setElementCreationCallback(DOMString name, CustomElementCreationCallback callback);
   any get(DOMString name);
   [Throws]
   Promise<CustomElementConstructor> whenDefined(DOMString name);
-  [CEReactions] void upgrade(Node root);
+  [CEReactions] undefined upgrade(Node root);
 };
 
 dictionary ElementDefinitionOptions {
@@ -23,4 +23,37 @@ dictionary ElementDefinitionOptions {
 callback constructor CustomElementConstructor = any ();
 
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
-callback CustomElementCreationCallback = void (DOMString name);
+callback CustomElementCreationCallback = undefined (DOMString name);
+
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
+callback LifecycleConnectedCallback = undefined();
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
+callback LifecycleDisconnectedCallback = undefined();
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
+callback LifecycleAdoptedCallback = undefined(Document? oldDocument,
+                                              Document? newDocment);
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
+callback LifecycleAttributeChangedCallback = undefined(DOMString attrName,
+                                                       DOMString? oldValue,
+                                                       DOMString? newValue,
+                                                       DOMString? namespaceURI);
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
+callback LifecycleFormAssociatedCallback = undefined(HTMLFormElement? form);
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
+callback LifecycleFormResetCallback = undefined();
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
+callback LifecycleFormDisabledCallback = undefined(boolean disabled);
+[MOZ_CAN_RUN_SCRIPT_BOUNDARY]
+callback LifecycleGetCustomInterfaceCallback = object?(any iid);
+
+[GenerateInit]
+dictionary LifecycleCallbacks {
+  LifecycleConnectedCallback connectedCallback;
+  LifecycleDisconnectedCallback disconnectedCallback;
+  LifecycleAdoptedCallback adoptedCallback;
+  LifecycleAttributeChangedCallback attributeChangedCallback;
+  LifecycleFormAssociatedCallback formAssociatedCallback;
+  LifecycleFormResetCallback formResetCallback;
+  LifecycleFormDisabledCallback formDisabledCallback;
+  [ChromeOnly] LifecycleGetCustomInterfaceCallback getCustomInterfaceCallback;
+};

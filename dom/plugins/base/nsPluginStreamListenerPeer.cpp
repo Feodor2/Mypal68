@@ -434,8 +434,8 @@ nsresult nsPluginStreamListenerPeer::SetUpStreamListener(nsIRequest* request,
     // we require a content len
     // get Last-Modified header for plugin info
     nsAutoCString lastModified;
-    if (NS_SUCCEEDED(httpChannel->GetResponseHeader(
-            NS_LITERAL_CSTRING("last-modified"), lastModified)) &&
+    if (NS_SUCCEEDED(
+            httpChannel->GetResponseHeader("last-modified"_ns, lastModified)) &&
         !lastModified.IsEmpty()) {
       PRTime time64;
       PR_ParseTimeString(lastModified.get(), true,
@@ -524,7 +524,7 @@ class ChannelRedirectProxyCallback : public nsIAsyncVerifyRedirectCallback {
         mOldChannel(oldChannel),
         mNewChannel(newChannel) {}
 
-  ChannelRedirectProxyCallback() {}
+  ChannelRedirectProxyCallback() = default;
 
   NS_DECL_ISUPPORTS
 
@@ -539,7 +539,7 @@ class ChannelRedirectProxyCallback : public nsIAsyncVerifyRedirectCallback {
   }
 
  private:
-  virtual ~ChannelRedirectProxyCallback() {}
+  virtual ~ChannelRedirectProxyCallback() = default;
 
   nsWeakPtr mWeakListener;
   nsCOMPtr<nsIAsyncVerifyRedirectCallback> mParent;

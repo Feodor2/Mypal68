@@ -4,6 +4,7 @@
 
 #include "ClientManagerParent.h"
 
+#include "BackgroundParent.h"
 #include "ClientHandleParent.h"
 #include "ClientManagerOpParent.h"
 #include "ClientManagerService.h"
@@ -11,8 +12,7 @@
 #include "mozilla/dom/PClientNavigateOpParent.h"
 #include "mozilla/Unused.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using mozilla::ipc::IPCResult;
 
@@ -76,7 +76,7 @@ PClientSourceParent* ClientManagerParent::AllocPClientSourceParent(
     const ClientSourceConstructorArgs& aArgs) {
   Maybe<ContentParentId> contentParentId;
 
-  uint64_t childID = BackgroundParent::GetChildID(Manager());
+  uint64_t childID = ::mozilla::ipc::BackgroundParent::GetChildID(Manager());
   if (childID) {
     contentParentId = Some(ContentParentId(childID));
   }
@@ -104,5 +104,4 @@ ClientManagerParent::~ClientManagerParent() { mService->RemoveManager(this); }
 
 void ClientManagerParent::Init() { mService->AddManager(this); }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

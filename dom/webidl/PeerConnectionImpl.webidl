@@ -22,19 +22,19 @@ interface PeerConnectionImpl  {
 
   /* Must be called first. Observer events dispatched on the thread provided */
   [Throws]
-  void initialize(PeerConnectionObserver observer, Window window,
+  undefined initialize(PeerConnectionObserver observer, Window window,
                   RTCConfiguration iceServers,
                   nsISupports thread);
 
   /* JSEP calls */
   [Throws]
-  void createOffer(optional RTCOfferOptions options = {});
+  undefined createOffer(optional RTCOfferOptions options = {});
   [Throws]
-  void createAnswer();
+  undefined createAnswer();
   [Throws]
-  void setLocalDescription(long action, DOMString sdp);
+  undefined setLocalDescription(long action, DOMString sdp);
   [Throws]
-  void setRemoteDescription(long action, DOMString sdp);
+  undefined setRemoteDescription(long action, DOMString sdp);
 
   Promise<RTCStatsReport> getStats(MediaStreamTrack? selector);
 
@@ -48,20 +48,20 @@ interface PeerConnectionImpl  {
   boolean checkNegotiationNeeded();
 
   [Throws]
-  void replaceTrackNoRenegotiation(TransceiverImpl transceiverImpl,
+  undefined replaceTrackNoRenegotiation(TransceiverImpl transceiverImpl,
                                    MediaStreamTrack? withTrack);
   [Throws]
-  void closeStreams();
+  undefined closeStreams();
 
   [Throws]
-  void enablePacketDump(unsigned long level,
-                        mozPacketDumpType type,
-                        boolean sending);
+  undefined enablePacketDump(unsigned long level,
+                             mozPacketDumpType type,
+                             boolean sending);
 
   [Throws]
-  void disablePacketDump(unsigned long level,
-                         mozPacketDumpType type,
-                         boolean sending);
+  undefined disablePacketDump(unsigned long level,
+                              mozPacketDumpType type,
+                              boolean sending);
 
   /* As the ICE candidates roll in this one should be called each time
    * in order to keep the candidate list up-to-date for the next SDP-related
@@ -69,14 +69,14 @@ interface PeerConnectionImpl  {
    * into the SDP.
    */
   [Throws]
-  void addIceCandidate(DOMString candidate,
-                       DOMString mid,
-                       DOMString ufrag,
-                       unsigned short? level);
+  undefined addIceCandidate(DOMString candidate,
+                            DOMString mid,
+                            DOMString ufrag,
+                            unsigned short? level);
 
   /* Shuts down threads, deletes state */
   [Throws]
-  void close();
+  undefined close();
 
   /* Notify DOM window if this plugin crash is ours. */
   boolean pluginCrash(unsigned long long pluginId, DOMString name);

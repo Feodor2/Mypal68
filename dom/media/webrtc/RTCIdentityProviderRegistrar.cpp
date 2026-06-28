@@ -6,8 +6,7 @@
 #include "mozilla/Attributes.h"
 #include "nsCycleCollectionParticipant.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(RTCIdentityProviderRegistrar)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
@@ -67,5 +66,4 @@ already_AddRefed<Promise> RTCIdentityProviderRegistrar::ValidateAssertion(
   return callback->Call(aAssertion, aOrigin, aRv);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

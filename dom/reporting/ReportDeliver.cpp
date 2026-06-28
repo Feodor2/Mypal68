@@ -11,6 +11,7 @@
 #include "mozilla/dom/Request.h"
 #include "mozilla/dom/RequestBinding.h"
 #include "mozilla/dom/Response.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
@@ -191,8 +192,7 @@ void SendReport(ReportDeliver::ReportData& aReportData,
   IgnoredErrorResult error;
   RefPtr<InternalHeaders> internalHeaders =
       new InternalHeaders(HeadersGuardEnum::Request);
-  internalHeaders->Set(NS_LITERAL_CSTRING("Content-Type"),
-                       NS_LITERAL_CSTRING("application/reports+json"), error);
+  internalHeaders->Set("Content-Type"_ns, "application/reports+json"_ns, error);
   if (NS_WARN_IF(error.Failed())) {
     return;
   }
@@ -224,7 +224,7 @@ void SendReport(ReportDeliver::ReportData& aReportData,
 
   auto internalRequest = MakeSafeRefPtr<InternalRequest>(uriSpec, uriFragment);
 
-  internalRequest->SetMethod(NS_LITERAL_CSTRING("POST"));
+  internalRequest->SetMethod("POST"_ns);
   internalRequest->SetBody(streamBody, body.Length());
   internalRequest->SetHeaders(internalHeaders);
   internalRequest->SetSkipServiceWorker();

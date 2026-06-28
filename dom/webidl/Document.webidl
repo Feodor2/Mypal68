@@ -105,8 +105,8 @@ interface Document : Node {
 
   // NEW
   // No support for prepend/append yet
-  // void prepend((Node or DOMString)... nodes);
-  // void append((Node or DOMString)... nodes);
+  // undefined prepend((Node or DOMString)... nodes);
+  // undefined append((Node or DOMString)... nodes);
 
   // These are not in the spec, but leave them for now for backwards compat.
   // So sort of like Gecko extensions
@@ -153,11 +153,11 @@ partial interface Document {
   [CEReactions, Throws]
   WindowProxy? open(USVString url, DOMString name, DOMString features);
   [CEReactions, Throws]
-  void close();
+  undefined close();
   [CEReactions, Throws]
-  void write(DOMString... text);
+  undefined write(DOMString... text);
   [CEReactions, Throws]
-  void writeln(DOMString... text);
+  undefined writeln(DOMString... text);
 
   // user interaction
   [Pure]
@@ -206,7 +206,8 @@ partial interface Document {
    *
    * @see <https://developer.mozilla.org/en/DOM/document.releaseCapture>
    */
-  void releaseCapture();
+  [Deprecated=DocumentReleaseCapture, Pref="dom.mouse_capture.enabled"]
+  undefined releaseCapture();
   /**
    * Use the given DOM element as the source image of target |-moz-element()|.
    *
@@ -236,8 +237,8 @@ partial interface Document {
    *
    * @see <https://developer.mozilla.org/en/DOM/document.mozSetImageElement>
    */
-  void mozSetImageElement(DOMString aImageElementId,
-                          Element? aImageElement);
+  undefined mozSetImageElement(DOMString aImageElementId,
+                               Element? aImageElement);
 
   [ChromeOnly]
   readonly attribute URI? documentURIObject;
@@ -269,12 +270,12 @@ partial interface Document {
   [SameObject] readonly attribute HTMLCollection anchors;
   [SameObject] readonly attribute HTMLCollection applets;
 
-  void clear();
+  undefined clear();
   // @deprecated These are old Netscape 4 methods. Do not use,
   //             the implementation is no-op.
   // XXXbz do we actually need these anymore?
-  void captureEvents();
-  void releaseEvents();
+  undefined captureEvents();
+  undefined releaseEvents();
 
   [SameObject] readonly attribute HTMLAllCollection all;
 };
@@ -292,10 +293,10 @@ partial interface Document {
   [BinaryName="fullscreenEnabled", NeedsCallerType]
   readonly attribute boolean mozFullScreenEnabled;
 
-  [Throws]
-  Promise<void> exitFullscreen();
-  [Throws, BinaryName="exitFullscreen"]
-  Promise<void> mozCancelFullScreen();
+  [NewObject]
+  Promise<undefined> exitFullscreen();
+  [NewObject, BinaryName="exitFullscreen"]
+  Promise<undefined> mozCancelFullScreen();
 
   // Events handlers
   attribute EventHandler onfullscreenchange;
@@ -305,7 +306,7 @@ partial interface Document {
 // https://w3c.github.io/pointerlock/#extensions-to-the-document-interface
 // https://w3c.github.io/pointerlock/#extensions-to-the-documentorshadowroot-mixin
 partial interface Document {
-  void exitPointerLock();
+  undefined exitPointerLock();
 
   // Event handlers
   attribute EventHandler onpointerlockchange;
@@ -326,7 +327,7 @@ partial interface Document {
     readonly attribute DOMString? preferredStyleSheetSet;
     [Constant]
     readonly attribute DOMStringList styleSheetSets;
-    void enableStyleSheetsForSet (DOMString? name);
+    undefined enableStyleSheetsForSet (DOMString? name);
 };
 
 // https://drafts.csswg.org/cssom-view/#extensions-to-the-document-interface
@@ -418,7 +419,7 @@ partial interface Document {
   [ChromeOnly] readonly attribute nsILoadGroup? documentLoadGroup;
 
   // Blocks the initial document parser until the given promise is settled.
-  [ChromeOnly, Throws]
+  [ChromeOnly, NewObject]
   Promise<any> blockParsing(Promise<any> promise,
                             optional BlockParsingOptions options = {});
 
@@ -426,11 +427,11 @@ partial interface Document {
   // trying to load when we hit an error, rather than the error page's own URI.
   [ChromeOnly] readonly attribute URI? mozDocumentURIIfNotForErrorPages;
 
-  // A promise that is resolved, with this document itself, when we have both
-  // fired DOMContentLoaded and are ready to start layout.  This is used for the
-  // "document_idle" webextension script injection point.
+  // A promise that is resolved when we have both fired DOMContentLoaded and
+  // are ready to start layout.
+  // This is used for the  "document_idle" webextension script injection point.
   [ChromeOnly, Throws]
-  readonly attribute Promise<Document> documentReadyForIdle;
+  readonly attribute Promise<undefined> documentReadyForIdle;
 
   // Lazily created command dispatcher, returns null if the document is not
   // chrome privileged.
@@ -511,7 +512,7 @@ partial interface Document {
    * instance.
    */
   [ChromeOnly, Throws]
-  void removeAnonymousContent(AnonymousContent aContent);
+  undefined removeAnonymousContent(AnonymousContent aContent);
 };
 
 // http://w3c.github.io/selection-api/#extensions-to-document-interface
@@ -522,10 +523,10 @@ partial interface Document {
 
 // https://github.com/whatwg/html/issues/3338
 partial interface Document {
-  [Pref="dom.storage_access.enabled", Throws]
+  [Pref="dom.storage_access.enabled", NewObject]
   Promise<boolean> hasStorageAccess();
-  [Pref="dom.storage_access.enabled", Throws]
-  Promise<void> requestStorageAccess();
+  [Pref="dom.storage_access.enabled", NewObject]
+  Promise<undefined> requestStorageAccess();
 };
 
 enum DocumentAutoplayPolicy {
@@ -550,10 +551,10 @@ partial interface Document {
 // by user gesture.
 partial interface Document {
   [ChromeOnly]
-  void notifyUserGestureActivation();
+  undefined notifyUserGestureActivation();
   // For testing only.
   [ChromeOnly]
-  void clearUserGestureActivation();
+  undefined clearUserGestureActivation();
 };
 
 // Extension to give chrome JS the ability to set an event handler which is
@@ -561,7 +562,7 @@ partial interface Document {
 // document or one of its subdocuments.
 partial interface Document {
   [ChromeOnly]
-  void setSuppressedEventListener(EventListener? aListener);
+  undefined setSuppressedEventListener(EventListener? aListener);
 };
 
 // Allows frontend code to query a CSP which needs to be passed for a
@@ -618,7 +619,7 @@ partial interface Document {
   [ChromeOnly]
   const unsigned short KEYPRESS_EVENT_MODEL_CONFLATED = 2;
   [ChromeOnly]
-  void setKeyPressEventModel(unsigned short aKeyPressEventModel);
+  undefined setKeyPressEventModel(unsigned short aKeyPressEventModel);
 };
 
 // Extensions to return information about about the nodes blocked by the
@@ -644,5 +645,5 @@ partial interface Document {
 // used for testing.
 partial interface Document {
   [ChromeOnly, BinaryName="setUserHasInteracted"]
-  void userInteractionForTesting();
+  undefined userInteractionForTesting();
 };

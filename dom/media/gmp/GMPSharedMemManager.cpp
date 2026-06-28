@@ -8,8 +8,7 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/ClearOnShutdown.h"
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 // Really one set of pools on each side of the plugin API.
 
@@ -89,5 +88,4 @@ uint32_t GMPSharedMemManager::NumInUse(GMPSharedMem::GMPMemoryClasses aClass) {
   return mData->mGmpAllocated[aClass] - GetGmpFreelist(aClass).Length();
 }
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp

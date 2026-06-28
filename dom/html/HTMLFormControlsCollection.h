@@ -11,6 +11,7 @@
 #include "nsWrapperCache.h"
 
 class nsGenericHTMLFormElement;
+class nsIContent;
 class nsIFormControl;
 template <class T>
 class RefPtr;
@@ -54,7 +55,7 @@ class HTMLFormControlsCollection final : public nsIHTMLCollection,
                                   const nsAString& aName);
   nsresult RemoveElementFromTable(nsGenericHTMLFormElement* aChild,
                                   const nsAString& aName);
-  nsresult IndexOfControl(nsIFormControl* aControl, int32_t* aIndex);
+  nsresult IndexOfContent(nsIContent* aContent, int32_t* aIndex);
 
   nsISupports* NamedItemInternal(const nsAString& aName);
 

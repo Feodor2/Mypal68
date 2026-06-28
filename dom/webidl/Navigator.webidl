@@ -82,11 +82,11 @@ interface mixin NavigatorOnLine {
 interface mixin NavigatorContentUtils {
   // content handler registration
   [Throws, ChromeOnly]
-  void checkProtocolHandlerAllowed(DOMString scheme, URI handlerURI, URI documentURI);
-  [Throws, Func="nsGlobalWindowInner::RegisterProtocolHandlerAllowedForContext"]
-  void registerProtocolHandler(DOMString scheme, DOMString url, DOMString title);
+  undefined checkProtocolHandlerAllowed(DOMString scheme, URI handlerURI, URI documentURI);
+  [Throws, SecureContext]
+  undefined registerProtocolHandler(DOMString scheme, DOMString url);
   // NOT IMPLEMENTED
-  //void unregisterProtocolHandler(DOMString scheme, DOMString url);
+  //undefined unregisterProtocolHandler(DOMString scheme, DOMString url);
 };
 
 [SecureContext]
@@ -97,7 +97,7 @@ interface mixin NavigatorStorage {
 
 interface mixin NavigatorStorageUtils {
   // NOT IMPLEMENTED
-  //void yieldForStorageUpdates();
+  //undefined yieldForStorageUpdates();
 };
 
 partial interface Navigator {
@@ -163,8 +163,8 @@ partial interface Navigator {
      * @param persistent make the permission session-persistent
      */
     [ChromeOnly]
-    void setVibrationPermission(boolean permitted,
-                                optional boolean persistent = true);
+    undefined setVibrationPermission(boolean permitted,
+                                     optional boolean persistent = true);
 };
 
 partial interface Navigator {
@@ -211,7 +211,7 @@ partial interface Navigator {
 #endif
 #ifdef MOZ_VR
 partial interface Navigator {
-  [Throws, Pref="dom.vr.enabled"]
+  [NewObject, Pref="dom.vr.enabled"]
   Promise<sequence<VRDisplay>> getVRDisplays();
   // TODO: Use FrozenArray once available. (Bug 1236777)
   [Frozen, Cached, Pure, Pref="dom.vr.enabled"]
@@ -221,7 +221,7 @@ partial interface Navigator {
   [ChromeOnly, Pref="dom.vr.enabled"]
   readonly attribute boolean isWebVRContentPresenting;
   [ChromeOnly, Pref="dom.vr.enabled"]
-  void requestVRPresentation(VRDisplay display);
+  undefined requestVRPresentation(VRDisplay display);
 };
 partial interface Navigator {
   [Pref="dom.vr.test.enabled"]
@@ -231,12 +231,12 @@ partial interface Navigator {
 
 // http://webaudio.github.io/web-midi-api/#requestmidiaccess
 partial interface Navigator {
-  [Throws, Pref="dom.webmidi.enabled"]
+  [SecureContext, NewObject, Pref="dom.webmidi.enabled"]
   Promise<MIDIAccess> requestMIDIAccess(optional MIDIOptions options = {});
 };
 
-callback NavigatorUserMediaSuccessCallback = void (MediaStream stream);
-callback NavigatorUserMediaErrorCallback = void (MediaStreamError error);
+callback NavigatorUserMediaSuccessCallback = undefined (MediaStream stream);
+callback NavigatorUserMediaErrorCallback = undefined (MediaStreamError error);
 
 partial interface Navigator {
   [Throws, Func="Navigator::HasUserMediaSupport"]
@@ -246,28 +246,9 @@ partial interface Navigator {
   [Deprecated="NavigatorGetUserMedia", Throws,
    Func="Navigator::HasUserMediaSupport",
    NeedsCallerType]
-  void mozGetUserMedia(MediaStreamConstraints constraints,
-                       NavigatorUserMediaSuccessCallback successCallback,
-                       NavigatorUserMediaErrorCallback errorCallback);
-};
-
-// nsINavigatorUserMedia
-callback MozGetUserMediaDevicesSuccessCallback = void (nsIVariant? devices);
-partial interface Navigator {
-  [Throws, ChromeOnly]
-  void mozGetUserMediaDevices(MediaStreamConstraints constraints,
-                              MozGetUserMediaDevicesSuccessCallback onsuccess,
-                              NavigatorUserMediaErrorCallback onerror,
-                              // The originating innerWindowID is needed to
-                              // avoid calling the callbacks if the window has
-                              // navigated away. It is optional only as legacy.
-                              optional unsigned long long innerWindowID = 0,
-                              // The callID is needed in case of multiple
-                              // concurrent requests to find the right one.
-                              // It is optional only as legacy.
-                              // TODO: Rewrite to not need this method anymore,
-                              // now that devices are enumerated earlier.
-                              optional DOMString callID = "");
+  undefined mozGetUserMedia(MediaStreamConstraints constraints,
+                            NavigatorUserMediaSuccessCallback successCallback,
+                            NavigatorUserMediaErrorCallback errorCallback);
 };
 
 // Service Workers/Navigation Controllers
@@ -299,7 +280,7 @@ partial interface Navigator {
 
 // https://w3c.github.io/webdriver/webdriver-spec.html#interface
 interface mixin NavigatorAutomationInformation {
-  [Pref="dom.webdriver.enabled"]
+  [Constant, Cached]
   readonly attribute boolean webdriver;
 };
 
@@ -308,3 +289,11 @@ partial interface Navigator {
   [Pref="dom.events.asyncClipboard", SecureContext, SameObject]
   readonly attribute Clipboard clipboard;
 };
+
+// https://wicg.github.io/web-locks/#navigator-mixins
+[SecureContext]
+interface mixin NavigatorLocks {
+  [Pref="dom.weblocks.enabled"]
+  readonly attribute LockManager locks;
+};
+Navigator includes NavigatorLocks;

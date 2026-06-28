@@ -164,6 +164,11 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   // keep the same document active but create a new window.
   inline bool HasActiveDocument();
 
+  // Return true if this object is the currently-active inner window for its
+  // BrowsingContext and any container document is also fully active.
+  // For https://html.spec.whatwg.org/multipage/browsers.html#fully-active
+  bool IsFullyActive() const;
+
   // Returns true if this window is the same as mTopInnerWindow
   inline bool IsTopInnerWindow() const;
 

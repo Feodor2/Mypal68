@@ -52,17 +52,6 @@ bool Adts::ConvertSample(uint16_t aChannelCount, int8_t aFrequencyIndex,
   if (!writer->Prepend(&header[0], ArrayLength(header))) {
     return false;
   }
-
-  if (aSample->mCrypto.IsEncrypted()) {
-    if (aSample->mCrypto.mPlainSizes.Length() == 0) {
-      writer->mCrypto.mPlainSizes.AppendElement(kADTSHeaderSize);
-      writer->mCrypto.mEncryptedSizes.AppendElement(aSample->Size() -
-                                                    kADTSHeaderSize);
-    } else {
-      writer->mCrypto.mPlainSizes[0] += kADTSHeaderSize;
-    }
-  }
-
   return true;
 }
 
@@ -81,14 +70,6 @@ bool Adts::RevertSample(MediaRawData* aSample) {
 
   UniquePtr<MediaRawDataWriter> writer(aSample->CreateWriter());
   writer->PopFront(kADTSHeaderSize);
-
-  if (aSample->mCrypto.IsEncrypted()) {
-    if (aSample->mCrypto.mPlainSizes.Length() > 0 &&
-        writer->mCrypto.mPlainSizes[0] >= kADTSHeaderSize) {
-      writer->mCrypto.mPlainSizes[0] -= kADTSHeaderSize;
-    }
-  }
-
   return true;
 }
 }  // namespace mozilla

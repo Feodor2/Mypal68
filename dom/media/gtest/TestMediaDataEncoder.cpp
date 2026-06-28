@@ -4,15 +4,15 @@
 
 #include "gtest/gtest.h"
 
-#include "nsMimeTypes.h"
-#include "VideoUtils.h"
-#include "PEMFactory.h"
-#include "ImageContainer.h"
 #include "AnnexB.h"
-
+#include "ImageContainer.h"
 #include "mozilla/AbstractThread.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/media/MediaUtils.h"  // For media::Await
-
+#include "nsMimeTypes.h"
+#include "PEMFactory.h"
+#include "TimeUnits.h"
+#include "VideoUtils.h"
 #include <algorithm>
 
 #include <fstream>
@@ -80,9 +80,11 @@ class MediaDataEncoderTest : public testing::Test {
           new layers::RecyclingPlanarYCbCrImage(mRecycleBin);
       img->CopyData(mYUV);
       RefPtr<MediaData> frame = VideoData::CreateFromImage(
-          kImageSize, 0, TimeUnit::FromMicroseconds(aIndex * FRAME_DURATION),
-          TimeUnit::FromMicroseconds(FRAME_DURATION), img, (aIndex & 0xF) == 0,
-          TimeUnit::FromMicroseconds(aIndex * FRAME_DURATION));
+          kImageSize, 0,
+          media::TimeUnit::FromMicroseconds(aIndex * FRAME_DURATION),
+          media::TimeUnit::FromMicroseconds(FRAME_DURATION), img,
+          (aIndex & 0xF) == 0,
+          media::TimeUnit::FromMicroseconds(aIndex * FRAME_DURATION));
       return frame.forget();
     }
 
@@ -147,7 +149,7 @@ static already_AddRefed<MediaDataEncoder> CreateH264Encoder(
   VideoInfo videoInfo(WIDTH, HEIGHT);
   videoInfo.mMimeType = nsLiteralCString(VIDEO_MP4);
   const RefPtr<TaskQueue> taskQueue(
-      new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK)));
+      new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER)));
 
   RefPtr<MediaDataEncoder> e;
   if (aSpecific) {
@@ -201,7 +203,7 @@ static bool EnsureInit(RefPtr<MediaDataEncoder> aEncoder) {
 
   bool succeeded;
   media::Await(
-      GetMediaThreadPool(MediaThreadType::PLAYBACK), aEncoder->Init(),
+      GetMediaThreadPool(MediaThreadType::CONTROLLER), aEncoder->Init(),
       [&succeeded](TrackInfo::TrackType t) {
         EXPECT_EQ(TrackInfo::TrackType::kVideoTrack, t);
         succeeded = true;
@@ -246,7 +248,8 @@ static MediaDataEncoder::EncodedData Encode(
   for (size_t i = 0; i < aNumFrames; i++) {
     RefPtr<MediaData> frame = aSource.GetFrame(i);
     media::Await(
-        GetMediaThreadPool(MediaThreadType::PLAYBACK), aEncoder->Encode(frame),
+        GetMediaThreadPool(MediaThreadType::CONTROLLER),
+        aEncoder->Encode(frame),
         [&output, &succeeded](MediaDataEncoder::EncodedData encoded) {
           output.AppendElements(std::move(encoded));
           succeeded = true;
@@ -261,7 +264,7 @@ static MediaDataEncoder::EncodedData Encode(
   size_t pending = 0;
   do {
     media::Await(
-        GetMediaThreadPool(MediaThreadType::PLAYBACK), aEncoder->Drain(),
+        GetMediaThreadPool(MediaThreadType::CONTROLLER), aEncoder->Drain(),
         [&pending, &output, &succeeded](MediaDataEncoder::EncodedData encoded) {
           pending = encoded.Length();
           output.AppendElements(std::move(encoded));

@@ -99,9 +99,9 @@ interface HTMLInputElement : HTMLElement {
            attribute unsigned long width;
 
   [Throws]
-  void stepUp(optional long n = 1);
+  undefined stepUp(optional long n = 1);
   [Throws]
-  void stepDown(optional long n = 1);
+  undefined stepDown(optional long n = 1);
 
   [Pure]
   readonly attribute boolean willValidate;
@@ -111,11 +111,11 @@ interface HTMLInputElement : HTMLElement {
   readonly attribute DOMString validationMessage;
   boolean checkValidity();
   boolean reportValidity();
-  void setCustomValidity(DOMString error);
+  undefined setCustomValidity(DOMString error);
 
   readonly attribute NodeList? labels;
 
-  void select();
+  undefined select();
 
   [Throws]
            attribute unsigned long? selectionStart;
@@ -124,12 +124,15 @@ interface HTMLInputElement : HTMLElement {
   [Throws]
            attribute DOMString? selectionDirection;
   [Throws]
-  void setRangeText(DOMString replacement);
+  undefined setRangeText(DOMString replacement);
   [Throws]
-  void setRangeText(DOMString replacement, unsigned long start,
+  undefined setRangeText(DOMString replacement, unsigned long start,
     unsigned long end, optional SelectionMode selectionMode = "preserve");
   [Throws]
-  void setSelectionRange(unsigned long start, unsigned long end, optional DOMString direction);
+  undefined setSelectionRange(unsigned long start, unsigned long end, optional DOMString direction);
+
+  [Throws, Pref="dom.input.showPicker"]
+  undefined showPicker();
 
   // also has obsolete members
 };
@@ -154,18 +157,24 @@ partial interface HTMLInputElement {
   sequence<DOMString> mozGetFileNameArray();
 
   [ChromeOnly, Throws]
-  void mozSetFileNameArray(sequence<DOMString> fileNames);
+  undefined mozSetFileNameArray(sequence<DOMString> fileNames);
 
   [ChromeOnly]
-  void mozSetFileArray(sequence<File> files);
+  undefined mozSetFileArray(sequence<File> files);
 
   // This method is meant to use for testing only.
+#ifdef ENABLE_TESTS
   [ChromeOnly, Throws]
-  void mozSetDirectory(DOMString directoryPath);
+  undefined mozSetDirectory(DOMString directoryPath);
 
   // This method is meant to use for testing only.
   [ChromeOnly]
-  void mozSetDndFilesAndDirectories(sequence<(File or Directory)> list);
+  undefined mozSetDndFilesAndDirectories(sequence<(File or Directory)> list);
+
+  // This method is meant to use for testing only.
+  [ChromeOnly, NewObject]
+  Promise<sequence<(File or Directory)>> getFilesAndDirectories();
+#endif
 
   boolean mozIsTextField(boolean aExcludePassword);
 
@@ -203,27 +212,10 @@ interface mixin MozEditableElement {
   // of the value change is closer to the normal user input, so 'change' event
   // for example will be dispatched when focusing out the element.
   [Func="IsChromeOrUAWidget", NeedsSubjectPrincipal]
-  void setUserInput(DOMString input);
+  undefined setUserInput(DOMString input);
 };
 
 HTMLInputElement includes MozEditableElement;
-
-partial interface HTMLInputElement {
-  [Pref="dom.input.dirpicker", SetterThrows]
-  attribute boolean allowdirs;
-
-  [Pref="dom.input.dirpicker"]
-  readonly attribute boolean isFilesAndDirectoriesSupported;
-
-  [Throws, Pref="dom.input.dirpicker"]
-  Promise<sequence<(File or Directory)>> getFilesAndDirectories();
-
-  [Throws, Pref="dom.input.dirpicker"]
-  Promise<sequence<File>> getFiles(optional boolean recursiveFlag = false);
-
-  [Throws, Pref="dom.input.dirpicker"]
-  void chooseDirectory();
-};
 
 HTMLInputElement includes MozImageLoadingContent;
 
@@ -258,19 +250,19 @@ partial interface HTMLInputElement {
   double getMaximum();
 
   [Func="IsChromeOrUAWidget"]
-  void openDateTimePicker(optional DateTimeValue initialValue = {});
+  undefined openDateTimePicker(optional DateTimeValue initialValue = {});
 
   [Func="IsChromeOrUAWidget"]
-  void updateDateTimePicker(optional DateTimeValue value = {});
+  undefined updateDateTimePicker(optional DateTimeValue value = {});
 
   [Func="IsChromeOrUAWidget"]
-  void closeDateTimePicker();
+  undefined closeDateTimePicker();
 
   [Func="IsChromeOrUAWidget"]
-  void setFocusState(boolean aIsFocused);
+  undefined setFocusState(boolean aIsFocused);
 
   [Func="IsChromeOrUAWidget"]
-  void updateValidityState();
+  undefined updateValidityState();
 
   [Func="IsChromeOrUAWidget", BinaryName="getStepAsDouble"]
   double getStep();

@@ -83,6 +83,21 @@ ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& aCallback,
   aDictionary.TraverseForCC(aCallback, aFlags);
 }
 
+template <typename T>
+inline std::enable_if_t<std::is_base_of<DictionaryBase, T>::value, void>
+ImplCycleCollectionUnlink(UniquePtr<T>& aDictionary) {
+  aDictionary.reset();
+}
+
+template <typename T>
+inline std::enable_if_t<std::is_base_of<DictionaryBase, T>::value, void>
+ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback& aCallback,
+                            UniquePtr<T>& aDictionary, const char* aName,
+                            uint32_t aFlags = 0) {
+  if (aDictionary) {
+    ImplCycleCollectionTraverse(aCallback, *aDictionary, aName, aFlags);
+  }
+}
 // Struct that serves as a base class for all typed arrays and array buffers and
 // array buffer views.  Particularly useful so we can use std::is_base_of to
 // detect typed array/buffer/view template arguments.
@@ -139,7 +154,11 @@ class Optional_base {
  public:
   Optional_base() = default;
 
+  Optional_base(Optional_base&&) = default;
+  Optional_base& operator=(Optional_base&&) = default;
+
   explicit Optional_base(const T& aValue) { mImpl.emplace(aValue); }
+  explicit Optional_base(T&& aValue) { mImpl.emplace(std::move(aValue)); }
 
   bool operator==(const Optional_base<T, InternalType>& aOther) const {
     return mImpl == aOther.mImpl;
@@ -192,6 +211,7 @@ class Optional : public Optional_base<T, T> {
   MOZ_ALLOW_TEMPORARY Optional() : Optional_base<T, T>() {}
 
   explicit Optional(const T& aValue) : Optional_base<T, T>(aValue) {}
+  Optional(Optional&&) = default;
 };
 
 template <typename T>

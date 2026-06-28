@@ -26,6 +26,8 @@ interface HTMLElement : Element {
 
   [CEReactions, GetterThrows, Pure]
            attribute [LegacyNullToEmptyString] DOMString innerText;
+  [CEReactions, GetterThrows, SetterThrows, Pure]
+           attribute [LegacyNullToEmptyString] DOMString outerText;
 
   // user interaction
   [CEReactions, SetterThrows, Pure]
@@ -33,7 +35,7 @@ interface HTMLElement : Element {
   [CEReactions, SetterThrows, Pure, Pref="html5.inert.enabled"]
            attribute boolean inert;
   [NeedsCallerType]
-  void click();
+  undefined click();
   [CEReactions, SetterThrows, Pure]
            attribute DOMString accessKey;
   [Pure]
@@ -45,10 +47,8 @@ interface HTMLElement : Element {
            attribute DOMString contentEditable;
   [Pure]
   readonly attribute boolean isContentEditable;
-  [Pure]
+  [Pure, Pref="dom.menuitem.enabled"]
   readonly attribute HTMLMenuElement? contextMenu;
-  //[SetterThrows]
-  //         attribute HTMLMenuElement? contextMenu;
   [CEReactions, SetterThrows, Pure]
            attribute boolean spellcheck;
   [CEReactions, Pure, SetterThrows, Pref="dom.forms.inputmode"]
@@ -69,7 +69,7 @@ interface HTMLElement : Element {
   //readonly attribute boolean? commandChecked;
 
   // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-attachinternals
-  [Pref="dom.webcomponents.elementInternals.enabled", Throws]
+  [Throws]
   ElementInternals attachInternals();
 };
 
@@ -81,6 +81,14 @@ partial interface HTMLElement {
   readonly attribute long offsetLeft;
   readonly attribute long offsetWidth;
   readonly attribute long offsetHeight;
+};
+
+partial interface HTMLElement {
+  [ChromeOnly]
+  readonly attribute ElementInternals? internals;
+
+  [ChromeOnly]
+  readonly attribute boolean isFormAssociatedCustomElements;
 };
 
 interface mixin TouchEventHandlers {

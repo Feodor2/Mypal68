@@ -522,38 +522,6 @@ class VideoData : public MediaData {
   media::TimeUnit mNextKeyFrameTime;
 };
 
-enum class CryptoScheme : uint8_t {
-  None,
-  Cenc,
-  Cbcs,
-};
-
-class CryptoTrack {
- public:
-  CryptoTrack()
-      : mCryptoScheme(CryptoScheme::None),
-        mIVSize(0),
-        mCryptByteBlock(0),
-        mSkipByteBlock(0) {}
-  CryptoScheme mCryptoScheme;
-  int32_t mIVSize;
-  nsTArray<uint8_t> mKeyId;
-  uint8_t mCryptByteBlock;
-  uint8_t mSkipByteBlock;
-  nsTArray<uint8_t> mConstantIV;
-
-  bool IsEncrypted() const { return mCryptoScheme != CryptoScheme::None; }
-};
-
-class CryptoSample : public CryptoTrack {
- public:
-  nsTArray<uint16_t> mPlainSizes;
-  nsTArray<uint32_t> mEncryptedSizes;
-  nsTArray<uint8_t> mIV;
-  nsTArray<nsTArray<uint8_t>> mInitDatas;
-  nsString mInitDataType;
-};
-
 // MediaRawData is a MediaData container used to store demuxed, still compressed
 // samples.
 // Use MediaRawData::CreateWriter() to obtain a MediaRawDataWriter object that
@@ -582,8 +550,6 @@ class MediaRawDataWriter {
   uint8_t* Data();
   // Writeable size of buffer.
   size_t Size();
-  // Writeable reference to MediaRawData::mCryptoInternal
-  CryptoSample& mCrypto;
 
   // Data manipulation methods. mData and mSize may be updated accordingly.
 
@@ -628,7 +594,6 @@ class MediaRawData final : public MediaData {
   // Access the buffer as a Span.
   operator Span<const uint8_t>() { return Span{Data(), Size()}; }
 
-  const CryptoSample& mCrypto;
   RefPtr<MediaByteBuffer> mExtraData;
 
   // Used by the Vorbis decoder and Ogg demuxer.
@@ -663,7 +628,6 @@ class MediaRawData final : public MediaData {
   friend class MediaRawDataWriter;
   AlignedByteBuffer mBuffer;
   AlignedByteBuffer mAlphaBuffer;
-  CryptoSample mCryptoInternal;
   MediaRawData(const MediaRawData&);  // Not implemented
 };
 

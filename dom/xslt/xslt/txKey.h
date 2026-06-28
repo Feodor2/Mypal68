@@ -30,8 +30,8 @@ class txKeyValueHashKey {
 
 struct txKeyValueHashEntry : public PLDHashEntryHdr {
  public:
-  typedef const txKeyValueHashKey& KeyType;
-  typedef const txKeyValueHashKey* KeyTypePointer;
+  using KeyType = const txKeyValueHashKey&;
+  using KeyTypePointer = const txKeyValueHashKey*;
 
   explicit txKeyValueHashEntry(KeyTypePointer aKey)
       : mKey(*aKey), mNodeSet(new txNodeSet(nullptr)) {}
@@ -51,7 +51,7 @@ struct txKeyValueHashEntry : public PLDHashEntryHdr {
   RefPtr<txNodeSet> mNodeSet;
 };
 
-typedef nsTHashtable<txKeyValueHashEntry> txKeyValueHash;
+using txKeyValueHash = nsTHashtable<txKeyValueHashEntry>;
 
 class txIndexedKeyHashKey {
  public:
@@ -64,8 +64,8 @@ class txIndexedKeyHashKey {
 
 struct txIndexedKeyHashEntry : public PLDHashEntryHdr {
  public:
-  typedef const txIndexedKeyHashKey& KeyType;
-  typedef const txIndexedKeyHashKey* KeyTypePointer;
+  using KeyType = const txIndexedKeyHashKey&;
+  using KeyTypePointer = const txIndexedKeyHashKey*;
 
   explicit txIndexedKeyHashEntry(KeyTypePointer aKey)
       : mKey(*aKey), mIndexed(false) {}
@@ -85,7 +85,7 @@ struct txIndexedKeyHashEntry : public PLDHashEntryHdr {
   bool mIndexed;
 };
 
-typedef nsTHashtable<txIndexedKeyHashEntry> txIndexedKeyHash;
+using txIndexedKeyHash = nsTHashtable<txIndexedKeyHashEntry>;
 
 /**
  * Class holding all <xsl:key>s of a particular expanded name in the

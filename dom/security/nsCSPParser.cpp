@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "nsCOMPtr.h"
@@ -16,6 +17,7 @@
 #include "nsUnicharUtils.h"
 
 using namespace mozilla;
+using namespace mozilla::dom;
 
 static LogModule* GetCspParserLog() {
   static LazyLogModule gCspParserPRLog("CSPParser");
@@ -26,29 +28,6 @@ static LogModule* GetCspParserLog() {
   MOZ_LOG(GetCspParserLog(), mozilla::LogLevel::Debug, args)
 #define CSPPARSERLOGENABLED() \
   MOZ_LOG_TEST(GetCspParserLog(), mozilla::LogLevel::Debug)
-
-// clang-format off
-static const char16_t COLON        = ':';
-static const char16_t SEMICOLON    = ';';
-static const char16_t SLASH        = '/';
-static const char16_t PLUS         = '+';
-static const char16_t DASH         = '-';
-static const char16_t DOT          = '.';
-static const char16_t UNDERLINE    = '_';
-static const char16_t TILDE        = '~';
-static const char16_t WILDCARD     = '*';
-static const char16_t SINGLEQUOTE  = '\'';
-static const char16_t NUMBER_SIGN  = '#';
-static const char16_t QUESTIONMARK = '?';
-static const char16_t PERCENT_SIGN = '%';
-static const char16_t EXCLAMATION  = '!';
-static const char16_t DOLLAR       = '$';
-static const char16_t AMPERSAND    = '&';
-static const char16_t OPENBRACE    = '(';
-static const char16_t CLOSINGBRACE = ')';
-static const char16_t EQUALS       = '=';
-static const char16_t ATSYMBOL     = '@';
-// clang-format on
 
 static const uint32_t kSubHostPathCharacterCutoff = 512;
 
@@ -62,12 +41,14 @@ nsCSPParser::nsCSPParser(policyTokens& aTokens, nsIURI* aSelfURI,
     : mCurChar(nullptr),
       mEndChar(nullptr),
       mHasHashOrNonce(false),
+      mHasAnyUnsafeEval(false),
       mStrictDynamic(false),
       mUnsafeInlineKeywordSrc(nullptr),
       mChildSrc(nullptr),
       mFrameSrc(nullptr),
       mWorkerSrc(nullptr),
       mScriptSrc(nullptr),
+      mStyleSrc(nullptr),
       mParsingFrameAncestorsDir(false),
       mTokens(aTokens),
       mSelfURI(aSelfURI),
@@ -84,11 +65,11 @@ static bool isCharacterToken(char16_t aSymbol) {
          (aSymbol >= 'A' && aSymbol <= 'Z');
 }
 
-static bool isNumberToken(char16_t aSymbol) {
+bool isNumberToken(char16_t aSymbol) {
   return (aSymbol >= '0' && aSymbol <= '9');
 }
 
-static bool isValidHexDig(char16_t aHexDig) {
+bool isValidHexDig(char16_t aHexDig) {
   return (isNumberToken(aHexDig) || (aHexDig >= 'A' && aHexDig <= 'F') ||
           (aHexDig >= 'a' && aHexDig <= 'f'));
 }
@@ -419,7 +400,11 @@ nsCSPBaseSrc* nsCSPParser::keywordSource() {
 
   if (CSP_IsKeyword(mCurToken, CSP_STRICT_DYNAMIC)) {
     if (!CSP_IsDirective(mCurDir[0],
-                         nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE)) {
+                         nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE) &&
+        !CSP_IsDirective(mCurDir[0],
+                         nsIContentSecurityPolicy::SCRIPT_SRC_ELEM_DIRECTIVE) &&
+        !CSP_IsDirective(mCurDir[0],
+                         nsIContentSecurityPolicy::SCRIPT_SRC_ATTR_DIRECTIVE)) {
       // Todo: Enforce 'strict-dynamic' within default-src; see Bug 1313937
       AutoTArray<nsString, 1> params = {u"strict-dynamic"_ns};
       logWarningErrorToConsole(nsIScriptError::warningFlag,
@@ -457,11 +442,13 @@ nsCSPBaseSrc* nsCSPParser::keywordSource() {
     if (doc) {
       doc->SetHasUnsafeEvalCSP(true);
     }
+    mHasAnyUnsafeEval = true;
     return new nsCSPKeywordSrc(CSP_UTF16KeywordToEnum(mCurToken));
   }
 
   if (StaticPrefs::security_csp_wasm_unsafe_eval_enabled() &&
       CSP_IsKeyword(mCurToken, CSP_WASM_UNSAFE_EVAL)) {
+    mHasAnyUnsafeEval = true;
     return new nsCSPKeywordSrc(CSP_UTF16KeywordToEnum(mCurToken));
   }
 
@@ -856,6 +843,20 @@ nsCSPDirective* nsCSPParser::directiveName() {
     return nullptr;
   }
 
+  // script-src-attr and script-scr-elem might have been disabled.
+  // Similarly style-src-{attr, elem}.
+  if (((directive == nsIContentSecurityPolicy::SCRIPT_SRC_ATTR_DIRECTIVE ||
+        directive == nsIContentSecurityPolicy::SCRIPT_SRC_ELEM_DIRECTIVE) &&
+       !StaticPrefs::security_csp_script_src_attr_elem_enabled()) ||
+      ((directive == nsIContentSecurityPolicy::STYLE_SRC_ATTR_DIRECTIVE ||
+        directive == nsIContentSecurityPolicy::STYLE_SRC_ELEM_DIRECTIVE) &&
+       !StaticPrefs::security_csp_style_src_attr_elem_enabled())) {
+    AutoTArray<nsString, 1> params = {mCurToken};
+    logWarningErrorToConsole(nsIScriptError::warningFlag,
+                             "notSupportingDirective", params);
+    return nullptr;
+  }
+
   // Make sure the directive does not already exist
   // (see http://www.w3.org/TR/CSP11/#parsing)
   if (mPolicy->hasDirective(directive)) {
@@ -910,10 +911,18 @@ nsCSPDirective* nsCSPParser::directiveName() {
   }
 
   // if we have a script-src, cache it as a fallback for worker-src
-  // in case child-src is not present
+  // in case child-src is not present. It is also used as a fallback for
+  // script-src-elem and script-src-attr.
   if (directive == nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE) {
     mScriptSrc = new nsCSPScriptSrcDirective(directive);
     return mScriptSrc;
+  }
+
+  // If we have a style-src, cache it as a fallback for style-src-elem and
+  // style-src-attr.
+  if (directive == nsIContentSecurityPolicy::STYLE_SRC_DIRECTIVE) {
+    mStyleSrc = new nsCSPStyleSrcDirective(directive);
+    return mStyleSrc;
   }
 
   return new nsCSPDirective(directive);
@@ -996,6 +1005,7 @@ void nsCSPParser::directive() {
   // make sure to reset cache variables when trying to invalidate unsafe-inline;
   // unsafe-inline might not only appear in script-src, but also in default-src
   mHasHashOrNonce = false;
+  mHasAnyUnsafeEval = false;
   mStrictDynamic = false;
   mUnsafeInlineKeywordSrc = nullptr;
 
@@ -1015,8 +1025,12 @@ void nsCSPParser::directive() {
 
   // If policy contains 'strict-dynamic' invalidate all srcs within script-src.
   if (mStrictDynamic) {
-    MOZ_ASSERT(cspDir->equals(nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE),
-               "strict-dynamic only allowed within script-src");
+    MOZ_ASSERT(
+        cspDir->equals(nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE) ||
+            cspDir->equals(
+                nsIContentSecurityPolicy::SCRIPT_SRC_ELEM_DIRECTIVE) ||
+            cspDir->equals(nsIContentSecurityPolicy::SCRIPT_SRC_ATTR_DIRECTIVE),
+        "strict-dynamic only allowed within script-src(-elem|attr)");
     for (uint32_t i = 0; i < srcs.Length(); i++) {
       // Please note that nsCSPNonceSrc as well as nsCSPHashSrc overwrite
       // invalidate(), so it's fine to just call invalidate() on all srcs.
@@ -1035,9 +1049,9 @@ void nsCSPParser::directive() {
           !StringBeginsWith(
               srcStr, nsDependentString(CSP_EnumToUTF16Keyword(CSP_NONCE))) &&
           !StringBeginsWith(srcStr, u"'sha"_ns)) {
-        AutoTArray<nsString, 1> params = {srcStr};
+        AutoTArray<nsString, 2> params = {srcStr, mCurDir[0]};
         logWarningErrorToConsole(nsIScriptError::warningFlag,
-                                 "ignoringSrcForStrictDynamic", params);
+                                 "ignoringScriptSrcForStrictDynamic", params);
       }
     }
     // Log a warning that all scripts might be blocked because the policy
@@ -1049,12 +1063,26 @@ void nsCSPParser::directive() {
     }
   } else if (mHasHashOrNonce && mUnsafeInlineKeywordSrc &&
              (cspDir->equals(nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE) ||
+              cspDir->equals(
+                  nsIContentSecurityPolicy::SCRIPT_SRC_ELEM_DIRECTIVE) ||
+              cspDir->equals(
+                  nsIContentSecurityPolicy::SCRIPT_SRC_ATTR_DIRECTIVE) ||
               cspDir->equals(nsIContentSecurityPolicy::STYLE_SRC_DIRECTIVE))) {
     mUnsafeInlineKeywordSrc->invalidate();
-    // log to the console that unsafe-inline will be ignored
-    AutoTArray<nsString, 1> params = {u"'unsafe-inline'"_ns};
+
+    // Log to the console that unsafe-inline will be ignored.
+    AutoTArray<nsString, 2> params = {u"'unsafe-inline'"_ns, mCurDir[0]};
     logWarningErrorToConsole(nsIScriptError::warningFlag,
-                             "ignoringSrcWithinScriptStyleSrc", params);
+                             "ignoringSrcWithinNonceOrHashDirective", params);
+  }
+
+  if (mHasAnyUnsafeEval &&
+      (cspDir->equals(nsIContentSecurityPolicy::SCRIPT_SRC_ELEM_DIRECTIVE) ||
+       cspDir->equals(nsIContentSecurityPolicy::SCRIPT_SRC_ATTR_DIRECTIVE))) {
+    // Log to the console that (wasm-)unsafe-eval will be ignored.
+    AutoTArray<nsString, 1> params = {mCurDir[0]};
+    logWarningErrorToConsole(nsIScriptError::warningFlag, "ignoringUnsafeEval",
+                             params);
   }
 
   // Add the newly created srcs to the directive and add the directive to the
@@ -1090,10 +1118,39 @@ nsCSPPolicy* nsCSPParser::policy() {
       mChildSrc->setRestrictWorkers();
     }
   }
+
   // if script-src is specified, but not worker-src and also no child-src, then
   // script-src has to govern workers.
   if (mScriptSrc && !mWorkerSrc && !mChildSrc) {
     mScriptSrc->setRestrictWorkers();
+  }
+
+  // If script-src is specified and script-src-elem is not specified, then
+  // script-src has to govern script requests and script blocks.
+  if (mScriptSrc && !mPolicy->hasDirective(
+                        nsIContentSecurityPolicy::SCRIPT_SRC_ELEM_DIRECTIVE)) {
+    mScriptSrc->setRestrictScriptElem();
+  }
+
+  // If script-src is specified and script-src-attr is not specified, then
+  // script-src has to govern script attr (event handlers).
+  if (mScriptSrc && !mPolicy->hasDirective(
+                        nsIContentSecurityPolicy::SCRIPT_SRC_ATTR_DIRECTIVE)) {
+    mScriptSrc->setRestrictScriptAttr();
+  }
+
+  // If style-src is specified and style-src-elem is not specified, then
+  // style-src serves as a fallback.
+  if (mStyleSrc && !mPolicy->hasDirective(
+                       nsIContentSecurityPolicy::STYLE_SRC_ELEM_DIRECTIVE)) {
+    mStyleSrc->setRestrictStyleElem();
+  }
+
+  // If style-src is specified and style-attr-elem is not specified, then
+  // style-src serves as a fallback.
+  if (mStyleSrc && !mPolicy->hasDirective(
+                       nsIContentSecurityPolicy::STYLE_SRC_ATTR_DIRECTIVE)) {
+    mStyleSrc->setRestrictStyleAttr();
   }
 
   return mPolicy;

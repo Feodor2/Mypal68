@@ -16,8 +16,7 @@
           ("MediaController=%p, Id=%" PRId64 ", " msg, this, this->Id(), \
            ##__VA_ARGS__))
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 MediaController::MediaController(uint64_t aContextId)
     : mBrowsingContextId(aContextId) {
@@ -224,5 +223,4 @@ uint64_t MediaController::ControlledMediaNum() const {
   return mControlledMediaNum;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

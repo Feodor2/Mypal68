@@ -29,8 +29,8 @@ class FFmpegVideoDecoder<LIBAV_VER>
   typedef SimpleMap<int64_t> DurationMap;
 
  public:
-  FFmpegVideoDecoder(FFmpegLibWrapper* aLib, TaskQueue* aTaskQueue,
-                     const VideoInfo& aConfig, KnowsCompositor* aAllocator,
+  FFmpegVideoDecoder(FFmpegLibWrapper* aLib, const VideoInfo& aConfig,
+                     KnowsCompositor* aAllocator,
                      ImageContainer* aImageContainer, bool aLowLatency);
 
   RefPtr<InitPromise> Init() override;
@@ -66,7 +66,7 @@ class FFmpegVideoDecoder<LIBAV_VER>
   }
 
   MediaResult CreateImage(int64_t aOffset, int64_t aPts, int64_t aDuration,
-                          MediaDataDecoder::DecodedData& aResults);
+                          MediaDataDecoder::DecodedData& aResults) const;
 
   /**
    * This method allocates a buffer for FFmpeg's decoder, wrapped in an Image.

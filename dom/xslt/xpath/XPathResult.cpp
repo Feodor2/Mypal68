@@ -33,7 +33,10 @@ XPathResult::XPathResult(const XPathResult& aResult)
       mContextNode(aResult.mContextNode),
       mCurrentPos(0),
       mResultType(aResult.mResultType),
-      mInvalidIteratorState(aResult.mInvalidIteratorState) {
+      mInvalidIteratorState(aResult.mInvalidIteratorState),
+      mBooleanResult(aResult.mBooleanResult),
+      mNumberResult(aResult.mNumberResult),
+      mStringResult(aResult.mStringResult) {
   if (mDocument) {
     mDocument->AddMutationObserver(this);
   }
@@ -61,8 +64,7 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(XPathResult)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(XPathResult)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY(nsIMutationObserver)
-  NS_INTERFACE_MAP_ENTRY(nsIXPathResult)
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIXPathResult)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
 JSObject* XPathResult::WrapObject(JSContext* aCx,
@@ -92,7 +94,7 @@ nsINode* XPathResult::IterateNext(ErrorResult& aRv) {
     return nullptr;
   }
 
-  return mResultNodes.SafeObjectAt(mCurrentPos++);
+  return mResultNodes.SafeElementAt(mCurrentPos++);
 }
 
 void XPathResult::NodeWillBeDestroyed(const nsINode* aNode) {
@@ -176,7 +178,7 @@ void XPathResult::SetExprResult(txAExprResult* aExprResult,
     int32_t i, count = nodeSet->size();
     for (i = 0; i < count; ++i) {
       nsINode* node = txXPathNativeNode::getNode(nodeSet->get(i));
-      mResultNodes.AppendObject(node);
+      mResultNodes.AppendElement(node);
     }
 
     if (count > 0) {
@@ -191,7 +193,7 @@ void XPathResult::SetExprResult(txAExprResult* aExprResult,
   mCurrentPos = 0;
   mInvalidIteratorState = false;
 
-  if (mResultNodes.Count() > 0) {
+  if (!mResultNodes.IsEmpty()) {
     // If we support the document() function in DOM-XPath we need to
     // observe all documents that we have resultnodes in.
     mDocument = mResultNodes[0]->OwnerDoc();
@@ -230,16 +232,12 @@ nsresult XPathResult::GetExprResult(txAExprResult** aExprResult) {
     return NS_OK;
   }
 
-  if (mResultNodes.Count() == 0) {
+  if (mResultNodes.IsEmpty()) {
     return NS_ERROR_DOM_INVALID_STATE_ERR;
   }
 
   RefPtr<txNodeSet> nodeSet = new txNodeSet(nullptr);
-  if (!nodeSet) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  uint32_t i, count = mResultNodes.Count();
+  uint32_t i, count = mResultNodes.Length();
   for (i = 0; i < count; ++i) {
     UniquePtr<txXPathNode> node(
         txXPathNativeNode::createXPathNode(mResultNodes[i]));
@@ -255,16 +253,13 @@ nsresult XPathResult::GetExprResult(txAExprResult** aExprResult) {
   return NS_OK;
 }
 
-nsresult XPathResult::Clone(nsIXPathResult** aResult) {
-  *aResult = nullptr;
-
+already_AddRefed<XPathResult> XPathResult::Clone(ErrorResult& aError) {
   if (isIterator() && mInvalidIteratorState) {
-    return NS_ERROR_DOM_INVALID_STATE_ERR;
+    aError = NS_ERROR_DOM_INVALID_STATE_ERR;
+    return nullptr;
   }
 
-  NS_ADDREF(*aResult = new XPathResult(*this));
-
-  return NS_OK;
+  return do_AddRef(new XPathResult(*this));
 }
 
 }  // namespace dom

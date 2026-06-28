@@ -6,6 +6,7 @@
 #define GRAPHDRIVER_H_
 
 #include "nsAutoRef.h"
+#include "nsIThread.h"
 #include "AudioBufferUtils.h"
 #include "AudioMixer.h"
 #include "AudioSegment.h"
@@ -15,6 +16,7 @@
 #include "mozilla/DataMutex.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/StaticPtr.h"
+#include "WavDumper.h"
 
 #include <thread>
 
@@ -177,13 +179,14 @@ struct GraphInterface : public nsISupports {
    * This is the mixed audio output of this MediaTrackGraph. */
   virtual void NotifyOutputData(AudioDataValue* aBuffer, size_t aFrames,
                                 TrackRate aRate, uint32_t aChannels) = 0;
-  /* Called on the graph thread before the first Notify*Data after an
-   * AudioCallbackDriver starts. */
-  virtual void NotifyStarted() = 0;
+  /* Called on the graph thread after an AudioCallbackDriver with an input
+   * stream has stopped. */
+  virtual void NotifyInputStopped() = 0;
   /* Called on the graph thread when there is new input data for listeners. This
    * is the raw audio input for this MediaTrackGraph. */
   virtual void NotifyInputData(const AudioDataValue* aBuffer, size_t aFrames,
-                               TrackRate aRate, uint32_t aChannels) = 0;
+                               TrackRate aRate, uint32_t aChannels,
+                               uint32_t aAlreadyBuffered) = 0;
   /* Called every time there are changes to input/output audio devices like
    * plug/unplug etc. This can be called on any thread, and posts a message to
    * the main thread so that it can post a message to the graph thread. */
@@ -605,7 +608,7 @@ class AudioCallbackDriver : public GraphDriver,
 
   AudioCallbackDriver* AsAudioCallbackDriver() override { return this; }
 
-  uint32_t OutputChannelCount() { return mOutputChannels; }
+  uint32_t OutputChannelCount() { return mOutputChannelCount; }
 
   uint32_t InputChannelCount() { return mInputChannelCount; }
 
@@ -615,14 +618,6 @@ class AudioCallbackDriver : public GraphDriver,
     }
     return AudioInputType::Unknown;
   }
-
-  /* Enqueue a promise that is going to be resolved on the given main thread
-   * when a specific operation occurs on the cubeb stream. */
-  void EnqueueTrackAndPromiseForOperation(
-      MediaTrack* aTrack, dom::AudioContextOperation aOperation,
-      AbstractThread* aMainThread,
-      MozPromiseHolder<MediaTrackGraph::AudioContextOperationPromise>&&
-          aHolder);
 
   std::thread::id ThreadId() { return mAudioThreadId.load(); }
 
@@ -639,8 +634,6 @@ class AudioCallbackDriver : public GraphDriver,
   /* Whether the underlying cubeb stream has been started. See comment for
    * mStarted for details. */
   bool IsStarted();
-
-  void CompleteAudioContextOperations(AsyncCubebOperation aOperation);
 
   // Returns the output latency for the current audio output stream.
   TimeDuration AudioOutputLatency();
@@ -682,7 +675,7 @@ class AudioCallbackDriver : public GraphDriver,
   }
 
   /* MediaTrackGraphs are always down/up mixed to output channels. */
-  const uint32_t mOutputChannels;
+  const uint32_t mOutputChannelCount;
   /* The size of this buffer comes from the fact that some audio backends can
    * call back with a number of frames lower than one block (128 frames), so we
    * need to keep at most two block in the SpillBuffer, because we always round
@@ -732,7 +725,6 @@ class AudioCallbackDriver : public GraphDriver,
   /* Shared thread pool with up to one thread for off-main-thread
    * initialization and shutdown of the audio stream via AsyncCubebTask. */
   const RefPtr<SharedThreadPool> mInitShutdownThread;
-  DataMutex<AutoTArray<TrackAndPromiseForOperation, 1>> mPromisesForOperation;
   cubeb_device_pref mInputDevicePreference;
   /* The mixer that the graph mixes into during an iteration. Audio thread only.
    */
@@ -762,13 +754,10 @@ class AudioCallbackDriver : public GraphDriver,
        may iterate the graph. */
     Stopped,
   };
-  Atomic<FallbackDriverState> mFallbackDriverState;
+  Atomic<FallbackDriverState> mFallbackDriverState{FallbackDriverState::None};
   /* SystemClockDriver used as fallback if this AudioCallbackDriver fails to
    * init or start. */
   DataMutex<RefPtr<FallbackWrapper>> mFallback;
-  /* Set to true in the first iteration after starting. Accessed in data
-   * callback while running, or in Start(). */
-  bool mRanFirstIteration = false;
   /* If using a fallback driver, this is the duration to wait after failing to
    * start it before attempting to start it again. */
   TimeDuration mNextReInitBackoffStep;
@@ -781,6 +770,9 @@ class AudioCallbackDriver : public GraphDriver,
    * microphone that is located next to the left speaker.  */
   Atomic<bool> mNeedsPanning;
 #endif
+
+  WavDumper mInputStreamFile;
+  WavDumper mOutputStreamFile;
 
   virtual ~AudioCallbackDriver();
 };

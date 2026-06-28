@@ -11,6 +11,7 @@
 #include "AudioStreamTrack.h"
 #include "AutoplayPolicy.h"
 #include "ChannelMediaDecoder.h"
+#include "CrossGraphPort.h"
 #include "DOMMediaStream.h"
 #include "DecoderDoctorDiagnostics.h"
 #include "DecoderDoctorLogger.h"
@@ -755,6 +756,10 @@ class HTMLMediaElement::MediaStreamRenderer
 
     for (const auto& t : mAudioTracks) {
       if (t) {
+        if (mAudioOutputSink) {
+          t->AsAudioStreamTrack()->SetAudioOutputDevice(mAudioOutputKey,
+                                                        mAudioOutputSink);
+        }
         t->AsAudioStreamTrack()->AddAudioOutput(mAudioOutputKey);
         t->AsAudioStreamTrack()->SetAudioOutputVolume(mAudioOutputKey,
                                                       mAudioOutputVolume);
@@ -804,11 +809,47 @@ class HTMLMediaElement::MediaStreamRenderer
     }
   }
 
+  RefPtr<GenericPromise::AllPromiseType> SetAudioOutputDevice(
+      AudioDeviceInfo* aSink) {
+    MOZ_ASSERT(aSink);
+    MOZ_ASSERT(mAudioOutputSink != aSink);
+
+    mAudioOutputSink = aSink;
+
+    if (!mRendering) {
+      return GenericPromise::AllPromiseType::CreateAndResolve(nsTArray<bool>(),
+                                                              __func__);
+    }
+
+    nsTArray<RefPtr<GenericPromise>> promises;
+    for (const auto& t : mAudioTracks) {
+      // SetAudioOutputDevice will create a new output MediaTrack, so the
+      // AudioOutput is removed for the current MediaTrack and re-added after
+      // the new MediaTrack has been created.
+      t->AsAudioStreamTrack()->RemoveAudioOutput(mAudioOutputKey);
+      promises.AppendElement(t->AsAudioStreamTrack()->SetAudioOutputDevice(
+          mAudioOutputKey, mAudioOutputSink));
+      t->AsAudioStreamTrack()->AddAudioOutput(mAudioOutputKey);
+      t->AsAudioStreamTrack()->SetAudioOutputVolume(mAudioOutputKey,
+                                                    mAudioOutputVolume);
+    }
+    if (!promises.Length()) {
+      // Not active track, save it for later
+      return GenericPromise::AllPromiseType::CreateAndResolve(nsTArray<bool>(),
+                                                              __func__);
+    }
+
+    return GenericPromise::All(GetCurrentSerialEventTarget(), promises);
+  }
+
   void AddTrack(AudioStreamTrack* aTrack) {
     MOZ_DIAGNOSTIC_ASSERT(!mAudioTracks.Contains(aTrack));
     mAudioTracks.AppendElement(aTrack);
     EnsureGraphTimeDummy();
     if (mRendering) {
+      if (mAudioOutputSink) {
+        aTrack->SetAudioOutputDevice(mAudioOutputKey, mAudioOutputSink);
+      }
       aTrack->AddAudioOutput(mAudioOutputKey);
       aTrack->SetAudioOutputVolume(mAudioOutputKey, mAudioOutputVolume);
     }
@@ -898,6 +939,9 @@ class HTMLMediaElement::MediaStreamRenderer
   // The audio output volume for all audio tracks.
   float mAudioOutputVolume = 1.0f;
 
+  // The sink device for all audio tracks.
+  RefPtr<AudioDeviceInfo> mAudioOutputSink;
+
   // WatchManager for mGraphTime.
   WatchManager<MediaStreamRenderer> mWatchManager;
 
@@ -971,8 +1015,8 @@ class HTMLMediaElement::MediaElementTrackSource
     if (!mTrack) {
       return;
     }
-    mTrack->SetEnabled(aEnabled ? DisabledTrackMode::ENABLED
-                                : DisabledTrackMode::SILENCE_FREEZE);
+    mTrack->SetDisabledTrackMode(aEnabled ? DisabledTrackMode::ENABLED
+                                          : DisabledTrackMode::SILENCE_FREEZE);
   }
 
   void SetPrincipal(RefPtr<nsIPrincipal> aPrincipal) {
@@ -1966,7 +2010,7 @@ already_AddRefed<Promise> HTMLMediaElement::MozDumpDebugInfo() {
   }
   return promise.forget();
 }
-
+#ifdef ENABLE_TESTS
 void HTMLMediaElement::SetVisible(bool aVisible) {
   mForcedHidden = !aVisible;
   if (mDecoder) {
@@ -1978,10 +2022,15 @@ bool HTMLMediaElement::IsVideoDecodingSuspended() const {
   return mDecoder && mDecoder->IsVideoDecodingSuspended();
 }
 
-bool HTMLMediaElement::IsVisible() const {
+bool HTMLMediaElement:: IsVisible() const {
   return mVisibilityState == Visibility::ApproximatelyVisible;
 }
 
+bool HTMLMediaElement::HasSuspendTaint() const {
+  MOZ_ASSERT(!mDecoder || (mDecoder->HasSuspendTaint() == mHasSuspendTaint));
+  return mHasSuspendTaint;
+}
+#endif
 already_AddRefed<layers::Image> HTMLMediaElement::GetCurrentImage() {
   MarkAsTainted();
 
@@ -1990,15 +2039,10 @@ already_AddRefed<layers::Image> HTMLMediaElement::GetCurrentImage() {
   if (!container) {
     return nullptr;
   }
-
+                         
   AutoLockImage lockImage(container);
   RefPtr<layers::Image> image = lockImage.GetImage(TimeStamp::Now());
   return image.forget();
-}
-
-bool HTMLMediaElement::HasSuspendTaint() const {
-  MOZ_ASSERT(!mDecoder || (mDecoder->HasSuspendTaint() == mHasSuspendTaint));
-  return mHasSuspendTaint;
 }
 
 already_AddRefed<DOMMediaStream> HTMLMediaElement::GetSrcObject() const {
@@ -2024,7 +2068,7 @@ void HTMLMediaElement::SetSrcObject(DOMMediaStream* aValue) {
 
 bool HTMLMediaElement::Ended() {
   return (mDecoder && mDecoder->IsEnded()) ||
-         (mSrcStream && mSrcStreamPlaybackEnded);
+         (mSrcStream && mSrcStreamReportPlaybackEnded);
 }
 
 void HTMLMediaElement::GetCurrentSrc(nsAString& aCurrentSrc) {
@@ -2115,7 +2159,6 @@ void HTMLMediaElement::AbortExistingLoads() {
   mSuspendedForPreloadNone = false;
   mDownloadSuspendedByCache = false;
   mMediaInfo = MediaInfo();
-  mIsEncrypted = false;
   mSourcePointer = nullptr;
   mIsBlessed = false;
   SetAudibleState(false);
@@ -4017,10 +4060,12 @@ HTMLMediaElement::~HTMLMediaElement() {
   if (mProgressTimer) {
     StopProgress();
   }
+#ifdef ENABLE_TESTS
   if (mVideoDecodeSuspendTimer) {
     mVideoDecodeSuspendTimer->Cancel();
     mVideoDecodeSuspendTimer = nullptr;
   }
+#endif
   if (mSrcStream) {
     EndSrcMediaStreamPlayback();
   }
@@ -4820,15 +4865,10 @@ void HTMLMediaElement::UpdateSrcMediaStreamPlaying(uint32_t aFlags) {
 
   if (shouldPlay) {
     mSrcStreamPlaybackEnded = false;
+    mSrcStreamReportPlaybackEnded = false;
 
     if (mMediaStreamRenderer) {
       mMediaStreamRenderer->Start();
-    }
-
-    if (mSink.second) {
-      NS_WARNING(
-          "setSinkId() when playing a MediaStream is not supported yet and "
-          "will be ignored");
     }
 
     if (mSelectedVideoStreamTrack && GetVideoFrameContainer()) {
@@ -4896,9 +4936,14 @@ void HTMLMediaElement::SetupSrcMediaStreamPlayback(DOMMediaStream* aStream) {
                       &HTMLMediaElement::UpdateSrcStreamPotentiallyPlaying);
   mWatchManager.Watch(mSrcStreamPlaybackEnded,
                       &HTMLMediaElement::UpdateSrcStreamPotentiallyPlaying);
+  mWatchManager.Watch(mSrcStreamPlaybackEnded,
+                      &HTMLMediaElement::UpdateSrcStreamReportPlaybackEnded);
   mWatchManager.Watch(mMediaStreamRenderer->CurrentGraphTime(),
                       &HTMLMediaElement::UpdateSrcStreamTime);
   SetVolumeInternal();
+  if (mSink.second) {
+    mMediaStreamRenderer->SetAudioOutputDevice(mSink.second);
+  }
 
   UpdateSrcMediaStreamPlaying();
   UpdateSrcStreamPotentiallyPlaying();
@@ -4946,6 +4991,9 @@ void HTMLMediaElement::EndSrcMediaStreamPlayback() {
                           &HTMLMediaElement::UpdateSrcStreamPotentiallyPlaying);
     mWatchManager.Unwatch(mSrcStreamPlaybackEnded,
                           &HTMLMediaElement::UpdateSrcStreamPotentiallyPlaying);
+    mWatchManager.Unwatch(
+        mSrcStreamPlaybackEnded,
+        &HTMLMediaElement::UpdateSrcStreamReportPlaybackEnded);
     mWatchManager.Unwatch(mMediaStreamRenderer->CurrentGraphTime(),
                           &HTMLMediaElement::UpdateSrcStreamTime);
     mMediaStreamRenderer->Shutdown();
@@ -4955,6 +5003,7 @@ void HTMLMediaElement::EndSrcMediaStreamPlayback() {
   mSrcStream->UnregisterTrackListener(mMediaStreamTrackListener.get());
   mMediaStreamTrackListener = nullptr;
   mSrcStreamPlaybackEnded = false;
+  mSrcStreamReportPlaybackEnded = false;
   mSrcStreamVideoPrincipal = nullptr;
 
   mSrcStream = nullptr;
@@ -5077,7 +5126,6 @@ void HTMLMediaElement::MetadataLoaded(const MediaInfo* aInfo,
 
   SetMediaInfo(*aInfo);
 
-  mIsEncrypted = aInfo->IsEncrypted();
   mTags = std::move(aTags);
   mLoadedDataFired = false;
   ChangeReadyState(HAVE_METADATA);
@@ -5222,6 +5270,10 @@ void HTMLMediaElement::PlaybackEnded() {
   }
 
   DispatchAsyncEvent(u"ended"_ns);
+}
+
+void HTMLMediaElement::UpdateSrcStreamReportPlaybackEnded() {
+  mSrcStreamReportPlaybackEnded = mSrcStreamPlaybackEnded;
 }
 
 void HTMLMediaElement::SeekStarted() { DispatchAsyncEvent(u"seeking"_ns); }
@@ -6386,9 +6438,9 @@ void HTMLMediaElement::OnVisibilityChange(Visibility aNewVisibility) {
       ("OnVisibilityChange(): %s\n", VisibilityString(aNewVisibility)));
 
   mVisibilityState = aNewVisibility;
-  if (StaticPrefs::media_test_video_suspend()) {
+#ifdef ENABLE_TESTS
     DispatchAsyncEvent(u"visibilitychanged"_ns);
-  }
+#endif
 
   if (!mDecoder) {
     return;
@@ -6474,9 +6526,11 @@ void HTMLMediaElement::SetDecoder(MediaDecoder* aDecoder) {
   }
   mDecoder = aDecoder;
   DDLINKCHILD("decoder", mDecoder.get());
+#ifdef ENABLE_TESTS
   if (mDecoder && mForcedHidden) {
     mDecoder->SetForcedHidden(mForcedHidden);
   }
+#endif
 }
 
 float HTMLMediaElement::ComputedVolume() const {
@@ -6778,13 +6832,13 @@ already_AddRefed<Promise> HTMLMediaElement::SetSinkId(const nsAString& aSinkId,
       ->GetSinkDevice(win, sinkId)
       ->Then(
           mAbstractMainThread, __func__,
-          [self = RefPtr<HTMLMediaElement>(this)](
-              RefPtr<AudioDeviceInfo>&& aInfo) {
+          [self = RefPtr<HTMLMediaElement>(this),
+           this](RefPtr<AudioDeviceInfo>&& aInfo) {
             // Sink found switch output device.
             MOZ_ASSERT(aInfo);
-            if (self->mDecoder) {
-              RefPtr<SinkInfoPromise> p = self->mDecoder->SetSink(aInfo)->Then(
-                  self->mAbstractMainThread, __func__,
+            if (mDecoder) {
+              RefPtr<SinkInfoPromise> p = mDecoder->SetSink(aInfo)->Then(
+                  mAbstractMainThread, __func__,
                   [aInfo](const GenericPromise::ResolveOrRejectValue& aValue) {
                     if (aValue.IsResolve()) {
                       return SinkInfoPromise::CreateAndResolve(aInfo, __func__);
@@ -6794,9 +6848,21 @@ already_AddRefed<Promise> HTMLMediaElement::SetSinkId(const nsAString& aSinkId,
                   });
               return p;
             }
-            if (self->mSrcAttrStream) {
-              // Set Sink Id through MTG is not supported yet.
-              return SinkInfoPromise::CreateAndReject(NS_ERROR_ABORT, __func__);
+            if (mSrcStream) {
+              MOZ_ASSERT(mMediaStreamRenderer);
+              RefPtr<SinkInfoPromise> p =
+                  mMediaStreamRenderer->SetAudioOutputDevice(aInfo)->Then(
+                      mAbstractMainThread, __func__,
+                      [aInfo](const GenericPromise::AllPromiseType::
+                                  ResolveOrRejectValue& aValue) {
+                        if (aValue.IsResolve()) {
+                          return SinkInfoPromise::CreateAndResolve(aInfo,
+                                                                   __func__);
+                        }
+                        return SinkInfoPromise::CreateAndReject(
+                            aValue.RejectValue(), __func__);
+                      });
+              return p;
             }
             // No media attached to the element save it for later.
             return SinkInfoPromise::CreateAndResolve(aInfo, __func__);
@@ -6806,10 +6872,10 @@ already_AddRefed<Promise> HTMLMediaElement::SetSinkId(const nsAString& aSinkId,
             return SinkInfoPromise::CreateAndReject(res, __func__);
           })
       ->Then(mAbstractMainThread, __func__,
-             [promise, self = RefPtr<HTMLMediaElement>(this),
+             [promise, self = RefPtr<HTMLMediaElement>(this), this,
               sinkId](const SinkInfoPromise::ResolveOrRejectValue& aValue) {
                if (aValue.IsResolve()) {
-                 self->mSink = std::pair(sinkId, aValue.ResolveValue());
+                 mSink = std::pair(sinkId, aValue.ResolveValue());
                  promise->MaybeResolveWithUndefined();
                } else {
                  switch (aValue.RejectValue()) {

@@ -83,8 +83,8 @@ class WritableStreamDefaultController final : public nsISupports,
   }
 
   UnderlyingSinkAlgorithmsBase* GetAlgorithms() { return mAlgorithms; }
-  void SetAlgorithms(UnderlyingSinkAlgorithmsBase* aAlgorithms) {
-    mAlgorithms = aAlgorithms;
+  void SetAlgorithms(UnderlyingSinkAlgorithmsBase& aAlgorithms) {
+    mAlgorithms = &aAlgorithms;
   }
 
   WritableStream* Stream() { return mStream; }
@@ -109,7 +109,12 @@ class WritableStreamDefaultController final : public nsISupports,
     // Step 1. Set controller.[[writeAlgorithm]] to undefined.
     // Step 2. Set controller.[[closeAlgorithm]] to undefined.
     // Step 3. Set controller.[[abortAlgorithm]] to undefined.
-    mAlgorithms = nullptr;
+    // (As written in the spec, this can happen multiple time. Try running
+    // wpt/streams/transform-streams/errors.any.js for example.)
+    if (RefPtr<UnderlyingSinkAlgorithmsBase> algorithms =
+            mAlgorithms.forget()) {
+      algorithms->ReleaseObjects();
+    }
 
     // Step 4. Set controller.[[strategySizeAlgorithm]] to undefined.
     mStrategySizeAlgorithm = nullptr;
@@ -129,6 +134,8 @@ class WritableStreamDefaultController final : public nsISupports,
   RefPtr<UnderlyingSinkAlgorithmsBase> mAlgorithms;
   RefPtr<WritableStream> mStream;
 };
+
+namespace streams_abstract {
 
 MOZ_CAN_RUN_SCRIPT void SetUpWritableStreamDefaultController(
     JSContext* aCx, WritableStream* aStream,
@@ -161,6 +168,8 @@ MOZ_CAN_RUN_SCRIPT void WritableStreamDefaultControllerErrorIfNeeded(
 MOZ_CAN_RUN_SCRIPT double WritableStreamDefaultControllerGetChunkSize(
     JSContext* aCx, WritableStreamDefaultController* aController,
     JS::Handle<JS::Value> aChunk, ErrorResult& aRv);
+
+}  // namespace streams_abstract
 
 }  // namespace mozilla::dom
 

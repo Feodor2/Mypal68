@@ -7,6 +7,7 @@
 #include "TCPSocket.h"
 #include "TCPServerSocket.h"
 #include "TCPSocketChild.h"
+#include "TCPSocketParent.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/TCPSocketBinding.h"
@@ -54,7 +55,7 @@ NS_INTERFACE_MAP_END
 LegacyMozTCPSocket::LegacyMozTCPSocket(nsPIDOMWindowInner* aWindow)
     : mGlobal(do_QueryInterface(aWindow)) {}
 
-LegacyMozTCPSocket::~LegacyMozTCPSocket() {}
+LegacyMozTCPSocket::~LegacyMozTCPSocket() = default;
 
 already_AddRefed<TCPSocket> LegacyMozTCPSocket::Open(
     const nsAString& aHost, uint16_t aPort, const SocketOptions& aOptions,
@@ -316,7 +317,7 @@ class CopierCallbacks final : public nsIRequestObserver {
   NS_DECL_ISUPPORTS
   NS_DECL_NSIREQUESTOBSERVER
  private:
-  ~CopierCallbacks() {}
+  ~CopierCallbacks() = default;
 };
 
 NS_IMPL_ISUPPORTS(CopierCallbacks, nsIRequestObserver)
@@ -833,7 +834,7 @@ already_AddRefed<TCPSocket> TCPSocket::CreateAcceptedSocket(
     nsIGlobalObject* aGlobal, nsISocketTransport* aTransport,
     bool aUseArrayBuffers) {
   RefPtr<TCPSocket> socket =
-      new TCPSocket(aGlobal, EmptyString(), 0, false, aUseArrayBuffers);
+      new TCPSocket(aGlobal, u""_ns, 0, false, aUseArrayBuffers);
   nsresult rv = socket->InitWithTransport(aTransport);
   NS_ENSURE_SUCCESS(rv, nullptr);
   return socket.forget();
@@ -842,7 +843,7 @@ already_AddRefed<TCPSocket> TCPSocket::CreateAcceptedSocket(
 already_AddRefed<TCPSocket> TCPSocket::CreateAcceptedSocket(
     nsIGlobalObject* aGlobal, TCPSocketChild* aBridge, bool aUseArrayBuffers) {
   RefPtr<TCPSocket> socket =
-      new TCPSocket(aGlobal, EmptyString(), 0, false, aUseArrayBuffers);
+      new TCPSocket(aGlobal, u""_ns, 0, false, aUseArrayBuffers);
   socket->InitWithSocketChild(aBridge);
   return socket.forget();
 }

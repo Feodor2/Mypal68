@@ -14,6 +14,7 @@
 #include "js/StructuredClone.h"
 #include "mozIStorageConnection.h"
 #include "mozilla/dom/quota/QuotaCommon.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
 #include "nsDebug.h"
 #include "nsError.h"
 #include "nsLiteralString.h"
@@ -66,7 +67,7 @@ nsresult CreateFileTables(mozIStorageConnection& aConnection) {
       "DELETE FROM file WHERE id = OLD.id; "
       "END;"_ns};
 
-  IDB_TRY(ExecuteSimpleSQLSequence(aConnection, commands));
+  QM_TRY(MOZ_TO_RESULT(ExecuteSimpleSQLSequence(aConnection, commands)));
 
   return NS_OK;
 }
@@ -158,11 +159,11 @@ nsresult CreateTables(mozIStorageConnection& aConnection) {
       "ON unique_index_data (index_id, value_locale, object_data_key, value) "
       "WHERE value_locale IS NOT NULL;"_ns};
 
-  IDB_TRY(ExecuteSimpleSQLSequence(aConnection, commands));
+  QM_TRY(MOZ_TO_RESULT(ExecuteSimpleSQLSequence(aConnection, commands)));
 
-  IDB_TRY(CreateFileTables(aConnection));
+  QM_TRY(MOZ_TO_RESULT(CreateFileTables(aConnection)));
 
-  IDB_TRY(aConnection.SetSchemaVersion(kSQLiteSchemaVersion));
+  QM_TRY(MOZ_TO_RESULT(aConnection.SetSchemaVersion(kSQLiteSchemaVersion)));
 
   return NS_OK;
 }

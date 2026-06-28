@@ -5,8 +5,9 @@
 #include "mozilla/dom/WebAuthenticationBinding.h"
 #include "mozilla/dom/AuthenticatorAttestationResponse.h"
 
-namespace mozilla {
-namespace dom {
+#include "mozilla/HoldDropJSObjects.h"
+
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(AuthenticatorAttestationResponse)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(
@@ -63,5 +64,4 @@ nsresult AuthenticatorAttestationResponse::SetAttestationObject(
   return NS_OK;
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

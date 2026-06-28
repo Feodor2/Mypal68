@@ -223,25 +223,26 @@ SessionStorageManager::CheckStorage(nsIPrincipal* aPrincipal, Storage* aStorage,
 void SessionStorageManager::ClearStorages(
     ClearStorageType aType, const OriginAttributesPattern& aPattern,
     const nsACString& aOriginScope) {
-  for (auto iter1 = mOATable.Iter(); !iter1.Done(); iter1.Next()) {
+  for (const auto& oaEntry : mOATable) {
     OriginAttributes oa;
-    DebugOnly<bool> ok = oa.PopulateFromSuffix(iter1.Key());
+    DebugOnly<bool> ok = oa.PopulateFromSuffix(oaEntry.GetKey());
     MOZ_ASSERT(ok);
     if (!aPattern.Matches(oa)) {
       // This table doesn't match the given origin attributes pattern
       continue;
     }
 
-    OriginKeyHashTable* table = iter1.UserData();
-    for (auto iter2 = table->Iter(); !iter2.Done(); iter2.Next()) {
+    OriginKeyHashTable* table = oaEntry.GetWeak();
+    for (const auto& originKeyEntry : *table) {
       if (aOriginScope.IsEmpty() ||
-          StringBeginsWith(iter2.Key(), aOriginScope)) {
+          StringBeginsWith(originKeyEntry.GetKey(), aOriginScope)) {
+        const auto cache = originKeyEntry.GetData();
         if (aType == eAll) {
-          iter2.Data()->Clear(SessionStorageCache::eDefaultSetType, false);
-          iter2.Data()->Clear(SessionStorageCache::eSessionSetType, false);
+          cache->Clear(SessionStorageCache::eDefaultSetType, false);
+          cache->Clear(SessionStorageCache::eSessionSetType, false);
         } else {
           MOZ_ASSERT(aType == eSessionOnly);
-          iter2.Data()->Clear(SessionStorageCache::eSessionSetType, false);
+          cache->Clear(SessionStorageCache::eSessionSetType, false);
         }
       }
     }

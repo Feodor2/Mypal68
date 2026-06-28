@@ -16,17 +16,32 @@
 #include "RemoteDecoderManagerChild.h"
 #include "RemoteMediaDataDecoder.h"
 #include "RemoteVideoDecoder.h"
+#include "OpusDecoder.h"
+#include "VideoUtils.h"
 #include "VorbisDecoder.h"
+#include "WAVDecoder.h"
+#include "nsIXULRuntime.h"  // for BrowserTabsRemoteAutostart
 
 namespace mozilla {
 
-using base::Thread;
 using dom::ContentChild;
 using namespace ipc;
 using namespace layers;
 
+StaticMutex RemoteDecoderModule::sLaunchMonitor;
+
 RemoteDecoderModule::RemoteDecoderModule()
-    : mManagerThread(RemoteDecoderManagerChild::GetManagerThread()) {}
+    : mManagerThread(RemoteDecoderManagerChild::GetManagerThread()) {
+  MOZ_DIAGNOSTIC_ASSERT(mManagerThread);
+}
+
+/* static */
+void RemoteDecoderModule::Init() {
+  if (!BrowserTabsRemoteAutostart()) {
+    return;
+  }
+  RemoteDecoderManagerChild::InitializeThread();
+}
 
 bool RemoteDecoderModule::SupportsMimeType(
     const nsACString& aMimeType, DecoderDoctorDiagnostics* aDiagnostics) const {
@@ -37,8 +52,22 @@ bool RemoteDecoderModule::SupportsMimeType(
     supports |= AOMDecoder::IsAV1(aMimeType);
   }
 #endif
+#if !defined(__MINGW32__)
+  // We can't let RDD handle the decision to support Vorbis decoding on
+  // MinGW builds because of Bug 1597408 (Vorbis decoding on RDD causing
+  // sandboxing failure on MinGW-clang).  Typically this would be dealt
+  // with using defines in StaticPrefList.yaml, but we must handle it
+  // here because of Bug 1598426 (the __MINGW32__ define isn't supported
+  // in StaticPrefList.yaml).
   if (StaticPrefs::media_rdd_vorbis_enabled()) {
     supports |= VorbisDataDecoder::IsVorbis(aMimeType);
+  }
+#endif
+  if (StaticPrefs::media_rdd_wav_enabled()) {
+    supports |= WaveDataDecoder::IsWave(aMimeType);
+  }
+  if (StaticPrefs::media_rdd_opus_enabled()) {
+    supports |= OpusDataDecoder::IsOpus(aMimeType);
   }
 
   MOZ_LOG(
@@ -47,10 +76,12 @@ bool RemoteDecoderModule::SupportsMimeType(
   return supports;
 }
 
-void RemoteDecoderModule::LaunchRDDProcessIfNeeded() {
+void RemoteDecoderModule::LaunchRDDProcessIfNeeded() const {
   if (!XRE_IsContentProcess()) {
     return;
   }
+
+  StaticMutexAutoLock mon(sLaunchMonitor);
 
   // We have a couple possible states here.  We are in a content process
   // and:
@@ -66,20 +97,17 @@ void RemoteDecoderModule::LaunchRDDProcessIfNeeded() {
   // LaunchRDDProcess which will launch RDD if necessary, and setup the
   // IPC connections between *this* content process and the RDD process.
   bool needsLaunch = true;
-  if (mManagerThread) {
-    RefPtr<Runnable> task = NS_NewRunnableFunction(
-        "RemoteDecoderModule::LaunchRDDProcessIfNeeded-CheckSend", [&]() {
-          if (RemoteDecoderManagerChild::GetRDDProcessSingleton()) {
-            needsLaunch =
-                !RemoteDecoderManagerChild::GetRDDProcessSingleton()->CanSend();
-          }
-        });
-    SyncRunnable::DispatchToThread(mManagerThread, task);
-  }
+  RefPtr<Runnable> task = NS_NewRunnableFunction(
+      "RemoteDecoderModule::LaunchRDDProcessIfNeeded-CheckSend", [&]() {
+        if (RemoteDecoderManagerChild::GetRDDProcessSingleton()) {
+          needsLaunch =
+              !RemoteDecoderManagerChild::GetRDDProcessSingleton()->CanSend();
+        }
+      });
+  SyncRunnable::DispatchToThread(mManagerThread, task);
 
   if (needsLaunch) {
     ContentChild::GetSingleton()->LaunchRDDProcess();
-    mManagerThread = RemoteDecoderManagerChild::GetManagerThread();
   }
 }
 
@@ -87,8 +115,14 @@ already_AddRefed<MediaDataDecoder> RemoteDecoderModule::CreateAudioDecoder(
     const CreateDecoderParams& aParams) {
   LaunchRDDProcessIfNeeded();
 
-  if (!mManagerThread) {
-    return nullptr;
+  // OpusDataDecoder will check this option to provide the same info
+  // that IsDefaultPlaybackDeviceMono provides.  We want to avoid calls
+  // to IsDefaultPlaybackDeviceMono on RDD because initializing audio
+  // backends on RDD will be blocked by the sandbox.
+  CreateDecoderParams::OptionSet options(aParams.mOptions);
+  if (OpusDataDecoder::IsOpus(aParams.mConfig.mMimeType) &&
+      IsDefaultPlaybackDeviceMono()) {
+    options += CreateDecoderParams::Option::DefaultPlaybackDeviceMono;
   }
 
   RefPtr<RemoteAudioDecoderChild> child = new RemoteAudioDecoderChild();
@@ -102,7 +136,7 @@ already_AddRefed<MediaDataDecoder> RemoteDecoderModule::CreateAudioDecoder(
   // thread during this single dispatch.
   RefPtr<Runnable> task =
       NS_NewRunnableFunction("RemoteDecoderModule::CreateAudioDecoder", [&]() {
-        result = child->InitIPDL(aParams.AudioConfig(), aParams.mOptions);
+        result = child->InitIPDL(aParams.AudioConfig(), options);
         if (NS_FAILED(result)) {
           // Release RemoteAudioDecoderChild here, while we're on
           // manager thread.  Don't just let the RefPtr go out of scope.
@@ -127,10 +161,6 @@ already_AddRefed<MediaDataDecoder> RemoteDecoderModule::CreateAudioDecoder(
 already_AddRefed<MediaDataDecoder> RemoteDecoderModule::CreateVideoDecoder(
     const CreateDecoderParams& aParams) {
   LaunchRDDProcessIfNeeded();
-
-  if (!mManagerThread) {
-    return nullptr;
-  }
 
   RefPtr<RemoteVideoDecoderChild> child = new RemoteVideoDecoderChild();
   MediaResult result(NS_OK);

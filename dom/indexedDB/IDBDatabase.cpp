@@ -31,6 +31,7 @@
 #include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 #include "mozilla/dom/IPCBlobUtils.h"
 #include "mozilla/dom/quota/QuotaManager.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/FileDescriptor.h"
@@ -201,10 +202,10 @@ RefPtr<IDBDatabase> IDBDatabase::Create(IDBOpenDBRequest* aRequest,
           obsSvc->AddObserver(observer, kWindowObserverTopic, false));
 
       // These topics are not crucial.
-      QM_WARNONLY_TRY(
-          obsSvc->AddObserver(observer, kCycleCollectionObserverTopic, false));
-      QM_WARNONLY_TRY(
-          obsSvc->AddObserver(observer, kMemoryPressureObserverTopic, false));
+      QM_WARNONLY_TRY(QM_TO_RESULT(
+          obsSvc->AddObserver(observer, kCycleCollectionObserverTopic, false)));
+      QM_WARNONLY_TRY(QM_TO_RESULT(
+          obsSvc->AddObserver(observer, kMemoryPressureObserverTopic, false)));
 
       db->mObserver = std::move(observer);
     }
@@ -365,7 +366,7 @@ RefPtr<IDBObjectStore> IDBDatabase::CreateObjectStore(
     return nullptr;
   }
 
-  QM_NOTEONLY_TRY_UNWRAP(const auto maybeKeyPath,
+  QM_INFOONLY_TRY_UNWRAP(const auto maybeKeyPath,
                          KeyPath::Parse(aOptionalParameters.mKeyPath));
   if (!maybeKeyPath) {
     aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
@@ -480,7 +481,7 @@ RefPtr<IDBTransaction> IDBDatabase::Transaction(
 
   if ((aMode == IDBTransactionMode::Readwriteflush ||
        aMode == IDBTransactionMode::Cleanup) &&
-      !IndexedDatabaseManager::ExperimentalFeaturesEnabled()) {
+      !StaticPrefs::dom_indexedDB_experimental()) {
     // Pretend that this mode doesn't exist. We don't have a way to annotate
     // certain enum values as depending on preferences so we just duplicate the
     // normal exception generation here.
@@ -621,13 +622,6 @@ RefPtr<IDBTransaction> IDBDatabase::Transaction(
   }
 
   return AsRefPtr(std::move(transaction));
-}
-
-StorageType IDBDatabase::Storage() const {
-  AssertIsOnOwningThread();
-  MOZ_ASSERT(mSpec);
-
-  return PersistenceTypeToStorageType(mSpec->metadata().persistenceType());
 }
 
 RefPtr<IDBRequest> IDBDatabase::CreateMutableFile(
@@ -880,9 +874,9 @@ nsresult IDBDatabase::GetQuotaInfo(nsACString& aOrigin,
       return NS_OK;
 
     case PrincipalInfo::TContentPrincipalInfo: {
-      IDB_TRY_UNWRAP(auto principal, PrincipalInfoToPrincipal(*principalInfo));
+      QM_TRY_UNWRAP(auto principal, PrincipalInfoToPrincipal(*principalInfo));
 
-      IDB_TRY_UNWRAP(aOrigin, QuotaManager::GetOriginFromPrincipal(principal));
+      QM_TRY_UNWRAP(aOrigin, QuotaManager::GetOriginFromPrincipal(principal));
 
       return NS_OK;
     }
@@ -1030,16 +1024,6 @@ void IDBDatabase::LastRelease() {
     mBackgroundActor->SendDeleteMeInternal();
     MOZ_ASSERT(!mBackgroundActor, "SendDeleteMeInternal should have cleared!");
   }
-}
-
-nsresult IDBDatabase::PostHandleEvent(EventChainPostVisitor& aVisitor) {
-  nsresult rv =
-      IndexedDatabaseManager::CommonPostHandleEvent(aVisitor, *mFactory);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  return NS_OK;
 }
 
 JSObject* IDBDatabase::WrapObject(JSContext* aCx,

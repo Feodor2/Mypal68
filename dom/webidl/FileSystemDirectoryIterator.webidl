@@ -6,5 +6,6 @@
 // a natively supported `async iterable`.
 [Exposed=(Window,Worker), SecureContext, LegacyNoInterfaceObject]
 interface FileSystemDirectoryIterator {
+  [NewObject]
   Promise<any> next();
 };

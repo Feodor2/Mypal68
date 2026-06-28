@@ -8,6 +8,7 @@
 #include <CoreFoundation/CFDictionary.h>  // For CFDictionaryRef
 #include <CoreMedia/CoreMedia.h>          // For CMVideoFormatDescriptionRef
 #include <VideoToolbox/VideoToolbox.h>    // For VTDecompressionSessionRef
+
 #include "PlatformDecoderModule.h"
 #include "ReorderQueue.h"
 #include "TimeUnits.h"
@@ -21,7 +22,7 @@ DDLoggedTypeDeclNameAndBase(AppleVTDecoder, MediaDataDecoder);
 class AppleVTDecoder : public MediaDataDecoder,
                        public DecoderDoctorLifeLogger<AppleVTDecoder> {
  public:
-  AppleVTDecoder(const VideoInfo& aConfig, TaskQueue* aTaskQueue,
+  AppleVTDecoder(const VideoInfo& aConfig,
                  layers::ImageContainer* aImageContainer,
                  CreateDecoderParams::OptionSet aOptions);
 
@@ -64,6 +65,7 @@ class AppleVTDecoder : public MediaDataDecoder,
   // Access from the taskqueue and the decoder's thread.
   // OutputFrame is thread-safe.
   void OutputFrame(CVPixelBufferRef aImage, AppleFrameRef aFrameRef);
+  void OnDecodeError(OSStatus aError);
 
  private:
   virtual ~AppleVTDecoder();
@@ -72,9 +74,7 @@ class AppleVTDecoder : public MediaDataDecoder,
   void ProcessShutdown();
   void ProcessDecode(MediaRawData* aSample);
 
-  void AssertOnTaskQueueThread() {
-    MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
-  }
+  void AssertOnTaskQueue() { MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn()); }
 
   AppleFrameRef* CreateAppleFrameRef(const MediaRawData* aSample);
   CFDictionaryRef CreateOutputConfiguration();
@@ -100,7 +100,6 @@ class AppleVTDecoder : public MediaDataDecoder,
 
   // Set on reader/decode thread calling Flush() to indicate that output is
   // not required and so input samples on mTaskQueue need not be processed.
-  // Cleared on mTaskQueue in ProcessDrain().
   Atomic<bool> mIsFlushing;
   // Protects mReorderQueue and mPromise.
   Monitor mMonitor;

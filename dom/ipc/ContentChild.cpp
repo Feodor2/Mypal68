@@ -17,6 +17,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/Components.h"
 #include "mozilla/HangDetails.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/LookAndFeel.h"
@@ -26,6 +27,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/ProcessHangMonitorIPC.h"
 #include "mozilla/RemoteDecoderManagerChild.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/StaticPrefs_media.h"
@@ -84,7 +86,6 @@
 #include "mozilla/layers/SynchronousTask.h"  // for LaunchRDDProcess
 #include "mozilla/loader/ScriptCacheActors.h"
 #include "mozilla/media/MediaChild.h"
-#include "mozilla/net/CaptivePortalService.h"
 #include "mozilla/net/CookieServiceChild.h"
 #include "mozilla/net/HttpChannelChild.h"
 #include "mozilla/net/NeckoChild.h"
@@ -181,7 +182,7 @@
 #include "nsIScriptSecurityManager.h"
 
 #ifdef MOZ_WEBRTC
-#  include "signaling/src/peerconnection/WebrtcGlobalChild.h"
+#  include "jsapi/WebrtcGlobalChild.h"
 #endif
 
 #include "mozilla/Permission.h"
@@ -732,16 +733,16 @@ void ContentChild::SetProcessName(const nsAString& aName) {
 
 NS_IMETHODIMP
 ContentChild::ProvideWindow(mozIDOMWindowProxy* aParent, uint32_t aChromeFlags,
-                            bool aCalledFromJS, bool aPositionSpecified,
-                            bool aSizeSpecified, nsIURI* aURI,
-                            const nsAString& aName, const nsACString& aFeatures,
-                            bool aForceNoOpener, bool aForceNoReferrer,
+                            bool aCalledFromJS, bool aWidthSpecified,
+                            nsIURI* aURI, const nsAString& aName,
+                            const nsACString& aFeatures, bool aForceNoOpener,
+                            bool aForceNoReferrer,
                             nsDocShellLoadState* aLoadState, bool* aWindowIsNew,
                             mozIDOMWindowProxy** aReturn) {
-  return ProvideWindowCommon(
-      nullptr, aParent, false, aChromeFlags, aCalledFromJS, aPositionSpecified,
-      aSizeSpecified, aURI, aName, aFeatures, aForceNoOpener, aForceNoReferrer,
-      aLoadState, aWindowIsNew, aReturn);
+  return ProvideWindowCommon(nullptr, aParent, false, aChromeFlags,
+                             aCalledFromJS, aWidthSpecified, aURI, aName,
+                             aFeatures, aForceNoOpener, aForceNoReferrer,
+                             aLoadState, aWindowIsNew, aReturn);
 }
 
 static nsresult GetCreateWindowParams(mozIDOMWindowProxy* aParent,
@@ -819,11 +820,10 @@ static nsresult GetCreateWindowParams(mozIDOMWindowProxy* aParent,
 
 nsresult ContentChild::ProvideWindowCommon(
     BrowserChild* aTabOpener, mozIDOMWindowProxy* aParent, bool aIframeMoz,
-    uint32_t aChromeFlags, bool aCalledFromJS, bool aPositionSpecified,
-    bool aSizeSpecified, nsIURI* aURI, const nsAString& aName,
-    const nsACString& aFeatures, bool aForceNoOpener, bool aForceNoReferrer,
-    nsDocShellLoadState* aLoadState, bool* aWindowIsNew,
-    mozIDOMWindowProxy** aReturn) {
+    uint32_t aChromeFlags, bool aCalledFromJS, bool aWidthSpecified,
+    nsIURI* aURI, const nsAString& aName, const nsACString& aFeatures,
+    bool aForceNoOpener, bool aForceNoReferrer, nsDocShellLoadState* aLoadState,
+    bool* aWindowIsNew, mozIDOMWindowProxy** aReturn) {
   *aReturn = nullptr;
 
   UniquePtr<IPCTabContext> ipcContext;
@@ -873,9 +873,8 @@ nsresult ContentChild::ProvideWindowCommon(
     MOZ_DIAGNOSTIC_ASSERT(!nsContentUtils::IsSpecialName(name));
 
     Unused << SendCreateWindowInDifferentProcess(
-        aTabOpener, aChromeFlags, aCalledFromJS, aPositionSpecified,
-        aSizeSpecified, aURI, features, fullZoom, name,
-        Principal(triggeringPrincipal), csp, referrerInfo);
+        aTabOpener, aChromeFlags, aCalledFromJS, aWidthSpecified, aURI,
+        features, fullZoom, name, triggeringPrincipal, csp, referrerInfo);
 
     // We return NS_ERROR_ABORT, so that the caller knows that we've abandoned
     // the window open as far as it is concerned.
@@ -1071,9 +1070,9 @@ nsresult ContentChild::ProvideWindowCommon(
   }
 
   SendCreateWindow(aTabOpener, newChild, aChromeFlags, aCalledFromJS,
-                   aPositionSpecified, aSizeSpecified, aURI, features,
-                   fullZoom, Principal(triggeringPrincipal), csp,
-                   referrerInfo, std::move(resolve), std::move(reject));
+                   aWidthSpecified, aURI, features, fullZoom,
+                   Principal(triggeringPrincipal), csp, referrerInfo,
+                   std::move(resolve), std::move(reject));
 
   // =======================
   // Begin Nested Event Loop
@@ -1220,7 +1219,6 @@ void ContentChild::InitXPCOM(
   L10nRegistry::RegisterFileSourcesFromParentProcess(
       aXPCOMInit.l10nFileSources());
 
-  RecvSetCaptivePortalState(aXPCOMInit.captivePortalState());
   RecvBidiKeyboardNotify(aXPCOMInit.isLangRTL(),
                          aXPCOMInit.haveBidiKeyboards());
 
@@ -1947,20 +1945,6 @@ mozilla::ipc::IPCResult ContentChild::RecvSetConnectivity(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult ContentChild::RecvSetCaptivePortalState(
-    const int32_t& aState) {
-  nsCOMPtr<nsICaptivePortalService> cps = do_GetService(NS_CAPTIVEPORTAL_CID);
-  if (!cps) {
-    return IPC_OK();
-  }
-
-  mozilla::net::CaptivePortalService* portal =
-      static_cast<mozilla::net::CaptivePortalService*>(cps.get());
-  portal->SetStateInChild(aState);
-
-  return IPC_OK();
-}
-
 void ContentChild::ActorDestroy(ActorDestroyReason why) {
   gfxPlatform::ShutdownLayersIPC();
 
@@ -2104,7 +2088,7 @@ mozilla::ipc::IPCResult ContentChild::RecvNotifyAlertsObserver(
 // touch pages. See GetSpecificMessageEventTarget.
 mozilla::ipc::IPCResult ContentChild::RecvNotifyVisited(
     nsTArray<VisitedQueryResult>&& aURIs) {
-  nsCOMPtr<IHistory> history = services::GetHistory();
+  nsCOMPtr<IHistory> history = components::History::Service();
   if (!history) {
     return IPC_OK();
   }
@@ -2147,7 +2131,7 @@ mozilla::ipc::IPCResult ContentChild::RecvAsyncMessage(
 mozilla::ipc::IPCResult ContentChild::RecvRegisterStringBundles(
     nsTArray<mozilla::dom::StringBundleDescriptor>&& aDescriptors) {
   nsCOMPtr<nsIStringBundleService> stringBundleService =
-      services::GetStringBundleService();
+      components::StringBundle::Service();
 
   for (auto& descriptor : aDescriptors) {
     stringBundleService->RegisterContentBundle(
@@ -2245,7 +2229,7 @@ mozilla::ipc::IPCResult ContentChild::RecvUpdateRequestedLocales(
 mozilla::ipc::IPCResult ContentChild::RecvAddPermission(
     const IPC::Permission& permission) {
   nsCOMPtr<nsIPermissionManager> permissionManagerIface =
-      services::GetPermissionManager();
+      components::PermissionManager::Service();
   PermissionManager* permissionManager =
       static_cast<PermissionManager*>(permissionManagerIface.get());
   MOZ_ASSERT(permissionManager,
@@ -2278,7 +2262,7 @@ mozilla::ipc::IPCResult ContentChild::RecvAddPermission(
 
 mozilla::ipc::IPCResult ContentChild::RecvRemoveAllPermissions() {
   nsCOMPtr<nsIPermissionManager> permissionManagerIface =
-      services::GetPermissionManager();
+      components::PermissionManager::Service();
   PermissionManager* permissionManager =
       static_cast<PermissionManager*>(permissionManagerIface.get());
   MOZ_ASSERT(permissionManager,
@@ -2320,6 +2304,24 @@ mozilla::ipc::IPCResult ContentChild::RecvShutdownA11y() {
   // chrome process.
   MaybeShutdownAccService(nsAccessibilityService::eMainProcess);
 #endif
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult ContentChild::RecvApplicationForeground() {
+  // Rebroadcast the "application-foreground"
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    obs->NotifyObservers(nullptr, "application-foreground", nullptr);
+  }
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult ContentChild::RecvApplicationBackground() {
+  // Rebroadcast the "application-background"
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    obs->NotifyObservers(nullptr, "application-background", nullptr);
+  }
   return IPC_OK();
 }
 

@@ -58,19 +58,8 @@ nsPIDOMWindowInner* TestInterfaceAsyncIterableDoubleUnion::GetParentObject()
   return mParent;
 }
 
-void TestInterfaceAsyncIterableDoubleUnion::InitAsyncIterator(
-    Iterator* aIterator, ErrorResult& aError) {
-  UniquePtr<IteratorData> data(new IteratorData(0));
-  aIterator->SetData((void*)data.release());
-}
-
-void TestInterfaceAsyncIterableDoubleUnion::DestroyAsyncIterator(
-    Iterator* aIterator) {
-  auto* data = reinterpret_cast<IteratorData*>(aIterator->GetData());
-  delete data;
-}
-
-already_AddRefed<Promise> TestInterfaceAsyncIterableDoubleUnion::GetNextPromise(
+already_AddRefed<Promise>
+TestInterfaceAsyncIterableDoubleUnion::GetNextIterationResult(
     Iterator* aIterator, ErrorResult& aRv) {
   RefPtr<Promise> promise = Promise::Create(mParent->AsGlobal(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
@@ -78,7 +67,7 @@ already_AddRefed<Promise> TestInterfaceAsyncIterableDoubleUnion::GetNextPromise(
   }
 
   NS_DispatchToMainThread(NewRunnableMethod<RefPtr<Iterator>, RefPtr<Promise>>(
-      "TestInterfaceAsyncIterableDoubleUnion::GetNextPromise", this,
+      "TestInterfaceAsyncIterableDoubleUnion::GetNextIterationResult", this,
       &TestInterfaceAsyncIterableDoubleUnion::ResolvePromise, aIterator,
       promise));
 
@@ -87,11 +76,11 @@ already_AddRefed<Promise> TestInterfaceAsyncIterableDoubleUnion::GetNextPromise(
 
 void TestInterfaceAsyncIterableDoubleUnion::ResolvePromise(Iterator* aIterator,
                                                            Promise* aPromise) {
-  IteratorData* data = reinterpret_cast<IteratorData*>(aIterator->GetData());
+  IteratorData& data = aIterator->Data();
 
   // Test data:
   // [long, 1], [string, "a"]
-  uint32_t idx = data->mIndex;
+  uint32_t idx = data.mIndex;
   if (idx >= mValues.Length()) {
     iterator_utils::ResolvePromiseForFinished(aPromise);
   } else {
@@ -108,7 +97,7 @@ void TestInterfaceAsyncIterableDoubleUnion::ResolvePromise(Iterator* aIterator,
         break;
     }
 
-    data->mIndex++;
+    data.mIndex++;
   }
 }
 

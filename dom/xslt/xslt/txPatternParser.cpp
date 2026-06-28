@@ -31,8 +31,7 @@ nsresult txPatternParser::createPattern(const nsString& aPattern,
 
   txPatternOptimizer optimizer;
   txPattern* newPattern = nullptr;
-  rv = optimizer.optimize(pattern.get(), &newPattern);
-  NS_ENSURE_SUCCESS(rv, rv);
+  optimizer.optimize(pattern.get(), &newPattern);
 
   *aResult = newPattern ? newPattern : pattern.release();
 
@@ -60,14 +59,7 @@ nsresult txPatternParser::createUnionPattern(txExprLexer& aLexer,
   }
 
   txUnionPattern* unionPattern = new txUnionPattern();
-  rv = unionPattern->addPattern(locPath);
-#if 0  // XXX addPattern can't fail yet, it doesn't check for mem
-    if (NS_FAILED(rv)) {
-        delete unionPattern;
-        delete locPath;
-        return rv;
-    }
-#endif
+  unionPattern->addPattern(locPath);
 
   aLexer.nextToken();
   do {
@@ -76,14 +68,7 @@ nsresult txPatternParser::createUnionPattern(txExprLexer& aLexer,
       delete unionPattern;
       return rv;
     }
-    rv = unionPattern->addPattern(locPath);
-#if 0  // XXX addPattern can't fail yet, it doesn't check for mem
-        if (NS_FAILED(rv)) {
-            delete unionPattern;
-            delete locPath;
-            return rv;
-        }
-#endif
+    unionPattern->addPattern(locPath);
     type = aLexer.nextToken()->mType;
   } while (type == Token::UNION_OP);
 
@@ -155,21 +140,10 @@ nsresult txPatternParser::createLocPathPattern(txExprLexer& aLexer,
     root->setSerialize(false);
 #endif
 
-    rv = pathPattern->addStep(root, isChild);
-    if (NS_FAILED(rv)) {
-      delete stepPattern;
-      delete pathPattern;
-      delete root;
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+    pathPattern->addStep(root, isChild);
   }
 
-  rv = pathPattern->addStep(stepPattern, isChild);
-  if (NS_FAILED(rv)) {
-    delete stepPattern;
-    delete pathPattern;
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  pathPattern->addStep(stepPattern, isChild);
   stepPattern = 0;  // stepPattern is part of pathPattern now
 
   while (type == Token::PARENT_OP || type == Token::ANCESTOR_OP) {
@@ -180,12 +154,7 @@ nsresult txPatternParser::createLocPathPattern(txExprLexer& aLexer,
       delete pathPattern;
       return rv;
     }
-    rv = pathPattern->addStep(stepPattern, isChild);
-    if (NS_FAILED(rv)) {
-      delete stepPattern;
-      delete pathPattern;
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+    pathPattern->addStep(stepPattern, isChild);
     stepPattern = 0;  // stepPattern is part of pathPattern now
     type = aLexer.peek()->mType;
   }

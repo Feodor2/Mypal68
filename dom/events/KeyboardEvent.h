@@ -8,7 +8,6 @@
 #include "mozilla/dom/UIEvent.h"
 #include "mozilla/dom/KeyboardEventBinding.h"
 #include "mozilla/EventForwards.h"
-#include "nsRFPService.h"
 
 namespace mozilla {
 namespace dom {
@@ -63,6 +62,7 @@ class KeyboardEvent : public UIEvent {
                       nsGlobalWindowInner* aView, bool aCtrlKey, bool aAltKey,
                       bool aShiftKey, bool aMetaKey, uint32_t aKeyCode,
                       uint32_t aCharCode);
+  static bool IsInitKeyEventAvailable(JSContext*, JSObject*);
 
   void InitKeyboardEventJS(const nsAString& aType, bool aCanBubble,
                            bool aCancelable, nsGlobalWindowInner* aView,

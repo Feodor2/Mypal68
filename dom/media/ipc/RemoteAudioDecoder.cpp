@@ -3,8 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "RemoteAudioDecoder.h"
 
+#include "MediaDataDecoderProxy.h"
+#include "OpusDecoder.h"
 #include "RemoteDecoderManagerChild.h"
 #include "VorbisDecoder.h"
+#include "WAVDecoder.h"
 #include "mozilla/PodOperations.h"
 
 namespace mozilla {
@@ -77,18 +80,27 @@ RemoteAudioDecoderParent::RemoteAudioDecoderParent(
     : RemoteDecoderParent(aParent, aManagerTaskQueue, aDecodeTaskQueue),
       mAudioInfo(aAudioInfo) {
   CreateDecoderParams params(mAudioInfo);
-  params.mTaskQueue = mDecodeTaskQueue;
   params.mOptions = aOptions;
   MediaResult error(NS_OK);
   params.mError = &error;
 
+  RefPtr<MediaDataDecoder> decoder;
   if (VorbisDataDecoder::IsVorbis(params.mConfig.mMimeType)) {
-    mDecoder = new VorbisDataDecoder(params);
+    decoder = new VorbisDataDecoder(params);
+  } else if (OpusDataDecoder::IsOpus(params.mConfig.mMimeType)) {
+    decoder = new OpusDataDecoder(params);
+  } else if (WaveDataDecoder::IsWave(params.mConfig.mMimeType)) {
+    decoder = new WaveDataDecoder(params);
   }
 
   if (NS_FAILED(error)) {
     MOZ_ASSERT(aErrorDescription);
     *aErrorDescription = error.Description();
+  }
+
+  if (decoder) {
+    mDecoder = new MediaDataDecoderProxy(decoder.forget(),
+                                         do_AddRef(mDecodeTaskQueue.get()));
   }
 
   *aSuccess = !!mDecoder;
@@ -129,7 +141,15 @@ MediaResult RemoteAudioDecoderParent::ProcessDecodedData(
     array.AppendElement(output);
   }
 
-  aDecodedData = std::move(array);
+  // With the new possiblity of batch decodes, we can't always move the
+  // results directly into DecodedOutputIPDL.  If there are already
+  // elements, we should append the new results.
+  if (aDecodedData.type() == DecodedOutputIPDL::TArrayOfRemoteAudioDataIPDL) {
+    aDecodedData.get_ArrayOfRemoteAudioDataIPDL().AppendElements(
+        std::move(array));
+  } else {
+    aDecodedData = std::move(array);
+  }
 
   return NS_OK;
 }

@@ -64,7 +64,7 @@ StorageDBBridge::StorageDBBridge()
 
 class StorageDBThread::InitHelper final : public Runnable {
   nsCOMPtr<nsIEventTarget> mOwningThread;
-  Lock mMutex;
+  Lock2 mMutex;
   ConditionVariable mCondVar;
   nsString mProfilePath;
   nsresult mMainThreadResultCode;

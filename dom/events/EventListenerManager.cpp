@@ -588,6 +588,12 @@ bool EventListenerManager::ListenerCanHandle(const Listener* aListener,
   if (aListener->mListenerType == Listener::eNoListener) {
     return false;
   }
+
+  // The listener has been disabled, for example by devtools.
+  if (!aListener->mEnabled) {
+    return false;
+  }
+
   // This is slightly different from EVENT_TYPE_EQUALS in that it returns
   // true even when aEvent->mMessage == eUnidentifiedEvent and
   // aListener=>mEventMessage != eUnidentifiedEvent as long as the atoms are
@@ -773,7 +779,7 @@ nsresult EventListenerManager::SetEventHandler(nsAtom* aName,
     if (csp) {
       bool allowsInlineScript = true;
       rv = csp->GetAllowsInline(
-          nsIContentSecurityPolicy::SCRIPT_SRC_DIRECTIVE,
+          nsIContentSecurityPolicy::SCRIPT_SRC_ATTR_DIRECTIVE,
           u""_ns,  // aNonce
           true,    // aParserCreated (true because attribute event handler)
           aElement,
@@ -1495,9 +1501,77 @@ nsresult EventListenerManager::GetListenerInfo(
     }
 
     RefPtr<EventListenerInfo> info = new EventListenerInfo(
-        eventType, callback, callbackGlobal, listener.mFlags.mCapture,
-        listener.mFlags.mAllowUntrustedEvents, listener.mFlags.mInSystemGroup);
+        this, eventType, callback, callbackGlobal, listener.mFlags.mCapture,
+        listener.mFlags.mAllowUntrustedEvents, listener.mFlags.mInSystemGroup,
+        listener.mListenerIsHandler);
     aList.AppendElement(info.forget());
+  }
+  return NS_OK;
+}
+
+EventListenerManager::Listener* EventListenerManager::GetListenerFor(
+    nsAString& aType, JSObject* aListener, bool aCapturing,
+    bool aAllowsUntrusted, bool aInSystemEventGroup, bool aIsHandler) {
+  NS_ENSURE_TRUE(aListener, nullptr);
+
+  for (Listener& listener : mListeners.ForwardRange()) {
+    if ((aType.IsVoid() && !listener.mAllEvents) ||
+        !Substring(nsDependentAtomString(listener.mTypeAtom), 2)
+             .Equals(aType) ||
+        listener.mListenerType == Listener::eNoListener) {
+      continue;
+    }
+
+    if (listener.mFlags.mCapture != aCapturing ||
+        listener.mFlags.mAllowUntrustedEvents != aAllowsUntrusted ||
+        listener.mFlags.mInSystemGroup != aInSystemEventGroup) {
+      continue;
+    }
+
+    if (aIsHandler) {
+      if (JSEventHandler* handler = listener.GetJSEventHandler()) {
+        if (handler->GetTypedEventHandler().HasEventHandler()) {
+          if (handler->GetTypedEventHandler().Ptr()->CallableOrNull() ==
+              aListener) {
+            return &listener;
+          }
+        }
+      }
+    } else if (listener.mListenerType == Listener::eWebIDLListener &&
+               listener.mListener.GetWebIDLCallback()->CallbackOrNull() ==
+                   aListener) {
+      return &listener;
+    }
+  }
+  return nullptr;
+}
+
+nsresult EventListenerManager::IsListenerEnabled(
+    nsAString& aType, JSObject* aListener, bool aCapturing,
+    bool aAllowsUntrusted, bool aInSystemEventGroup, bool aIsHandler,
+    bool* aEnabled) {
+  Listener* listener =
+      GetListenerFor(aType, aListener, aCapturing, aAllowsUntrusted,
+                     aInSystemEventGroup, aIsHandler);
+  NS_ENSURE_TRUE(listener, NS_ERROR_NOT_AVAILABLE);
+  *aEnabled = listener->mEnabled;
+  return NS_OK;
+}
+
+nsresult EventListenerManager::SetListenerEnabled(
+    nsAString& aType, JSObject* aListener, bool aCapturing,
+    bool aAllowsUntrusted, bool aInSystemEventGroup, bool aIsHandler,
+    bool aEnabled) {
+  Listener* listener =
+      GetListenerFor(aType, aListener, aCapturing, aAllowsUntrusted,
+                     aInSystemEventGroup, aIsHandler);
+  NS_ENSURE_TRUE(listener, NS_ERROR_NOT_AVAILABLE);
+  listener->mEnabled = aEnabled;
+  if (aEnabled) {
+    // We may have enabled some listener, clear the cache for which events
+    // we don't have listeners.
+    mNoListenerForEvent = eVoidEvent;
+    mNoListenerForEventAtom = nullptr;
   }
   return NS_OK;
 }

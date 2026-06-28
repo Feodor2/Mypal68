@@ -52,12 +52,12 @@ class MultipartBlobImpl final : public BaseBlobImpl {
 
   already_AddRefed<BlobImpl> CreateSlice(uint64_t aStart, uint64_t aLength,
                                          const nsAString& aContentType,
-                                         ErrorResult& aRv) override;
+                                         ErrorResult& aRv) const override;
 
   uint64_t GetSize(ErrorResult& aRv) override { return mLength; }
 
-  void CreateInputStream(nsIInputStream** aInputStream,
-                         ErrorResult& aRv) override;
+  void CreateInputStream(nsIInputStream** aStream,
+                         ErrorResult& aRv) const override;
 
   const nsTArray<RefPtr<BlobImpl>>* GetSubBlobImpls() const override {
     return mBlobImpls.Length() ? &mBlobImpls : nullptr;
@@ -67,7 +67,7 @@ class MultipartBlobImpl final : public BaseBlobImpl {
 
   size_t GetAllocationSize() const override;
   size_t GetAllocationSize(
-      FallibleTArray<BlobImpl*>& aVisitedBlobImpls) const override;
+      FallibleTArray<BlobImpl*>& aVisitedBlobs) const override;
 
   void GetBlobImplType(nsAString& aBlobImplType) const override;
 

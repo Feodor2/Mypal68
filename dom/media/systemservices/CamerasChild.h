@@ -11,7 +11,7 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/camera/PCamerasChild.h"
 #include "mozilla/camera/PCamerasParent.h"
-#include "mozilla/media/DeviceChangeCallback.h"
+#include "MediaEventSource.h"
 #include "nsCOMPtr.h"
 
 // conflicts with #include of scoped_ptr.h
@@ -80,11 +80,6 @@ class CamerasSingleton {
     return singleton().mCamerasChildThread;
   }
 
-  static nsCOMPtr<nsIThread>& FakeDeviceChangeEventThread() {
-    Mutex().AssertCurrentThreadOwns();
-    return singleton().mFakeDeviceChangeEventThread;
-  }
-
   static bool InShutdown() { return singleton().mInShutdown; }
 
   static void StartShutdown() { singleton().mInShutdown = true; }
@@ -111,7 +106,6 @@ class CamerasSingleton {
   // will be before actual destruction.
   CamerasChild* mCameras;
   nsCOMPtr<nsIThread> mCamerasChildThread;
-  nsCOMPtr<nsIThread> mFakeDeviceChangeEventThread;
   Atomic<bool> mInShutdown;
 };
 
@@ -142,7 +136,7 @@ int GetChildAndCall(MEM_FUN&& f, ARGS&&... args) {
   }
 }
 
-class CamerasChild final : public PCamerasChild, public DeviceChangeCallback {
+class CamerasChild final : public PCamerasChild {
   friend class mozilla::ipc::BackgroundChildImpl;
   template <class T>
   friend class mozilla::camera::LockAndDispatch;
@@ -159,8 +153,6 @@ class CamerasChild final : public PCamerasChild, public DeviceChangeCallback {
       const VideoFrameProperties& prop) override;
 
   mozilla::ipc::IPCResult RecvDeviceChange() override;
-  int AddDeviceChangeCallback(DeviceChangeCallback* aCallback) override;
-  int SetFakeDeviceChangeEvents();
 
   // these are response messages to our outgoing requests
   mozilla::ipc::IPCResult RecvReplyNumberOfCaptureDevices(const int&) override;
@@ -203,6 +195,27 @@ class CamerasChild final : public PCamerasChild, public DeviceChangeCallback {
   void ShutdownAll();
   int EnsureInitialized(CaptureEngine aCapEngine);
 
+  template <typename This>
+  int ConnectDeviceListChangeListener(MediaEventListener* aListener,
+                                      AbstractThread* aTarget, This* aThis,
+                                      void (This::*aMethod)()) {
+    // According to the spec, if the script sets
+    // navigator.mediaDevices.ondevicechange and the permission state is
+    // "always granted", the User Agent MUST fires a devicechange event when
+    // a new media input device is made available, even the script never
+    // call getusermedia or enumerateDevices.
+
+    // In order to detect the event, we need to init the camera engine.
+    // Currently EnsureInitialized(aCapEngine) is only called when one of
+    // CamerasParent api, e.g., RecvNumberOfCaptureDevices(), is called.
+
+    // So here we setup camera engine via EnsureInitialized(aCapEngine)
+
+    EnsureInitialized(CameraEngine);
+    *aListener = mDeviceListChangeEvent.Connect(aTarget, aThis, aMethod);
+    return IPC_OK();
+  }
+
   FrameRelay* Callback(CaptureEngine aCapEngine, int capture_id);
 
  private:
@@ -244,6 +257,7 @@ class CamerasChild final : public PCamerasChild, public DeviceChangeCallback {
   nsCString mReplyDeviceName;
   nsCString mReplyDeviceID;
   bool mReplyScary;
+  MediaEventProducer<void> mDeviceListChangeEvent;
 };
 
 }  // namespace camera

@@ -10,10 +10,11 @@
 #include "mozilla/Components.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/EventStateManager.h"
+#include "mozilla/HoldDropJSObjects.h"
 #include "mozilla/JSONWriter.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
@@ -25,9 +26,9 @@
 #include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseWorkerProxy.h"
+#include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ServiceWorkerGlobalScopeBinding.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
-#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "nsAlertsUtils.h"
@@ -56,8 +57,7 @@
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 struct NotificationStrings {
   const nsString mID;
@@ -765,8 +765,8 @@ already_AddRefed<Notification> Notification::Constructor(
   }
 
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
-  RefPtr<Notification> notification = CreateAndShow(
-      aGlobal.Context(), global, aTitle, aOptions, EmptyString(), aRv);
+  RefPtr<Notification> notification =
+      CreateAndShow(aGlobal.Context(), global, aTitle, aOptions, u""_ns, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -1185,7 +1185,7 @@ ServiceWorkerNotificationObserver::Observe(nsISupports* aSubject,
   if (!strcmp("alertclickcallback", aTopic)) {
     if (XRE_IsParentProcess() || !ServiceWorkerParentInterceptEnabled()) {
       nsCOMPtr<nsIServiceWorkerManager> swm =
-          mozilla::services::GetServiceWorkerManager();
+          mozilla::components::ServiceWorkerManager::Service();
       if (NS_WARN_IF(!swm)) {
         return NS_ERROR_FAILURE;
       }
@@ -1220,7 +1220,7 @@ ServiceWorkerNotificationObserver::Observe(nsISupports* aSubject,
 
     if (XRE_IsParentProcess() || !ServiceWorkerParentInterceptEnabled()) {
       nsCOMPtr<nsIServiceWorkerManager> swm =
-          mozilla::services::GetServiceWorkerManager();
+          mozilla::components::ServiceWorkerManager::Service();
       if (NS_WARN_IF(!swm)) {
         return NS_ERROR_FAILURE;
       }
@@ -1529,7 +1529,7 @@ NotificationPermission Notification::TestPermission(nsIPrincipal* aPrincipal) {
   uint32_t permission = nsIPermissionManager::UNKNOWN_ACTION;
 
   nsCOMPtr<nsIPermissionManager> permissionManager =
-      services::GetPermissionManager();
+      components::PermissionManager::Service();
   if (!permissionManager) {
     return NotificationPermission::Default;
   }
@@ -1648,7 +1648,7 @@ already_AddRefed<Promise> Notification::Get(
   MOZ_ASSERT(global);
   nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(global);
 
-  return Get(window, aFilter, EmptyString(), aRv);
+  return Get(window, aFilter, u""_ns, aRv);
 }
 
 class WorkerGetResultRunnable final : public NotificationWorkerRunnable {
@@ -2179,7 +2179,7 @@ already_AddRefed<Notification> Notification::CreateAndShow(
   MOZ_ASSERT(aGlobal);
 
   RefPtr<Notification> notification =
-      CreateInternal(aGlobal, EmptyString(), aTitle, aOptions);
+      CreateInternal(aGlobal, u""_ns, aTitle, aOptions);
 
   // Make a structured clone of the aOptions.mData object
   JS::Rooted<JS::Value> data(aCx, aOptions.mData);
@@ -2214,7 +2214,7 @@ already_AddRefed<Notification> Notification::CreateAndShow(
 nsresult Notification::RemovePermission(nsIPrincipal* aPrincipal) {
   MOZ_ASSERT(XRE_IsParentProcess());
   nsCOMPtr<nsIPermissionManager> permissionManager =
-      mozilla::services::GetPermissionManager();
+      mozilla::components::PermissionManager::Service();
   if (!permissionManager) {
     return NS_ERROR_FAILURE;
   }
@@ -2275,5 +2275,4 @@ nsresult Notification::DispatchToMainThread(
                               nsIEventTarget::DISPATCH_NORMAL);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

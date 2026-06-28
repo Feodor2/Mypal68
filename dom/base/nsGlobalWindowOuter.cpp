@@ -40,6 +40,7 @@
 #include "mozilla/dom/Timeout.h"
 #include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/dom/TimeoutManager.h"
+#include "mozilla/dom/WindowFeatures.h"  // WindowFeatures
 #include "mozilla/dom/WindowProxyHolder.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #if defined(MOZ_WIDGET_ANDROID)
@@ -47,6 +48,7 @@
 #endif
 #include "nsBaseCommandController.h"
 #include "nsError.h"
+#include "nsICookieService.h"
 #include "nsISizeOfEventTarget.h"
 #include "nsDOMJSUtils.h"
 #include "nsArrayUtils.h"
@@ -80,13 +82,13 @@
 #include "js/PropertySpec.h"
 #include "js/RealmIterators.h"
 #include "js/Wrapper.h"
-#include "nsCharSeparatedTokenizer.h"
 #include "nsLayoutUtils.h"
 #include "nsReadableUtils.h"
 #include "nsJSEnvironment.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Likely.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/Unused.h"
 
@@ -243,10 +245,6 @@
 #include "mozilla/dom/WebIDLGlobalNameHash.h"
 #include "mozilla/dom/Worklet.h"
 #include "AccessCheck.h"
-
-#ifdef HAVE_SIDEBAR
-#  include "mozilla/dom/ExternalBinding.h"
-#endif
 
 #ifdef MOZ_WEBSPEECH
 #  include "mozilla/dom/SpeechSynthesis.h"
@@ -2510,16 +2508,33 @@ nsresult nsGlobalWindowOuter::SetNewDocument(Document* aDocument,
   mHasStorageAccess = false;
   nsIURI* uri = aDocument->GetDocumentURI();
   if (newInnerWindow &&
-      aDocument->CookieJarSettings()->GetRejectThirdPartyTrackers() &&
+      aDocument->CookieJarSettings()->GetRejectThirdPartyContexts() &&
       nsContentUtils::IsThirdPartyWindowOrChannel(newInnerWindow, nullptr,
-                                                  uri) &&
-      nsContentUtils::IsThirdPartyTrackingResourceWindow(newInnerWindow)) {
+                                                  uri)) {
+    uint32_t cookieBehavior =
+        aDocument->CookieJarSettings()->GetCookieBehavior();
     // Grant storage access by default if the first-party storage access
     // permission has been granted already.
     // Don't notify in this case, since we would be notifying the user
     // needlessly.
-    mHasStorageAccess =
-        ContentBlocking::ShouldAllowAccessFor(newInnerWindow, uri, nullptr);
+    bool checkStorageAccess = false;
+    if (net::CookieJarSettings::IsRejectThirdPartyWithExceptions(
+            cookieBehavior)) {
+      checkStorageAccess = true;
+    } else {
+      MOZ_ASSERT(
+          cookieBehavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
+          cookieBehavior ==
+              nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
+      if (nsContentUtils::IsThirdPartyTrackingResourceWindow(newInnerWindow)) {
+        checkStorageAccess = true;
+      }
+    }
+
+    if (checkStorageAccess) {
+      mHasStorageAccess =
+          ContentBlocking::ShouldAllowAccessFor(newInnerWindow, uri, nullptr);
+    }
   }
 
   return NS_OK;
@@ -5133,11 +5148,6 @@ void nsGlobalWindowOuter::FocusOuter() {
       NS_WARNING("Should not try to set the focus on a disabled window");
       return;
     }
-
-    // XXXndeakin not sure what this is for or if it should go somewhere else
-    nsCOMPtr<nsIEmbeddingSiteWindow> embeddingWin(
-        do_GetInterface(treeOwnerAsWin));
-    if (embeddingWin) embeddingWin->SetFocus();
   }
 
   if (!mDocShell) {
@@ -7240,33 +7250,31 @@ nsresult nsGlobalWindowOuter::OpenInternal(
 
   NS_ASSERTION(mDocShell, "Must have docshell here");
 
-  nsAutoCString options;
+  NS_ConvertUTF16toUTF8 optionsUtf8(aOptions);
+
+  WindowFeatures features;
+  if (!features.Tokenize(optionsUtf8)) {
+    return NS_ERROR_FAILURE;
+  }
+
   bool forceNoOpener = aForceNoOpener;
+  if (features.Exists("noopener")) {
+    forceNoOpener = features.GetBool("noopener");
+    features.Remove("noopener");
+  }
+
   bool forceNoReferrer = false;
-  // Unlike other window flags, "noopener" comes from splitting on commas with
-  // HTML whitespace trimming...
-  nsCharSeparatedTokenizerTemplate<nsContentUtils::IsHTMLWhitespace> tok(
-      aOptions, ',');
-  while (tok.hasMoreTokens()) {
-    auto nextTok = tok.nextToken();
-    if (nextTok.EqualsLiteral("noopener")) {
-      forceNoOpener = true;
-      continue;
-    }
-    if (StaticPrefs::dom_window_open_noreferrer_enabled() &&
-        nextTok.LowerCaseEqualsLiteral("noreferrer")) {
-      forceNoReferrer = true;
+  if (features.Exists("noreferrer")) {
+    forceNoReferrer = features.GetBool("noreferrer");
+    if (forceNoReferrer) {
       // noreferrer implies noopener
       forceNoOpener = true;
-      continue;
     }
-    // Want to create a copy of the options without 'noopener' because having
-    // 'noopener' in the options affects other window features.
-    if (!options.IsEmpty()) {
-      options.Append(',');
-    }
-    AppendUTF16toUTF8(nextTok, options);
+    features.Remove("noreferrer");
   }
+
+  nsAutoCString options;
+  features.Stringify(options);
 
   bool windowExists = WindowExists(aName, forceNoOpener, !aCalledNoScript);
 
@@ -7604,7 +7612,8 @@ nsresult nsGlobalWindowOuter::RestoreWindowState(nsISupports* aState) {
 
 void nsGlobalWindowOuter::AddSizeOfIncludingThis(
     nsWindowSizes& aWindowSizes) const {
-  aWindowSizes.mDOMOtherSize += aWindowSizes.mState.mMallocSizeOf(this);
+  aWindowSizes.mDOMSizes.mDOMOtherSize +=
+      aWindowSizes.mState.mMallocSizeOf(this);
 }
 
 #ifdef MOZ_VR

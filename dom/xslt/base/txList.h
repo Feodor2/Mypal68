@@ -146,6 +146,6 @@ class txListIterator {
   bool atEndOfList;
 };
 
-typedef txList List;
+using List = txList;
 
 #endif

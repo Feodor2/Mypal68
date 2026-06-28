@@ -33,17 +33,17 @@ interface MediaSource : EventTarget {
   attribute unrestricted double duration;
   attribute EventHandler onsourceopen;
   attribute EventHandler onsourceended;
-  attribute EventHandler onsourceclosed;
+  attribute EventHandler onsourceclose;
   [NewObject, Throws]
   SourceBuffer addSourceBuffer(DOMString type);
   [Throws]
-  void removeSourceBuffer(SourceBuffer sourceBuffer);
+  undefined removeSourceBuffer(SourceBuffer sourceBuffer);
   [Throws]
-  void endOfStream(optional MediaSourceEndOfStreamError error);
+  undefined endOfStream(optional MediaSourceEndOfStreamError error);
   [Throws]
-  void setLiveSeekableRange(double start, double end);
+  undefined setLiveSeekableRange(double start, double end);
   [Throws]
-  void clearLiveSeekableRange();
+  undefined clearLiveSeekableRange();
   static boolean isTypeSupported(DOMString type);
   [ChromeOnly]
   readonly attribute DOMString mozDebugReaderData;

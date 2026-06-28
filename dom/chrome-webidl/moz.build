@@ -28,6 +28,7 @@ with Files("WebExtension*.webidl"):
 
 PREPROCESSED_WEBIDL_FILES = [
     "ChromeUtils.webidl",
+    "IOUtils.webidl",
 ]
 
 WEBIDL_FILES = [
@@ -42,7 +43,6 @@ WEBIDL_FILES = [
     "Fluent.webidl",
     "HeapSnapshot.webidl",
     "InspectorUtils.webidl",
-    "IOUtils.webidl",
     "IteratorResult.webidl",
     "JSWindowActor.webidl",
     "L10nOverlays.webidl",

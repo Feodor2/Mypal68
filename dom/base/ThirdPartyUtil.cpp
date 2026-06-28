@@ -15,7 +15,7 @@
 #include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MacroForEach.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Unused.h"
@@ -84,7 +84,7 @@ ThirdPartyUtil* ThirdPartyUtil::GetInstance() {
     return gService;
   }
   nsCOMPtr<mozIThirdPartyUtil> tpuService =
-      mozilla::services::GetThirdPartyUtil();
+      mozilla::components::ThirdPartyUtil::Service();
   if (!tpuService) {
     return nullptr;
   }

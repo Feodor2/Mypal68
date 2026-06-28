@@ -355,13 +355,7 @@ static already_AddRefed<layers::Image> CreateImageFromRawData(
               bgraDataSurface->GetSize());
 
   // Create an Image from the BGRA SourceSurface.
-  RefPtr<layers::Image> image = CreateImageFromSurface(bgraDataSurface);
-
-  if (NS_WARN_IF(!image)) {
-    return nullptr;
-  }
-
-  return image.forget();
+  return CreateImageFromSurface(bgraDataSurface);
 }
 
 /*
@@ -706,12 +700,6 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
 
   // Create ImageBitmap.
   RefPtr<layers::Image> data = CreateImageFromSurface(surface);
-
-  if (NS_WARN_IF(!data)) {
-    aRv.Throw(NS_ERROR_NOT_AVAILABLE);
-    return nullptr;
-  }
-
   RefPtr<ImageBitmap> ret = new ImageBitmap(aGlobal, data, writeOnly);
 
   // Set the picture rectangle.
@@ -739,12 +727,6 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
 
   // Create ImageBitmap.
   RefPtr<layers::Image> data = CreateImageFromSurface(surface);
-
-  if (NS_WARN_IF(!data)) {
-    aRv.Throw(NS_ERROR_NOT_AVAILABLE);
-    return nullptr;
-  }
-
   RefPtr<ImageBitmap> ret = new ImageBitmap(aGlobal, data, writeOnly);
 
   // Set the picture rectangle.
@@ -848,12 +830,6 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
 
   // Create an Image from the SourceSurface.
   RefPtr<layers::Image> data = CreateImageFromSurface(croppedSurface);
-
-  if (NS_WARN_IF(!data)) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
-    return nullptr;
-  }
-
   RefPtr<ImageBitmap> ret = new ImageBitmap(aGlobal, data, writeOnly);
 
   if (needToReportMemoryAllocation) {
@@ -957,12 +933,6 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
   }
 
   RefPtr<layers::Image> data = CreateImageFromSurface(surface);
-
-  if (NS_WARN_IF(!data)) {
-    aRv.Throw(NS_ERROR_NOT_AVAILABLE);
-    return nullptr;
-  }
-
   RefPtr<ImageBitmap> ret = new ImageBitmap(aGlobal, data, writeOnly);
 
   ret->mAllocatedImageData = true;

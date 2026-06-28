@@ -33,7 +33,9 @@ interface MIDIPort : EventTarget {
   readonly attribute MIDIPortDeviceState state;
   readonly attribute MIDIPortConnectionState connection;
            attribute EventHandler onstatechange;
+  [Throws]
   Promise<MIDIPort> open();
+  [Throws]
   Promise<MIDIPort> close();
 };
 

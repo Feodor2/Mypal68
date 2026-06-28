@@ -1,3 +1,11 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/.
+ *
+ * The origin of this IDL file is
+ * https://streams.spec.whatwg.org/#rs-class-definition
+ */
+
 [Exposed=*,
 //Transferable See Bug 1562065
 ]
@@ -7,29 +15,33 @@ interface ReadableStream {
 
   readonly attribute boolean locked;
 
-  [Throws]
-  Promise<void> cancel(optional any reason);
+  [NewObject]
+  Promise<undefined> cancel(optional any reason);
 
   [Throws]
   ReadableStreamReader getReader(optional ReadableStreamGetReaderOptions options = {});
 
-  [Pref="dom.streams.transform_streams.enabled", Throws]
+  [Throws]
   ReadableStream pipeThrough(ReadableWritablePair transform, optional StreamPipeOptions options = {});
 
-  [Pref="dom.streams.pipeTo.enabled", Throws]
-  Promise<void> pipeTo(WritableStream destination, optional StreamPipeOptions options = {});
+  [NewObject]
+  Promise<undefined> pipeTo(WritableStream destination, optional StreamPipeOptions options = {});
 
   [Throws]
   sequence<ReadableStream> tee();
 
-  // Bug 1734244
-  // async iterable<any>(optional ReadableStreamIteratorOptions options = {});
+  [GenerateReturnMethod]
+  async iterable<any>(optional ReadableStreamIteratorOptions options = {});
 };
 
 enum ReadableStreamReaderMode { "byob" };
 
 dictionary ReadableStreamGetReaderOptions {
   ReadableStreamReaderMode mode;
+};
+
+dictionary ReadableStreamIteratorOptions {
+  boolean preventCancel = false;
 };
 
 dictionary ReadableWritablePair {

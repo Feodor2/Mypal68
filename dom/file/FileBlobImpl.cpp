@@ -108,7 +108,7 @@ FileBlobImpl::FileBlobImpl(const FileBlobImpl* aOther, uint64_t aStart,
 
 already_AddRefed<BlobImpl> FileBlobImpl::CreateSlice(
     uint64_t aStart, uint64_t aLength, const nsAString& aContentType,
-    ErrorResult& aRv) {
+    ErrorResult& aRv) const {
   RefPtr<FileBlobImpl> impl =
       new FileBlobImpl(this, aStart, aLength, aContentType);
   return impl.forget();
@@ -269,7 +269,7 @@ const uint32_t sFileStreamFlags =
     nsIFileInputStream::DEFER_OPEN | nsIFileInputStream::SHARE_DELETE;
 
 void FileBlobImpl::CreateInputStream(nsIInputStream** aStream,
-                                     ErrorResult& aRv) {
+                                     ErrorResult& aRv) const {
   nsCOMPtr<nsIInputStream> stream;
   aRv = NS_NewLocalFileInputStream(getter_AddRefs(stream), mFile, -1, -1,
                                    sFileStreamFlags);

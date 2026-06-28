@@ -245,11 +245,11 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PromiseRejectionEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "PushManager", insecureContext: true, fennec: true },
+  { name: "PushManager", insecureContext: true, fennecOrDesktop: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "PushSubscription", insecureContext: true, fennec: true },
+  { name: "PushSubscription", insecureContext: true, fennecOrDesktop: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "PushSubscriptionOptions", insecureContext: true, fennec: true },
+  { name: "PushSubscriptionOptions", insecureContext: true, fennecOrDesktop: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "ReadableStream", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -261,7 +261,7 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Response", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "ServiceWorkerRegistration", insecureContext: true, fennec: true },
+  { name: "ServiceWorkerRegistration", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "StorageManager", fennec: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!

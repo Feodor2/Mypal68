@@ -18,7 +18,6 @@
 #include "mozilla/dom/MessageEvent.h"
 #include "mozilla/dom/MessageEventBinding.h"
 #include "mozilla/dom/Navigator.h"
-#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/ServiceWorker.h"
@@ -33,8 +32,7 @@
 
 #include "mozilla/ipc/BackgroundUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 using mozilla::dom::ipc::StructuredCloneData;
 using mozilla::ipc::CSPInfo;
@@ -746,5 +744,4 @@ bool ClientSource::CalledRegisterForServiceWorkerScope(
   return mRegisteringScopeList.Contains(aScope);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

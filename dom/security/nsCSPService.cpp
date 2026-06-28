@@ -18,6 +18,7 @@
 #include "nsContentUtils.h"
 #include "nsContentPolicyUtils.h"
 #include "nsNetUtil.h"
+#include "nsIProtocolHandler.h"
 
 using namespace mozilla;
 

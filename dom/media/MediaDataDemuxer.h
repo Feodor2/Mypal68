@@ -64,10 +64,6 @@ class MediaDataDemuxer : public DecoderDoctorLifeLogger<MediaDataDemuxer> {
   // ranges.
   virtual bool IsSeekableOnlyInBufferedRanges() const { return false; }
 
-  // Returns the media's crypto information, or nullptr if media isn't
-  // encrypted.
-  virtual UniquePtr<EncryptionInfo> GetCrypto() { return nullptr; }
-
   // Notifies the demuxer that the underlying resource has received more data
   // since the demuxer was initialized.
   // The demuxer can use this mechanism to inform all track demuxers that new

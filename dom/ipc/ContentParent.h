@@ -395,7 +395,7 @@ class ContentParent final
   virtual void OnChannelError() override;
 
   mozilla::ipc::IPCResult RecvInitCrashReporter(
-      Shmem&& aShmem, const NativeThreadId& aThreadId);
+      const NativeThreadId& aThreadId);
 
   PNeckoParent* AllocPNeckoParent();
 
@@ -482,18 +482,17 @@ class ContentParent final
   mozilla::ipc::IPCResult RecvCreateWindow(
       PBrowserParent* aThisBrowserParent, PBrowserParent* aNewTab,
       const uint32_t& aChromeFlags, const bool& aCalledFromJS,
-      const bool& aPositionSpecified, const bool& aSizeSpecified,
-      nsIURI* aURIToLoad, const nsCString& aFeatures,
-      const float& aFullZoom, const IPC::Principal& aTriggeringPrincipal,
+      const bool& aWidthSpecified, nsIURI* aURIToLoad,
+      const nsCString& aFeatures, const float& aFullZoom,
+      const IPC::Principal& aTriggeringPrincipal,
       nsIContentSecurityPolicy* aCsp, nsIReferrerInfo* aReferrerInfo,
       CreateWindowResolver&& aResolve);
 
   mozilla::ipc::IPCResult RecvCreateWindowInDifferentProcess(
       PBrowserParent* aThisTab, const uint32_t& aChromeFlags,
-      const bool& aCalledFromJS, const bool& aPositionSpecified,
-      const bool& aSizeSpecified, nsIURI* aURIToLoad,
-      const nsCString& aFeatures, const float& aFullZoom, const nsString& aName,
-      const IPC::Principal& aTriggeringPrincipal,
+      const bool& aCalledFromJS, const bool& aWidthSpecified,
+      nsIURI* aURIToLoad, const nsCString& aFeatures, const float& aFullZoom,
+      const nsString& aName, nsIPrincipal* aTriggeringPrincipal,
       nsIContentSecurityPolicy* aCsp, nsIReferrerInfo* aReferrerInfo);
 
   static void BroadcastBlobURLRegistration(
@@ -650,9 +649,8 @@ class ContentParent final
   // compatibility with GeckoView.
   mozilla::ipc::IPCResult CommonCreateWindow(
       PBrowserParent* aThisTab, bool aSetOpener, const uint32_t& aChromeFlags,
-      const bool& aCalledFromJS, const bool& aPositionSpecified,
-      const bool& aSizeSpecified, nsIURI* aURIToLoad,
-      const nsCString& aFeatures, const float& aFullZoom,
+      const bool& aCalledFromJS, const bool& aWidthSpecified,
+      nsIURI* aURIToLoad, const nsCString& aFeatures, const float& aFullZoom,
       uint64_t aNextRemoteTabId, const nsString& aName, nsresult& aResult,
       nsCOMPtr<nsIRemoteTab>& aNewBrowserParent, bool* aWindowIsNew,
       int32_t& aOpenLocation, nsIPrincipal* aTriggeringPrincipal,
@@ -690,6 +688,7 @@ class ContentParent final
 
   // Generate a minidump for the child process and one for the main process
   void GeneratePairedMinidump(const char* aReason);
+  void HandleOrphanedMinidump(nsString* aDumpId);
 
   virtual ~ContentParent();
 

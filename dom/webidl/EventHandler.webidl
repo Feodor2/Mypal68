@@ -51,7 +51,6 @@ interface mixin GlobalEventHandlers {
            attribute EventHandler ondurationchange;
            attribute EventHandler onemptied;
            attribute EventHandler onended;
-           [Pref="dom.formdata.event.enabled"]
            attribute EventHandler onformdata;
            attribute EventHandler oninput;
            attribute EventHandler oninvalid;
@@ -79,10 +78,13 @@ interface mixin GlobalEventHandlers {
            attribute EventHandler onreset;
            attribute EventHandler onresize;
            attribute EventHandler onscroll;
+           attribute EventHandler onsecuritypolicyviolation;
            attribute EventHandler onseeked;
            attribute EventHandler onseeking;
            attribute EventHandler onselect;
+           [Pref="dom.menuitem.enabled"]
            attribute EventHandler onshow;
+           attribute EventHandler onslotchange;
            //(Not implemented)attribute EventHandler onsort;
            attribute EventHandler onstalled;
            attribute EventHandler onsubmit;

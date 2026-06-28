@@ -5,12 +5,12 @@
 #if !defined(HLSDemuxer_h_)
 #  define HLSDemuxer_h_
 
-#  include "GeneratedJNINatives.h"
-#  include "GeneratedJNIWrappers.h"
 #  include "MediaCodec.h"
 #  include "MediaDataDemuxer.h"
 #  include "MediaDecoder.h"
 #  include "mozilla/Atomics.h"
+#  include "mozilla/java/GeckoHLSDemuxerWrapperWrappers.h"
+#  include "mozilla/java/GeckoHLSSampleWrappers.h"
 #  include "mozilla/Maybe.h"
 #  include "mozilla/Mutex.h"
 #  include "mozilla/TaskQueue.h"
@@ -41,8 +41,6 @@ class HLSDemuxer final : public MediaDataDemuxer,
       TrackInfo::TrackType aType, uint32_t aTrackNumber) override;
 
   bool IsSeekable() const override;
-
-  UniquePtr<EncryptionInfo> GetCrypto() override;
 
   bool ShouldComputeStartTime() const override { return true; }
 

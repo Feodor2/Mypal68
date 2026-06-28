@@ -20,8 +20,10 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Result.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/ResultVariant.h"
 #include "mozilla/Unused.h"
 #include "mozilla/fallible.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
 #include "nsCOMPtr.h"
 #include "nsLiteralString.h"
 #include "nsString.h"
@@ -43,7 +45,7 @@ TEST(QuotaCommon_Try, Success)
   bool tryDidNotReturn = false;
 
   nsresult rv = [&tryDidNotReturn]() -> nsresult {
-    QM_TRY(NS_OK);
+    QM_TRY(MOZ_TO_RESULT(NS_OK));
 
     tryDidNotReturn = true;
 
@@ -60,7 +62,7 @@ TEST(QuotaCommon_Try, Success_CustomErr_AssertUnreachable)
   bool tryDidNotReturn = false;
 
   nsresult rv = [&tryDidNotReturn]() -> nsresult {
-    QM_TRY(NS_OK, QM_ASSERT_UNREACHABLE);
+    QM_TRY(MOZ_TO_RESULT(NS_OK), QM_ASSERT_UNREACHABLE);
 
     tryDidNotReturn = true;
 
@@ -76,7 +78,7 @@ TEST(QuotaCommon_Try, Success_NoErr_AssertUnreachable)
   bool tryDidNotReturn = false;
 
   [&tryDidNotReturn]() -> void {
-    QM_TRY(NS_OK, QM_ASSERT_UNREACHABLE_VOID);
+    QM_TRY(MOZ_TO_RESULT(NS_OK), QM_ASSERT_UNREACHABLE_VOID);
 
     tryDidNotReturn = true;
   }();
@@ -95,7 +97,7 @@ TEST(QuotaCommon_Try, Success_CustomErr_DiagnosticAssertUnreachable)
   bool tryDidNotReturn = false;
 
   nsresult rv = [&tryDidNotReturn]() -> nsresult {
-    QM_TRY(NS_OK, QM_DIAGNOSTIC_ASSERT_UNREACHABLE);
+    QM_TRY(MOZ_TO_RESULT(NS_OK), QM_DIAGNOSTIC_ASSERT_UNREACHABLE);
 
     tryDidNotReturn = true;
 
@@ -111,7 +113,7 @@ TEST(QuotaCommon_Try, Success_NoErr_DiagnosticAssertUnreachable)
   bool tryDidNotReturn = false;
 
   [&tryDidNotReturn]() -> void {
-    QM_TRY(NS_OK, QM_DIAGNOSTIC_ASSERT_UNREACHABLE_VOID);
+    QM_TRY(MOZ_TO_RESULT(NS_OK), QM_DIAGNOSTIC_ASSERT_UNREACHABLE_VOID);
 
     tryDidNotReturn = true;
   }();
@@ -131,7 +133,7 @@ TEST(QuotaCommon_Try, Success_WithCleanup)
   bool tryDidNotReturn = false;
 
   nsresult rv = [&tryCleanupRan, &tryDidNotReturn]() -> nsresult {
-    QM_TRY(NS_OK, QM_PROPAGATE,
+    QM_TRY(MOZ_TO_RESULT(NS_OK), QM_PROPAGATE,
            [&tryCleanupRan](const auto&) { tryCleanupRan = true; });
 
     tryDidNotReturn = true;
@@ -149,7 +151,7 @@ TEST(QuotaCommon_Try, Failure_PropagateErr)
   bool tryDidNotReturn = false;
 
   nsresult rv = [&tryDidNotReturn]() -> nsresult {
-    QM_TRY(NS_ERROR_FAILURE);
+    QM_TRY(MOZ_TO_RESULT(NS_ERROR_FAILURE));
 
     tryDidNotReturn = true;
 
@@ -165,7 +167,7 @@ TEST(QuotaCommon_Try, Failure_CustomErr)
   bool tryDidNotReturn = false;
 
   nsresult rv = [&tryDidNotReturn]() -> nsresult {
-    QM_TRY(NS_ERROR_FAILURE, NS_ERROR_UNEXPECTED);
+    QM_TRY(MOZ_TO_RESULT(NS_ERROR_FAILURE), NS_ERROR_UNEXPECTED);
 
     tryDidNotReturn = true;
 
@@ -181,7 +183,7 @@ TEST(QuotaCommon_Try, Failure_NoErr)
   bool tryDidNotReturn = false;
 
   [&tryDidNotReturn]() -> void {
-    QM_TRY(NS_ERROR_FAILURE, QM_VOID);
+    QM_TRY(MOZ_TO_RESULT(NS_ERROR_FAILURE), QM_VOID);
 
     tryDidNotReturn = true;
   }();
@@ -195,7 +197,7 @@ TEST(QuotaCommon_Try, Failure_WithCleanup)
   bool tryDidNotReturn = false;
 
   nsresult rv = [&tryCleanupRan, &tryDidNotReturn]() -> nsresult {
-    QM_TRY(NS_ERROR_FAILURE, QM_PROPAGATE,
+    QM_TRY(MOZ_TO_RESULT(NS_ERROR_FAILURE), QM_PROPAGATE,
            [&tryCleanupRan](const auto& result) {
              EXPECT_EQ(result, NS_ERROR_FAILURE);
 
@@ -220,7 +222,8 @@ TEST(QuotaCommon_Try, Failure_WithCleanup_UnwrapErr)
   nsresult rv;
 
   [&tryCleanupRan, &tryDidNotReturn](nsresult& aRv) -> void {
-    QM_TRY(NS_ERROR_FAILURE, QM_VOID, ([&tryCleanupRan, &aRv](auto& result) {
+    QM_TRY(MOZ_TO_RESULT(NS_ERROR_FAILURE), QM_VOID,
+           ([&tryCleanupRan, &aRv](auto& result) {
              EXPECT_EQ(result, NS_ERROR_FAILURE);
 
              aRv = result;
@@ -241,7 +244,7 @@ TEST(QuotaCommon_Try, Failure_WithCleanup_UnwrapErr)
 TEST(QuotaCommon_Try, SameLine)
 {
   // clang-format off
-  QM_TRY(NS_OK, QM_VOID); QM_TRY(NS_OK, QM_VOID);
+  QM_TRY(MOZ_TO_RESULT(NS_OK), QM_VOID); QM_TRY(MOZ_TO_RESULT(NS_OK), QM_VOID);
   // clang-format on
 }
 
@@ -252,7 +255,7 @@ TEST(QuotaCommon_Try, NestingMadness_Success)
 
   nsresult rv = [&nestedTryDidNotReturn, &tryDidNotReturn]() -> nsresult {
     QM_TRY(([&nestedTryDidNotReturn]() -> Result<Ok, nsresult> {
-      QM_TRY(NS_OK);
+      QM_TRY(MOZ_TO_RESULT(NS_OK));
 
       nestedTryDidNotReturn = true;
 
@@ -276,7 +279,7 @@ TEST(QuotaCommon_Try, NestingMadness_Failure)
 
   nsresult rv = [&nestedTryDidNotReturn, &tryDidNotReturn]() -> nsresult {
     QM_TRY(([&nestedTryDidNotReturn]() -> Result<Ok, nsresult> {
-      QM_TRY(NS_ERROR_FAILURE);
+      QM_TRY(MOZ_TO_RESULT(NS_ERROR_FAILURE));
 
       nestedTryDidNotReturn = true;
 
@@ -303,11 +306,11 @@ TEST(QuotaCommon_Try, NestingMadness_Multiple_Success)
                  &tryDidNotReturn]() -> nsresult {
     QM_TRY(([&nestedTry1DidNotReturn,
              &nestedTry2DidNotReturn]() -> Result<Ok, nsresult> {
-      QM_TRY(NS_OK);
+      QM_TRY(MOZ_TO_RESULT(NS_OK));
 
       nestedTry1DidNotReturn = true;
 
-      QM_TRY(NS_OK);
+      QM_TRY(MOZ_TO_RESULT(NS_OK));
 
       nestedTry2DidNotReturn = true;
 
@@ -335,11 +338,11 @@ TEST(QuotaCommon_Try, NestingMadness_Multiple_Failure1)
                  &tryDidNotReturn]() -> nsresult {
     QM_TRY(([&nestedTry1DidNotReturn,
              &nestedTry2DidNotReturn]() -> Result<Ok, nsresult> {
-      QM_TRY(NS_ERROR_FAILURE);
+      QM_TRY(MOZ_TO_RESULT(NS_ERROR_FAILURE));
 
       nestedTry1DidNotReturn = true;
 
-      QM_TRY(NS_OK);
+      QM_TRY(MOZ_TO_RESULT(NS_OK));
 
       nestedTry2DidNotReturn = true;
 
@@ -367,11 +370,11 @@ TEST(QuotaCommon_Try, NestingMadness_Multiple_Failure2)
                  &tryDidNotReturn]() -> nsresult {
     QM_TRY(([&nestedTry1DidNotReturn,
              &nestedTry2DidNotReturn]() -> Result<Ok, nsresult> {
-      QM_TRY(NS_OK);
+      QM_TRY(MOZ_TO_RESULT(NS_OK));
 
       nestedTry1DidNotReturn = true;
 
-      QM_TRY(NS_ERROR_FAILURE);
+      QM_TRY(MOZ_TO_RESULT(NS_ERROR_FAILURE));
 
       nestedTry2DidNotReturn = true;
 
@@ -816,7 +819,7 @@ TEST(QuotaCommon_TryReturn, Success_nsresult)
   bool tryReturnDidNotReturn = false;
 
   auto res = [&tryReturnDidNotReturn] {
-    QM_TRY_RETURN(NS_OK);
+    QM_TRY_RETURN(MOZ_TO_RESULT(NS_OK));
 
     tryReturnDidNotReturn = true;
   }();
@@ -882,7 +885,7 @@ TEST(QuotaCommon_TryReturn, Failure_PropagateErr_nsresult)
   bool tryReturnDidNotReturn = false;
 
   auto res = [&tryReturnDidNotReturn] {
-    QM_TRY_RETURN(NS_ERROR_FAILURE);
+    QM_TRY_RETURN(MOZ_TO_RESULT(NS_ERROR_FAILURE));
 
     tryReturnDidNotReturn = true;
   }();
@@ -1178,12 +1181,12 @@ TEST(QuotaCommon_WarnOnlyTryUnwrap, Failure_WithCleanup)
 
 TEST(QuotaCommon_OrElseWarn, Success)
 {
-  bool orElseWarnRun = false;
+  bool fallbackRun = false;
   bool tryContinued = false;
 
   const auto res = [&]() -> mozilla::Result<mozilla::Ok, NotOk> {
-    QM_TRY(QM_OR_ELSE_WARN(OkIf(true), ([&orElseWarnRun](const NotOk) {
-                             orElseWarnRun = true;
+    QM_TRY(QM_OR_ELSE_WARN(OkIf(true), ([&fallbackRun](const NotOk) {
+                             fallbackRun = true;
                              return mozilla::Result<mozilla::Ok, NotOk>{
                                  mozilla::Ok{}};
                            })));
@@ -1193,20 +1196,20 @@ TEST(QuotaCommon_OrElseWarn, Success)
   }();
 
   EXPECT_TRUE(res.isOk());
-  EXPECT_FALSE(orElseWarnRun);
+  EXPECT_FALSE(fallbackRun);
   EXPECT_TRUE(tryContinued);
 }
 
 TEST(QuotaCommon_OrElseWarn, Failure_MappedToSuccess)
 {
-  bool orElseWarnRun = false;
+  bool fallbackRun = false;
   bool tryContinued = false;
 
   // XXX Consider allowing to set a custom error handler, so that we can
   // actually assert that a warning was emitted.
   const auto res = [&]() -> mozilla::Result<mozilla::Ok, NotOk> {
-    QM_TRY(QM_OR_ELSE_WARN(OkIf(false), ([&orElseWarnRun](const NotOk) {
-                             orElseWarnRun = true;
+    QM_TRY(QM_OR_ELSE_WARN(OkIf(false), ([&fallbackRun](const NotOk) {
+                             fallbackRun = true;
                              return mozilla::Result<mozilla::Ok, NotOk>{
                                  mozilla::Ok{}};
                            })));
@@ -1215,20 +1218,20 @@ TEST(QuotaCommon_OrElseWarn, Failure_MappedToSuccess)
   }();
 
   EXPECT_TRUE(res.isOk());
-  EXPECT_TRUE(orElseWarnRun);
+  EXPECT_TRUE(fallbackRun);
   EXPECT_TRUE(tryContinued);
 }
 
 TEST(QuotaCommon_OrElseWarn, Failure_MappedToError)
 {
-  bool orElseWarnRun = false;
+  bool fallbackRun = false;
   bool tryContinued = false;
 
   // XXX Consider allowing to set a custom error handler, so that we can
   // actually assert that a warning was emitted.
   const auto res = [&]() -> mozilla::Result<mozilla::Ok, NotOk> {
-    QM_TRY(QM_OR_ELSE_WARN(OkIf(false), ([&orElseWarnRun](const NotOk) {
-                             orElseWarnRun = true;
+    QM_TRY(QM_OR_ELSE_WARN(OkIf(false), ([&fallbackRun](const NotOk) {
+                             fallbackRun = true;
                              return mozilla::Result<mozilla::Ok, NotOk>{
                                  NotOk{}};
                            })));
@@ -1237,7 +1240,119 @@ TEST(QuotaCommon_OrElseWarn, Failure_MappedToError)
   }();
 
   EXPECT_TRUE(res.isErr());
-  EXPECT_TRUE(orElseWarnRun);
+  EXPECT_TRUE(fallbackRun);
+  EXPECT_FALSE(tryContinued);
+}
+
+TEST(QuotaCommon_OrElseWarnIf, Success)
+{
+  bool predicateRun = false;
+  bool fallbackRun = false;
+  bool tryContinued = false;
+
+  const auto res = [&]() -> mozilla::Result<mozilla::Ok, NotOk> {
+    QM_TRY(QM_OR_ELSE_WARN_IF(
+        OkIf(true),
+        [&predicateRun](const NotOk) {
+          predicateRun = true;
+          return false;
+        },
+        ([&fallbackRun](const NotOk) {
+          fallbackRun = true;
+          return mozilla::Result<mozilla::Ok, NotOk>{mozilla::Ok{}};
+        })));
+
+    tryContinued = true;
+    return mozilla::Ok{};
+  }();
+
+  EXPECT_TRUE(res.isOk());
+  EXPECT_FALSE(predicateRun);
+  EXPECT_FALSE(fallbackRun);
+  EXPECT_TRUE(tryContinued);
+}
+
+TEST(QuotaCommon_OrElseWarnIf, Failure_PredicateReturnsFalse)
+{
+  bool predicateRun = false;
+  bool fallbackRun = false;
+  bool tryContinued = false;
+
+  const auto res = [&]() -> mozilla::Result<mozilla::Ok, NotOk> {
+    QM_TRY(QM_OR_ELSE_WARN_IF(
+        OkIf(false),
+        [&predicateRun](const NotOk) {
+          predicateRun = true;
+          return false;
+        },
+        ([&fallbackRun](const NotOk) {
+          fallbackRun = true;
+          return mozilla::Result<mozilla::Ok, NotOk>{mozilla::Ok{}};
+        })));
+
+    tryContinued = true;
+    return mozilla::Ok{};
+  }();
+
+  EXPECT_TRUE(res.isErr());
+  EXPECT_TRUE(predicateRun);
+  EXPECT_FALSE(fallbackRun);
+  EXPECT_FALSE(tryContinued);
+}
+
+TEST(QuotaCommon_OrElseWarnIf, Failure_PredicateReturnsTrue_MappedToSuccess)
+{
+  bool predicateRun = false;
+  bool fallbackRun = false;
+  bool tryContinued = false;
+
+  const auto res = [&]() -> mozilla::Result<mozilla::Ok, NotOk> {
+    QM_TRY(QM_OR_ELSE_WARN_IF(
+        OkIf(false),
+        [&predicateRun](const NotOk) {
+          predicateRun = true;
+          return true;
+        },
+        ([&fallbackRun](const NotOk) {
+          fallbackRun = true;
+          return mozilla::Result<mozilla::Ok, NotOk>{mozilla::Ok{}};
+        })));
+
+    tryContinued = true;
+    return mozilla::Ok{};
+  }();
+
+  EXPECT_TRUE(res.isOk());
+  EXPECT_TRUE(predicateRun);
+  EXPECT_TRUE(fallbackRun);
+  EXPECT_TRUE(tryContinued);
+}
+
+TEST(QuotaCommon_OrElseWarnIf, Failure_PredicateReturnsTrue_MappedToError)
+{
+  bool predicateRun = false;
+  bool fallbackRun = false;
+  bool tryContinued = false;
+
+  const auto res = [&]() -> mozilla::Result<mozilla::Ok, NotOk> {
+    QM_TRY(QM_OR_ELSE_WARN_IF(
+        OkIf(false),
+        [&predicateRun](const NotOk) {
+          predicateRun = true;
+          return true;
+        },
+        ([&fallbackRun](const NotOk) {
+          fallbackRun = true;
+          return mozilla::Result<mozilla::Ok, NotOk>{mozilla::NotOk{}};
+        })));
+
+    tryContinued = true;
+    return mozilla::Ok{};
+  }();
+
+  EXPECT_TRUE(res.isErr());
+  EXPECT_TRUE(predicateRun);
+  EXPECT_TRUE(fallbackRun);
   EXPECT_FALSE(tryContinued);
 }
 
@@ -1363,6 +1478,53 @@ TEST(QuotaCommon_ErrToDefaultOkOrErr, NsCOMPtr_Err)
   EXPECT_EQ(res.unwrapErr(), NS_ERROR_UNEXPECTED);
 }
 
+TEST(QuotaCommon_IsSpecificError, Match)
+{ EXPECT_TRUE(IsSpecificError<NS_ERROR_FAILURE>(NS_ERROR_FAILURE)); }
+
+TEST(QuotaCommon_IsSpecificError, Mismatch)
+{ EXPECT_FALSE(IsSpecificError<NS_ERROR_FAILURE>(NS_ERROR_UNEXPECTED)); }
+
+TEST(QuotaCommon_ErrToOk, Bool_True)
+{
+  auto res = ErrToOk<true>(NS_ERROR_FAILURE);
+  EXPECT_TRUE(res.isOk());
+  EXPECT_EQ(res.unwrap(), true);
+}
+
+TEST(QuotaCommon_ErrToOk, Bool_False)
+{
+  auto res = ErrToOk<false>(NS_ERROR_FAILURE);
+  EXPECT_TRUE(res.isOk());
+  EXPECT_EQ(res.unwrap(), false);
+}
+
+TEST(QuotaCommon_ErrToOk, Int_42)
+{
+  auto res = ErrToOk<42>(NS_ERROR_FAILURE);
+  EXPECT_TRUE(res.isOk());
+  EXPECT_EQ(res.unwrap(), 42);
+}
+
+TEST(QuotaCommon_ErrToOk, NsCOMPtr_nullptr)
+{
+  auto res = ErrToOk<nullptr, nsCOMPtr<nsISupports>>(NS_ERROR_FAILURE);
+  EXPECT_TRUE(res.isOk());
+  EXPECT_EQ(res.unwrap(), nullptr);
+}
+
+TEST(QuotaCommon_ErrToDefaultOk, Ok)
+{
+  auto res = ErrToDefaultOk<Ok>(NS_ERROR_FAILURE);
+  EXPECT_TRUE(res.isOk());
+}
+
+TEST(QuotaCommon_ErrToDefaultOk, NsCOMPtr)
+{
+  auto res = ErrToDefaultOk<nsCOMPtr<nsISupports>>(NS_ERROR_FAILURE);
+  EXPECT_TRUE(res.isOk());
+  EXPECT_EQ(res.unwrap(), nullptr);
+}
+
 class StringPairParameterized
     : public ::testing::TestWithParam<std::pair<const char*, const char*>> {};
 
@@ -1381,62 +1543,6 @@ INSTANTIATE_TEST_CASE_P(
         std::pair("https://foo.bar.com:8000", "https://aaa.aaa.aaa:DDDD"),
         std::pair("file://UNIVERSAL_FILE_ORIGIN",
                   "file://aaaaaaaaa_aaaa_aaaaaa")));
-
-TEST(QuotaCommon_ToResultGet, Lambda_NoInput)
-{
-  auto res = ToResultGet<int32_t>([](nsresult* aRv) -> int32_t {
-    *aRv = NS_OK;
-    return 42;
-  });
-
-  static_assert(std::is_same_v<decltype(res), Result<int32_t, nsresult>>);
-
-  EXPECT_TRUE(res.isOk());
-  EXPECT_EQ(res.unwrap(), 42);
-}
-
-TEST(QuotaCommon_ToResultGet, Lambda_NoInput_Err)
-{
-  auto res = ToResultGet<int32_t>([](nsresult* aRv) -> int32_t {
-    *aRv = NS_ERROR_FAILURE;
-    return -1;
-  });
-
-  static_assert(std::is_same_v<decltype(res), Result<int32_t, nsresult>>);
-
-  EXPECT_TRUE(res.isErr());
-  EXPECT_EQ(res.unwrapErr(), NS_ERROR_FAILURE);
-}
-
-TEST(QuotaCommon_ToResultGet, Lambda_WithInput)
-{
-  auto res = ToResultGet<int32_t>(
-      [](int32_t aValue, nsresult* aRv) -> int32_t {
-        *aRv = NS_OK;
-        return aValue * 2;
-      },
-      42);
-
-  static_assert(std::is_same_v<decltype(res), Result<int32_t, nsresult>>);
-
-  EXPECT_TRUE(res.isOk());
-  EXPECT_EQ(res.unwrap(), 84);
-}
-
-TEST(QuotaCommon_ToResultGet, Lambda_WithInput_Err)
-{
-  auto res = ToResultGet<int32_t>(
-      [](int32_t aValue, nsresult* aRv) -> int32_t {
-        *aRv = NS_ERROR_FAILURE;
-        return -1;
-      },
-      42);
-
-  static_assert(std::is_same_v<decltype(res), Result<int32_t, nsresult>>);
-
-  EXPECT_TRUE(res.isErr());
-  EXPECT_EQ(res.unwrapErr(), NS_ERROR_FAILURE);
-}
 
 // BEGIN COPY FROM mfbt/tests/TestResult.cpp
 struct Failed {};
@@ -1652,60 +1758,6 @@ TEST(QuotaCommon_Reduce, Success)
 
   MOZ_RELEASE_ASSERT(result.isOk());
   MOZ_RELEASE_ASSERT(15 == result.inspect());
-}
-
-TEST(QuotaCommon_ScopedLogExtraInfo, AddAndRemove)
-{
-  static constexpr auto text = "foo"_ns;
-
-  {
-    const auto extraInfo =
-        ScopedLogExtraInfo{ScopedLogExtraInfo::kTagQuery, text};
-
-#ifdef QM_ENABLE_SCOPED_LOG_EXTRA_INFO
-    const auto& extraInfoMap = ScopedLogExtraInfo::GetExtraInfoMap();
-
-    EXPECT_EQ(text, *extraInfoMap.at(ScopedLogExtraInfo::kTagQuery));
-#endif
-  }
-
-#ifdef QM_ENABLE_SCOPED_LOG_EXTRA_INFO
-  const auto& extraInfoMap = ScopedLogExtraInfo::GetExtraInfoMap();
-
-  EXPECT_EQ(0u, extraInfoMap.count(ScopedLogExtraInfo::kTagQuery));
-#endif
-}
-
-TEST(QuotaCommon_ScopedLogExtraInfo, Nested)
-{
-  static constexpr auto text = "foo"_ns;
-  static constexpr auto nestedText = "bar"_ns;
-
-  {
-    const auto extraInfo =
-        ScopedLogExtraInfo{ScopedLogExtraInfo::kTagQuery, text};
-
-    {
-      const auto extraInfo =
-          ScopedLogExtraInfo{ScopedLogExtraInfo::kTagQuery, nestedText};
-
-#ifdef QM_ENABLE_SCOPED_LOG_EXTRA_INFO
-      const auto& extraInfoMap = ScopedLogExtraInfo::GetExtraInfoMap();
-      EXPECT_EQ(nestedText, *extraInfoMap.at(ScopedLogExtraInfo::kTagQuery));
-#endif
-    }
-
-#ifdef QM_ENABLE_SCOPED_LOG_EXTRA_INFO
-    const auto& extraInfoMap = ScopedLogExtraInfo::GetExtraInfoMap();
-    EXPECT_EQ(text, *extraInfoMap.at(ScopedLogExtraInfo::kTagQuery));
-#endif
-  }
-
-#ifdef QM_ENABLE_SCOPED_LOG_EXTRA_INFO
-  const auto& extraInfoMap = ScopedLogExtraInfo::GetExtraInfoMap();
-
-  EXPECT_EQ(0u, extraInfoMap.count(ScopedLogExtraInfo::kTagQuery));
-#endif
 }
 
 TEST(QuotaCommon_CallWithDelayedRetriesIfAccessDenied, NoFailures)

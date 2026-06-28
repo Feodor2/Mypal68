@@ -8,30 +8,27 @@
 
 enum ResizeObserverBoxOptions {
     "border-box",
-    "content-box"
+    "content-box",
+    "device-pixel-content-box"
 };
 
 dictionary ResizeObserverOptions {
     ResizeObserverBoxOptions box = "content-box";
 };
 
-[Exposed=Window,
- Pref="layout.css.resizeobserver.enabled"]
+[Exposed=Window]
 interface ResizeObserver {
     [Throws]
     constructor(ResizeObserverCallback callback);
 
-    [Throws]
-    void observe(Element target, optional ResizeObserverOptions options = {});
-    [Throws]
-    void unobserve(Element target);
-    void disconnect();
+    undefined observe(Element target, optional ResizeObserverOptions options = {});
+    undefined unobserve(Element target);
+    undefined disconnect();
 };
 
-callback ResizeObserverCallback = void (sequence<ResizeObserverEntry> entries, ResizeObserver observer);
+callback ResizeObserverCallback = undefined (sequence<ResizeObserverEntry> entries, ResizeObserver observer);
 
-[Pref="layout.css.resizeobserver.enabled",
- Exposed=Window]
+[Exposed=Window]
 interface ResizeObserverEntry {
     readonly attribute Element target;
     readonly attribute DOMRectReadOnly contentRect;
@@ -41,10 +38,11 @@ interface ResizeObserverEntry {
     readonly attribute sequence<ResizeObserverSize> borderBoxSize;
     [Frozen, Cached, Pure]
     readonly attribute sequence<ResizeObserverSize> contentBoxSize;
+    [Frozen, Cached, Pure]
+    readonly attribute sequence<ResizeObserverSize> devicePixelContentBoxSize;
 };
 
-[Pref="layout.css.resizeobserver.enabled",
- Exposed=Window]
+[Exposed=Window]
 interface ResizeObserverSize {
     readonly attribute unrestricted double inlineSize;
     readonly attribute unrestricted double blockSize;

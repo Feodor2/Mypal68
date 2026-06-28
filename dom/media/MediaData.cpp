@@ -116,8 +116,10 @@ void AudioData::EnsureAudioBuffer() {
     return;
   }
   const AudioDataValue* srcData = GetAdjustedData();
-  mAudioBuffer =
-      SharedBuffer::Create(mFrames * mChannels * sizeof(AudioDataValue));
+  CheckedInt<size_t> bufferSize(sizeof(AudioDataValue));
+  bufferSize *= mFrames;
+  bufferSize *= mChannels;
+  mAudioBuffer = SharedBuffer::Create(bufferSize);
 
   AudioDataValue* destData = static_cast<AudioDataValue*>(mAudioBuffer->Data());
   for (uint32_t i = 0; i < mFrames; ++i) {
@@ -443,17 +445,15 @@ already_AddRefed<VideoData> VideoData::CreateFromImage(
 }
 
 MediaRawData::MediaRawData()
-    : MediaData(Type::RAW_DATA), mCrypto(mCryptoInternal) {}
+    : MediaData(Type::RAW_DATA) {}
 
 MediaRawData::MediaRawData(const uint8_t* aData, size_t aSize)
     : MediaData(Type::RAW_DATA),
-      mCrypto(mCryptoInternal),
       mBuffer(aData, aSize) {}
 
 MediaRawData::MediaRawData(const uint8_t* aData, size_t aSize,
                            const uint8_t* aAlphaData, size_t aAlphaSize)
     : MediaData(Type::RAW_DATA),
-      mCrypto(mCryptoInternal),
       mBuffer(aData, aSize),
       mAlphaBuffer(aAlphaData, aAlphaSize) {}
 
@@ -465,7 +465,6 @@ already_AddRefed<MediaRawData> MediaRawData::Clone() const {
   s->mOffset = mOffset;
   s->mKeyframe = mKeyframe;
   s->mExtraData = mExtraData;
-  s->mCryptoInternal = mCryptoInternal;
   s->mTrackInfo = mTrackInfo;
   s->mEOS = mEOS;
   s->mOriginalPresentationWindow = mOriginalPresentationWindow;
@@ -492,7 +491,7 @@ UniquePtr<MediaRawDataWriter> MediaRawData::CreateWriter() {
 }
 
 MediaRawDataWriter::MediaRawDataWriter(MediaRawData* aMediaRawData)
-    : mCrypto(aMediaRawData->mCryptoInternal), mTarget(aMediaRawData) {}
+    : mTarget(aMediaRawData) {}
 
 bool MediaRawDataWriter::SetSize(size_t aSize) {
   return mTarget->mBuffer.SetLength(aSize);

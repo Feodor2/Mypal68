@@ -101,7 +101,7 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
   WorkerLoadInfo loadInfo;
   aRv = WorkerPrivate::GetLoadInfo(cx, window, nullptr, aScriptURL, false,
                                    WorkerPrivate::OverrideLoadGroup,
-                                   WorkerTypeShared, &loadInfo);
+                                   WorkerKindShared, &loadInfo);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }

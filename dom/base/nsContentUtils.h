@@ -108,7 +108,6 @@ class nsIURI;
 class nsIUUIDGenerator;
 class nsIWidget;
 class nsIXPConnect;
-class nsNameSpaceManager;
 class nsNodeInfoManager;
 class nsPIWindowRoot;
 class nsPresContext;
@@ -177,7 +176,6 @@ class HTMLInputElement;
 class IPCDataTransfer;
 class IPCDataTransferItem;
 struct LifecycleCallbackArgs;
-struct LifecycleAdoptedCallbackArgs;
 class MessageBroadcaster;
 class NodeInfo;
 class Selection;
@@ -671,7 +669,12 @@ class nsContentUtils {
   enum ParseHTMLIntegerResultFlags {
     eParseHTMLInteger_NoFlags = 0,
     // eParseHTMLInteger_NonStandard is set if the string representation of the
-    // integer was not the canonical one (e.g. had extra leading '+' or '0').
+    // integer was not the canonical one, but matches at least one of the
+    // following:
+    //   * had leading whitespaces
+    //   * had '+' sign
+    //   * had leading '0'
+    //   * was '-0'
     eParseHTMLInteger_NonStandard = 1 << 0,
     eParseHTMLInteger_DidNotConsumeAllInput = 1 << 1,
     // Set if one or more error flags were set.
@@ -683,7 +686,15 @@ class nsContentUtils {
   };
   static int32_t ParseHTMLInteger(const nsAString& aValue,
                                   ParseHTMLIntegerResultFlags* aResult);
+  static int32_t ParseHTMLInteger(const nsACString& aValue,
+                                  ParseHTMLIntegerResultFlags* aResult);
 
+ private:
+  template <class StringT>
+  static int32_t ParseHTMLIntegerImpl(const StringT& aValue,
+                                      ParseHTMLIntegerResultFlags* aResult);
+
+ public:
   /**
    * Parse a margin string of format 'top, right, bottom, left' into
    * an nsIntMargin.
@@ -763,8 +774,6 @@ class nsContentUtils {
   // Check if a node is in the document prolog, i.e. before the document
   // element.
   static bool InProlog(nsINode* aNode);
-
-  static nsNameSpaceManager* NameSpaceManager() { return sNameSpaceManager; }
 
   static nsIIOService* GetIOService() { return sIOService; }
 
@@ -3033,9 +3042,7 @@ class nsContentUtils {
 
   static void EnqueueLifecycleCallback(
       mozilla::dom::ElementCallbackType aType, Element* aCustomElement,
-      mozilla::dom::LifecycleCallbackArgs* aArgs = nullptr,
-      mozilla::dom::LifecycleAdoptedCallbackArgs* aAdoptedCallbackArgs =
-          nullptr,
+      const mozilla::dom::LifecycleCallbackArgs& aArgs,
       mozilla::dom::CustomElementDefinition* aDefinition = nullptr);
 
   static bool AttemptLargeAllocationLoad(nsIHttpChannel* aChannel);
@@ -3296,8 +3303,6 @@ class nsContentUtils {
   static nsIScriptSecurityManager* sSecurityManager;
   static nsIPrincipal* sSystemPrincipal;
   static nsIPrincipal* sNullSubjectPrincipal;
-
-  static nsNameSpaceManager* sNameSpaceManager;
 
   static nsIIOService* sIOService;
   static nsIUUIDGenerator* sUUIDGenerator;

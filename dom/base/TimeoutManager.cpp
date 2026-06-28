@@ -444,8 +444,9 @@ uint32_t TimeoutManager::GetTimeoutId(Timeout::Reason aReason) {
     case Timeout::Reason::eIdleCallbackTimeout:
       return ++mIdleCallbackTimeoutCounter;
     case Timeout::Reason::eTimeoutOrInterval:
-    default:
       return ++mTimeoutIdCounter;
+    default:
+      return std::numeric_limits<uint32_t>::max();  // no cancellation support
   }
 }
 
@@ -457,7 +458,7 @@ nsresult TimeoutManager::SetTimeout(TimeoutHandler* aHandler, int32_t interval,
   // If we don't have a document (we could have been unloaded since
   // the call to setTimeout was made), do nothing.
   nsCOMPtr<Document> doc = mWindow.GetExtantDoc();
-  if (!doc) {
+  if (!doc || mWindow.IsDying()) {
     return NS_OK;
   }
 
@@ -485,9 +486,13 @@ nsresult TimeoutManager::SetTimeout(TimeoutHandler* aHandler, int32_t interval,
   // No popups from timeouts by default
   timeout->mPopupState = PopupBlocker::openAbused;
 
-  timeout->mNestingLevel = sNestingLevel < DOM_CLAMP_TIMEOUT_NESTING_LEVEL
-                               ? sNestingLevel + 1
-                               : sNestingLevel;
+  // XXX: Does eIdleCallbackTimeout need clamping?
+  if (aReason == Timeout::Reason::eTimeoutOrInterval ||
+      aReason == Timeout::Reason::eIdleCallbackTimeout) {
+    timeout->mNestingLevel = sNestingLevel < DOM_CLAMP_TIMEOUT_NESTING_LEVEL
+                                 ? sNestingLevel + 1
+                                 : sNestingLevel;
+  }
 
   // Now clamp the actual interval we will use for the timer based on
   TimeDuration realInterval = CalculateDelay(timeout);
@@ -553,6 +558,10 @@ void TimeoutManager::ClearTimeout(int32_t aTimerId, Timeout::Reason aReason) {
 bool TimeoutManager::ClearTimeoutInternal(int32_t aTimerId,
                                           Timeout::Reason aReason,
                                           bool aIsIdle) {
+  MOZ_ASSERT(aReason == Timeout::Reason::eTimeoutOrInterval ||
+                 aReason == Timeout::Reason::eIdleCallbackTimeout,
+             "This timeout reason doesn't support cancellation.");
+
   uint32_t timerId = (uint32_t)aTimerId;
   Timeouts& timeouts = aIsIdle ? mIdleTimeouts : mTimeouts;
   RefPtr<TimeoutExecutor>& executor = aIsIdle ? mIdleExecutor : mExecutor;

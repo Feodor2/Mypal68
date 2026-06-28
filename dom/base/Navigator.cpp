@@ -9,6 +9,7 @@
 #include "nsIXULAppInfo.h"
 #include "nsPluginArray.h"
 #include "nsMimeTypeArray.h"
+#include "mozilla/Components.h"
 #include "mozilla/ContentBlocking.h"
 #include "mozilla/ContentBlockingNotifier.h"
 #include "mozilla/MemoryReporting.h"
@@ -41,6 +42,7 @@
 #include "mozilla/dom/MediaCapabilities.h"
 #include "mozilla/dom/WakeLock.h"
 #include "mozilla/dom/power/PowerManagerService.h"
+#include "mozilla/dom/LockManager.h"
 #include "mozilla/dom/MIDIAccessManager.h"
 #include "mozilla/dom/MIDIOptionsBinding.h"
 #include "mozilla/dom/Permissions.h"
@@ -68,6 +70,9 @@
 #include "nsComponentManagerUtils.h"
 #include "nsICookieService.h"
 #include "nsIHttpChannel.h"
+#ifdef ENABLE_MARIONETTE
+#  include "nsIMarionette.h"
+#endif
 #include "nsStreamUtils.h"
 #include "WidgetUtils.h"
 #include "nsIScriptError.h"
@@ -143,6 +148,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
 #ifdef MOZ_WEBGPU
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWebGpu)
 #endif
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLocks)
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
 #ifdef MOZ_GAMEPAD
@@ -215,6 +221,7 @@ void Navigator::Invalidate() {
 #ifdef MOZ_WEBGPU
   mWebGpu = nullptr;
 #endif
+  mLocks = nullptr;
 }
 
 void Navigator::GetUserAgent(nsAString& aUserAgent, CallerType aCallerType,
@@ -673,7 +680,8 @@ void Navigator::SetVibrationPermission(bool aPermitted, bool aPersistent) {
   }
 
   if (aPersistent) {
-    nsCOMPtr<nsIPermissionManager> permMgr = services::GetPermissionManager();
+    nsCOMPtr<nsIPermissionManager> permMgr =
+        components::PermissionManager::Service();
     if (!permMgr) {
       return;
     }
@@ -874,7 +882,7 @@ void Navigator::CheckProtocolHandlerAllowed(const nsAString& aScheme,
   }
 
   nsCOMPtr<nsIProtocolHandler> handler;
-  nsCOMPtr<nsIIOService> io = services::GetIOService();
+  nsCOMPtr<nsIIOService> io = components::IO::Service();
   if (NS_FAILED(
           io->GetProtocolHandler(scheme.get(), getter_AddRefs(handler)))) {
     raisePermissionDeniedScheme();
@@ -903,7 +911,6 @@ void Navigator::CheckProtocolHandlerAllowed(const nsAString& aScheme,
 
 void Navigator::RegisterProtocolHandler(const nsAString& aScheme,
                                         const nsAString& aURI,
-                                        const nsAString& aTitle,
                                         ErrorResult& aRv) {
   if (!mWindow || !mWindow->GetOuterWindow() || !mWindow->GetDocShell() ||
       !mWindow->GetDoc()) {
@@ -932,9 +939,13 @@ void Navigator::RegisterProtocolHandler(const nsAString& aScheme,
     return;
   }
 
+  // Determine a title from the document URI.
+  nsAutoCString docDisplayHostPort;
+  docURI->GetDisplayHostPort(docDisplayHostPort);
+  NS_ConvertASCIItoUTF16 title(docDisplayHostPort);
+
   if (XRE_IsContentProcess()) {
     nsAutoString scheme(aScheme);
-    nsAutoString title(aTitle);
     RefPtr<BrowserChild> browserChild = BrowserChild::GetFrom(mWindow);
     browserChild->SendRegisterProtocolHandler(scheme, handlerURI, title,
                                               docURI);
@@ -944,8 +955,8 @@ void Navigator::RegisterProtocolHandler(const nsAString& aScheme,
   nsCOMPtr<nsIWebProtocolHandlerRegistrar> registrar =
       do_GetService(NS_WEBPROTOCOLHANDLERREGISTRAR_CONTRACTID);
   if (registrar) {
-    aRv = registrar->RegisterProtocolHandler(aScheme, handlerURI, aTitle,
-                                             docURI, mWindow->GetOuterWindow());
+    aRv = registrar->RegisterProtocolHandler(aScheme, handlerURI, title, docURI,
+                                             mWindow->GetOuterWindow());
   }
 }
 
@@ -1196,52 +1207,41 @@ void Navigator::MozGetUserMedia(const MediaStreamConstraints& aConstraints,
     aRv.Throw(NS_ERROR_NOT_AVAILABLE);
     return;
   }
-
+  RefPtr<MediaManager::StreamPromise> sp;
+  if (!MediaManager::IsOn(aConstraints.mVideo) &&
+      !MediaManager::IsOn(aConstraints.mAudio)) {
+    sp = MediaManager::StreamPromise::CreateAndReject(
+        MakeRefPtr<MediaMgrError>(MediaMgrError::Name::TypeError,
+                                  "audio and/or video is required"),
+        __func__);
+  } else {
+    sp = MediaManager::Get()->GetUserMedia(mWindow, aConstraints, aCallerType);
+  }
   RefPtr<NavigatorUserMediaSuccessCallback> onsuccess(&aOnSuccess);
   RefPtr<NavigatorUserMediaErrorCallback> onerror(&aOnError);
 
   nsWeakPtr weakWindow = nsWeakPtr(do_GetWeakReference(mWindow));
-
-  MediaManager::Get()
-      ->GetUserMedia(mWindow, aConstraints, aCallerType)
-      ->Then(
-          GetMainThreadSerialEventTarget(), __func__,
-          [weakWindow, onsuccess = std::move(onsuccess)](
-              const RefPtr<DOMMediaStream>& aStream) MOZ_CAN_RUN_SCRIPT {
-            nsCOMPtr<nsPIDOMWindowInner> window = do_QueryReferent(weakWindow);
-            if (!window || !window->GetOuterWindow() ||
-                window->GetOuterWindow()->GetCurrentInnerWindow() != window) {
-              return;  // Leave Promise pending after navigation by design.
-            }
-            MediaManager::CallOnSuccess(*onsuccess, *aStream);
-          },
-          [weakWindow, onerror = std::move(onerror)](
-              const RefPtr<MediaMgrError>& aError) MOZ_CAN_RUN_SCRIPT {
-            nsCOMPtr<nsPIDOMWindowInner> window = do_QueryReferent(weakWindow);
-            if (!window || !window->GetOuterWindow() ||
-                window->GetOuterWindow()->GetCurrentInnerWindow() != window) {
-              return;  // Leave Promise pending after navigation by design.
-            }
-            auto error = MakeRefPtr<MediaStreamError>(window, *aError);
-            MediaManager::CallOnError(*onerror, *error);
-          });
-}
-
-void Navigator::MozGetUserMediaDevices(
-    const MediaStreamConstraints& aConstraints,
-    MozGetUserMediaDevicesSuccessCallback& aOnSuccess,
-    NavigatorUserMediaErrorCallback& aOnError, uint64_t aInnerWindowID,
-    const nsAString& aCallID, ErrorResult& aRv) {
-  if (!mWindow || !mWindow->GetOuterWindow() ||
-      mWindow->GetOuterWindow()->GetCurrentInnerWindow() != mWindow) {
-    aRv.Throw(NS_ERROR_NOT_AVAILABLE);
-    return;
-  }
-  RefPtr<MediaManager> manager = MediaManager::Get();
-  // XXXbz aOnError seems to be unused?
-  nsCOMPtr<nsPIDOMWindowInner> window(mWindow);
-  aRv = manager->GetUserMediaDevices(window, aConstraints, aOnSuccess,
-                                     aInnerWindowID, aCallID);
+  sp->Then(
+      GetMainThreadSerialEventTarget(), __func__,
+      [weakWindow, onsuccess = std::move(onsuccess)](
+          const RefPtr<DOMMediaStream>& aStream) MOZ_CAN_RUN_SCRIPT {
+        nsCOMPtr<nsPIDOMWindowInner> window = do_QueryReferent(weakWindow);
+        if (!window || !window->GetOuterWindow() ||
+            window->GetOuterWindow()->GetCurrentInnerWindow() != window) {
+          return;  // Leave Promise pending after navigation by design.
+        }
+        MediaManager::CallOnSuccess(*onsuccess, *aStream);
+      },
+      [weakWindow, onerror = std::move(onerror)](
+          const RefPtr<MediaMgrError>& aError) MOZ_CAN_RUN_SCRIPT {
+        nsCOMPtr<nsPIDOMWindowInner> window = do_QueryReferent(weakWindow);
+        if (!window || !window->GetOuterWindow() ||
+            window->GetOuterWindow()->GetCurrentInnerWindow() != window) {
+          return;  // Leave Promise pending after navigation by design.
+        }
+        auto error = MakeRefPtr<MediaStreamError>(window, *aError);
+        MediaManager::CallOnError(*onerror, *error);
+      });
 }
 
 //*****************************************************************************
@@ -1673,17 +1673,6 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
     }
   }
 
-  // When the caller is content and 'privacy.resistFingerprinting' is true,
-  // return a spoofed userAgent which reveals the platform but not the
-  // specific OS version, etc.
-  if (!aIsCallerChrome &&
-      nsContentUtils::ShouldResistFingerprinting(aCallerPrincipal)) {
-    nsAutoCString spoofedUA;
-    nsRFPService::GetSpoofedUserAgent(spoofedUA, false);
-    CopyASCIItoUTF16(spoofedUA, aUserAgent);
-    return NS_OK;
-  }
-
   nsCOMPtr<nsIHttpProtocolHandler> service(
       do_GetService(NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "http", &rv));
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -1772,9 +1761,25 @@ webgpu::Instance* Navigator::Gpu() {
 }
 #endif
 
+dom::LockManager* Navigator::Locks() {
+  if (!mLocks) {
+    mLocks = new dom::LockManager(GetWindow()->AsGlobal());
+  }
+  return mLocks;
+}
+
 /* static */
 bool Navigator::Webdriver() {
-  return Preferences::GetBool("marionette.enabled", false);
+  bool marionetteRunning = false;
+
+#ifdef ENABLE_MARIONETTE
+  nsCOMPtr<nsIMarionette> marionette = do_GetService(NS_MARIONETTE_CONTRACTID);
+  if (marionette) {
+    marionette->GetRunning(&marionetteRunning);
+  }
+#endif
+
+  return marionetteRunning;
 }
 
 }  // namespace mozilla::dom

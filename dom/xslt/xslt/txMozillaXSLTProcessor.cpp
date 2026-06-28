@@ -26,8 +26,10 @@
 #include "nsErrorService.h"
 #include "nsJSUtils.h"
 #include "nsIXPConnect.h"
+#include "nsNameSpaceManager.h"
 #include "nsVariant.h"
 #include "nsTextNode.h"
+#include "mozilla/Components.h"
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/XSLTProcessorBinding.h"
 
@@ -78,7 +80,7 @@ nsresult txToDocHandlerFactory::createHandlerWith(
 
     case eHTMLOutput: {
       UniquePtr<txMozillaXMLOutput> handler(
-          new txMozillaXMLOutput(aFormat, mObserver));
+          new txMozillaXMLOutput(mSourceDocument, aFormat, mObserver));
 
       nsresult rv = handler->createResultDocument(
           u""_ns, kNameSpaceID_None, mSourceDocument, mDocumentIsData);
@@ -91,10 +93,9 @@ nsresult txToDocHandlerFactory::createHandlerWith(
 
     case eTextOutput: {
       UniquePtr<txMozillaTextOutput> handler(
-          new txMozillaTextOutput(mObserver));
+          new txMozillaTextOutput(mSourceDocument, mObserver));
 
-      nsresult rv =
-          handler->createResultDocument(mSourceDocument, mDocumentIsData);
+      nsresult rv = handler->createResultDocument(mDocumentIsData);
       if (NS_SUCCEEDED(rv)) {
         *aHandler = handler.release();
       }
@@ -121,7 +122,7 @@ nsresult txToDocHandlerFactory::createHandlerWith(
     case eXMLOutput:
     case eHTMLOutput: {
       UniquePtr<txMozillaXMLOutput> handler(
-          new txMozillaXMLOutput(aFormat, mObserver));
+          new txMozillaXMLOutput(mSourceDocument, aFormat, mObserver));
 
       nsresult rv = handler->createResultDocument(aName, aNsID, mSourceDocument,
                                                   mDocumentIsData);
@@ -134,10 +135,9 @@ nsresult txToDocHandlerFactory::createHandlerWith(
 
     case eTextOutput: {
       UniquePtr<txMozillaTextOutput> handler(
-          new txMozillaTextOutput(mObserver));
+          new txMozillaTextOutput(mSourceDocument, mObserver));
 
-      nsresult rv =
-          handler->createResultDocument(mSourceDocument, mDocumentIsData);
+      nsresult rv = handler->createResultDocument(mDocumentIsData);
       if (NS_SUCCEEDED(rv)) {
         *aHandler = handler.release();
       }
@@ -181,7 +181,6 @@ nsresult txToFragmentHandlerFactory::createHandlerWith(
       break;
     }
   }
-  NS_ENSURE_TRUE(*aHandler, NS_ERROR_OUT_OF_MEMORY);
   return NS_OK;
 }
 
@@ -196,59 +195,50 @@ nsresult txToFragmentHandlerFactory::createHandlerWith(
 }
 
 class txVariable : public txIGlobalParameter {
- public:
-  explicit txVariable(nsIVariant* aValue) : mValue(aValue) {
-    NS_ASSERTION(aValue, "missing value");
-  }
-  explicit txVariable(txAExprResult* aValue) : mTxValue(aValue) {
-    NS_ASSERTION(aValue, "missing value");
-  }
-  nsresult getValue(txAExprResult** aValue) override {
-    NS_ASSERTION(mValue || mTxValue, "variablevalue is null");
+  using XSLTParameterValue = txMozillaXSLTProcessor::XSLTParameterValue;
+  using OwningXSLTParameterValue =
+      txMozillaXSLTProcessor::OwningXSLTParameterValue;
 
-    if (!mTxValue) {
-      nsresult rv = Convert(mValue, getter_AddRefs(mTxValue));
+ public:
+  explicit txVariable(UniquePtr<OwningXSLTParameterValue>&& aValue)
+      : mUnionValue(std::move(aValue)) {}
+  nsresult getValue(txAExprResult** aValue) override {
+    if (!mValue) {
+      nsresult rv = convert(*mUnionValue, getter_AddRefs(mValue));
       NS_ENSURE_SUCCESS(rv, rv);
     }
 
-    *aValue = mTxValue;
-    NS_ADDREF(*aValue);
+    NS_ADDREF(*aValue = mValue);
 
     return NS_OK;
   }
-  nsresult getValue(nsIVariant** aValue) {
-    *aValue = mValue;
-    NS_ADDREF(*aValue);
-    return NS_OK;
+  OwningXSLTParameterValue getUnionValue() {
+    return OwningXSLTParameterValue(*mUnionValue);
   }
-  nsIVariant* getValue() { return mValue; }
-  void setValue(nsIVariant* aValue) {
-    NS_ASSERTION(aValue, "setting variablevalue to null");
-    mValue = aValue;
-    mTxValue = nullptr;
-  }
-  void setValue(txAExprResult* aValue) {
-    NS_ASSERTION(aValue, "setting variablevalue to null");
+  void setValue(UniquePtr<OwningXSLTParameterValue>&& aValue) {
     mValue = nullptr;
-    mTxValue = aValue;
+    mUnionValue = std::move(aValue);
   }
 
-  friend void ImplCycleCollectionUnlink(txVariable& aVariable);
+  static UniquePtr<OwningXSLTParameterValue> convertToOwning(
+      const XSLTParameterValue& aValue, ErrorResult& aError);
+
   friend void ImplCycleCollectionTraverse(
       nsCycleCollectionTraversalCallback& aCallback, txVariable& aVariable,
       const char* aName, uint32_t aFlags);
 
  private:
-  static nsresult Convert(nsIVariant* aValue, txAExprResult** aResult);
+  static nsresult convert(const OwningXSLTParameterValue& aUnionValue,
+                          txAExprResult** aValue);
 
-  nsCOMPtr<nsIVariant> mValue;
-  RefPtr<txAExprResult> mTxValue;
+  UniquePtr<OwningXSLTParameterValue> mUnionValue;
+  RefPtr<txAExprResult> mValue;
 };
 
 inline void ImplCycleCollectionTraverse(
     nsCycleCollectionTraversalCallback& aCallback, txVariable& aVariable,
     const char* aName, uint32_t aFlags) {
-  ImplCycleCollectionTraverse(aCallback, aVariable.mValue, aName, aFlags);
+  ImplCycleCollectionTraverse(aCallback, *aVariable.mUnionValue, aName, aFlags);
 }
 
 inline void ImplCycleCollectionUnlink(
@@ -392,6 +382,7 @@ txMozillaXSLTProcessor::AddXSLTParam(const nsString& aName,
   }
 
   RefPtr<txAExprResult> value;
+  uint16_t resultType;
   if (!aSelect.IsVoid()) {
     // Set up context
     UniquePtr<txXPathNode> contextNode(
@@ -414,25 +405,56 @@ txMozillaXSLTProcessor::AddXSLTParam(const nsString& aName,
     // Evaluate
     rv = expr->evaluate(&paramContext, getter_AddRefs(value));
     NS_ENSURE_SUCCESS(rv, rv);
+
+    switch (value->getResultType()) {
+      case txAExprResult::NUMBER:
+        resultType = XPathResult::NUMBER_TYPE;
+        break;
+      case txAExprResult::STRING:
+        resultType = XPathResult::STRING_TYPE;
+        break;
+      case txAExprResult::BOOLEAN:
+        resultType = XPathResult::BOOLEAN_TYPE;
+        break;
+      case txAExprResult::NODESET:
+        resultType = XPathResult::UNORDERED_NODE_ITERATOR_TYPE;
+        break;
+      default:
+        MOZ_ASSERT_UNREACHABLE(
+            "We shouldn't have a txAExprResult::RESULT_TREE_FRAGMENT here.");
+        return NS_ERROR_FAILURE;
+    }
   } else {
     value = new StringResult(aValue, nullptr);
+    resultType = XPathResult::STRING_TYPE;
   }
 
   RefPtr<nsAtom> name = NS_Atomize(aName);
   int32_t nsId = kNameSpaceID_Unknown;
-  rv = nsContentUtils::NameSpaceManager()->RegisterNameSpace(aNamespace, nsId);
+  rv = nsNameSpaceManager::GetInstance()->RegisterNameSpace(aNamespace, nsId);
   NS_ENSURE_SUCCESS(rv, rv);
+
+  RefPtr<XPathResult> xpathResult = MakeRefPtr<XPathResult>(aContext);
+
+  ErrorResult error;
+  xpathResult->SetExprResult(value, resultType, aContext, error);
+  if (error.Failed()) {
+    return error.StealNSResult();
+  }
+
+  UniquePtr<OwningXSLTParameterValue> varValue =
+      MakeUnique<OwningXSLTParameterValue>();
+  varValue->SetAsXPathResult() = xpathResult.forget();
 
   txExpandedName varName(nsId, name);
   txVariable* var = static_cast<txVariable*>(mVariables.get(varName));
   if (var) {
-    var->setValue(value);
+    var->setValue(std::move(varValue));
 
     return NS_OK;
   }
 
-  var = new txVariable(value);
-  NS_ENSURE_TRUE(var, NS_ERROR_OUT_OF_MEMORY);
+  var = new txVariable(std::move(varValue));
 
   return mVariables.add(varName, var);
 }
@@ -538,6 +560,79 @@ already_AddRefed<Document> txMozillaXSLTProcessor::TransformToDocument(
   return doc.forget();
 }
 
+class XSLTProcessRequest final : public nsIRequest {
+ public:
+  explicit XSLTProcessRequest(txExecutionState* aState) : mState(aState) {}
+
+  NS_DECL_ISUPPORTS
+  NS_DECL_NSIREQUEST
+
+  void Done() { mState = nullptr; }
+
+ private:
+  ~XSLTProcessRequest() {}
+  txExecutionState* mState;
+};
+NS_IMPL_ISUPPORTS(XSLTProcessRequest, nsIRequest)
+
+NS_IMETHODIMP
+XSLTProcessRequest::GetName(nsACString& aResult) {
+  aResult.AssignLiteral("about:xslt-load-blocker");
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+XSLTProcessRequest::IsPending(bool* _retval) {
+  *_retval = true;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+XSLTProcessRequest::GetStatus(nsresult* status) {
+  *status = NS_OK;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+XSLTProcessRequest::Cancel(nsresult status) {
+  mState->stopProcessing();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+XSLTProcessRequest::Suspend(void) { return NS_OK; }
+
+NS_IMETHODIMP
+XSLTProcessRequest::Resume(void) { return NS_OK; }
+
+NS_IMETHODIMP
+XSLTProcessRequest::GetLoadGroup(nsILoadGroup** aLoadGroup) {
+  *aLoadGroup = nullptr;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+XSLTProcessRequest::SetLoadGroup(nsILoadGroup* aLoadGroup) { return NS_OK; }
+
+NS_IMETHODIMP
+XSLTProcessRequest::GetLoadFlags(nsLoadFlags* aLoadFlags) {
+  *aLoadFlags = nsIRequest::LOAD_NORMAL;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+XSLTProcessRequest::SetLoadFlags(nsLoadFlags aLoadFlags) { return NS_OK; }
+
+NS_IMETHODIMP
+XSLTProcessRequest::GetTRRMode(nsIRequest::TRRMode* aTRRMode) {
+  return GetTRRModeImpl(aTRRMode);
+}
+
+NS_IMETHODIMP
+XSLTProcessRequest::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
+  return SetTRRModeImpl(aTRRMode);
+}
+
 nsresult txMozillaXSLTProcessor::TransformToDoc(Document** aResult,
                                                 bool aCreateDataDocument) {
   UniquePtr<txXPathNode> sourceNode(
@@ -548,10 +643,29 @@ nsresult txMozillaXSLTProcessor::TransformToDoc(Document** aResult,
 
   txExecutionState es(mStylesheet, IsLoadDisabled());
 
+  Document* sourceDoc = mSource->OwnerDoc();
+  nsCOMPtr<nsILoadGroup> loadGroup = sourceDoc->GetDocumentLoadGroup();
+  if (!loadGroup) {
+    nsCOMPtr<nsPIDOMWindowInner> win = do_QueryInterface(mOwner);
+    if (win && win->IsCurrentInnerWindow()) {
+      Document* doc = win->GetDoc();
+      if (doc) {
+        loadGroup = doc->GetDocumentLoadGroup();
+      }
+    }
+
+    if (!loadGroup) {
+      return NS_ERROR_FAILURE;
+    }
+  }
+
+  RefPtr<XSLTProcessRequest> xsltProcessRequest = new XSLTProcessRequest(&es);
+  loadGroup->AddRequest(xsltProcessRequest, nullptr);
+
   // XXX Need to add error observers
 
   // If aResult is non-null, we're a data document
-  txToDocHandlerFactory handlerFactory(&es, mSource->OwnerDoc(), mObserver,
+  txToDocHandlerFactory handlerFactory(&es, sourceDoc, mObserver,
                                        aCreateDataDocument);
   es.mOutputHandlerFactory = &handlerFactory;
 
@@ -561,6 +675,9 @@ nsresult txMozillaXSLTProcessor::TransformToDoc(Document** aResult,
   if (NS_SUCCEEDED(rv)) {
     rv = txXSLTProcessor::execute(es);
   }
+
+  xsltProcessRequest->Done();
+  loadGroup->RemoveRequest(xsltProcessRequest, nullptr, NS_OK);
 
   nsresult endRv = es.end(rv);
   if (NS_SUCCEEDED(rv)) {
@@ -642,223 +759,101 @@ already_AddRefed<DocumentFragment> txMozillaXSLTProcessor::TransformToFragment(
   return frag.forget();
 }
 
-nsresult txMozillaXSLTProcessor::SetParameter(const nsAString& aNamespaceURI,
-                                              const nsAString& aLocalName,
-                                              nsIVariant* aValue) {
-  NS_ENSURE_ARG(aValue);
-
-  nsCOMPtr<nsIVariant> value = aValue;
-
-  uint16_t dataType = value->GetDataType();
-  switch (dataType) {
-    // Number
-    case nsIDataType::VTYPE_INT8:
-    case nsIDataType::VTYPE_INT16:
-    case nsIDataType::VTYPE_INT32:
-    case nsIDataType::VTYPE_INT64:
-    case nsIDataType::VTYPE_UINT8:
-    case nsIDataType::VTYPE_UINT16:
-    case nsIDataType::VTYPE_UINT32:
-    case nsIDataType::VTYPE_UINT64:
-    case nsIDataType::VTYPE_FLOAT:
-    case nsIDataType::VTYPE_DOUBLE:
-
-    // Boolean
-    case nsIDataType::VTYPE_BOOL:
-
-    // String
-    case nsIDataType::VTYPE_CHAR:
-    case nsIDataType::VTYPE_WCHAR:
-    case nsIDataType::VTYPE_CHAR_STR:
-    case nsIDataType::VTYPE_WCHAR_STR:
-    case nsIDataType::VTYPE_STRING_SIZE_IS:
-    case nsIDataType::VTYPE_WSTRING_SIZE_IS:
-    case nsIDataType::VTYPE_UTF8STRING:
-    case nsIDataType::VTYPE_CSTRING:
-    case nsIDataType::VTYPE_ASTRING: {
-      break;
+void txMozillaXSLTProcessor::SetParameter(const nsAString& aNamespaceURI,
+                                          const nsAString& aLocalName,
+                                          const XSLTParameterValue& aValue,
+                                          ErrorResult& aError) {
+  if (aValue.IsNode()) {
+    if (!nsContentUtils::CanCallerAccess(&aValue.GetAsNode())) {
+      aError.ThrowSecurityError("Caller is not allowed to access node.");
+      return;
+    }
+  } else if (aValue.IsNodeSequence()) {
+    const Sequence<OwningNonNull<nsINode>>& values = aValue.GetAsNodeSequence();
+    for (const auto& node : values) {
+      if (!nsContentUtils::CanCallerAccess(node.get())) {
+        aError.ThrowSecurityError(
+            "Caller is not allowed to access node in sequence.");
+        return;
+      }
+    }
+  } else if (aValue.IsXPathResult()) {
+    XPathResult& xpathResult = aValue.GetAsXPathResult();
+    RefPtr<txAExprResult> result;
+    aError = xpathResult.GetExprResult(getter_AddRefs(result));
+    if (aError.Failed()) {
+      return;
     }
 
-    // Nodeset
-    case nsIDataType::VTYPE_INTERFACE:
-    case nsIDataType::VTYPE_INTERFACE_IS: {
-      nsCOMPtr<nsISupports> supports;
-      nsresult rv = value->GetAsISupports(getter_AddRefs(supports));
-      NS_ENSURE_SUCCESS(rv, rv);
+    if (result->getResultType() == txAExprResult::NODESET) {
+      txNodeSet* nodeSet =
+          static_cast<txNodeSet*>(static_cast<txAExprResult*>(result));
 
-      nsCOMPtr<nsINode> node = do_QueryInterface(supports);
-      if (node) {
-        if (!nsContentUtils::CanCallerAccess(node)) {
-          return NS_ERROR_DOM_SECURITY_ERR;
-        }
-
-        break;
-      }
-
-      nsCOMPtr<nsIXPathResult> xpathResult = do_QueryInterface(supports);
-      if (xpathResult) {
-        RefPtr<txAExprResult> result;
-        nsresult rv = xpathResult->GetExprResult(getter_AddRefs(result));
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        if (result->getResultType() == txAExprResult::NODESET) {
-          txNodeSet* nodeSet =
-              static_cast<txNodeSet*>(static_cast<txAExprResult*>(result));
-
-          int32_t i, count = nodeSet->size();
-          for (i = 0; i < count; ++i) {
-            nsINode* node = txXPathNativeNode::getNode(nodeSet->get(i));
-            if (!nsContentUtils::CanCallerAccess(node)) {
-              return NS_ERROR_DOM_SECURITY_ERR;
-            }
-          }
-        }
-
-        // Clone the XPathResult so that mutations don't affect this
-        // variable.
-        nsCOMPtr<nsIXPathResult> clone;
-        rv = xpathResult->Clone(getter_AddRefs(clone));
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        RefPtr<nsVariant> variant = new nsVariant();
-
-        rv = variant->SetAsISupports(clone);
-        NS_ENSURE_SUCCESS(rv, rv);
-
-        value = variant;
-
-        break;
-      }
-
-      nsCOMPtr<nsINodeList> nodeList = do_QueryInterface(supports);
-      if (nodeList) {
-        uint32_t length = nodeList->Length();
-
-        uint32_t i;
-        for (i = 0; i < length; ++i) {
-          if (!nsContentUtils::CanCallerAccess(nodeList->Item(i))) {
-            return NS_ERROR_DOM_SECURITY_ERR;
-          }
-        }
-
-        break;
-      }
-
-      // Random JS Objects will be converted to a string.
-      nsCOMPtr<nsIXPConnectJSObjectHolder> holder = do_QueryInterface(supports);
-      if (holder) {
-        break;
-      }
-
-      // We don't know how to handle this type of param.
-      return NS_ERROR_ILLEGAL_VALUE;
-    }
-
-    case nsIDataType::VTYPE_ARRAY: {
-      uint16_t type;
-      nsIID iid;
-      uint32_t count;
-      void* array;
-      nsresult rv = value->GetAsArray(&type, &iid, &count, &array);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      if (type != nsIDataType::VTYPE_INTERFACE &&
-          type != nsIDataType::VTYPE_INTERFACE_IS) {
-        free(array);
-
-        // We only support arrays of DOM nodes.
-        return NS_ERROR_ILLEGAL_VALUE;
-      }
-
-      nsISupports** values = static_cast<nsISupports**>(array);
-
-      uint32_t i;
+      int32_t i, count = nodeSet->size();
       for (i = 0; i < count; ++i) {
-        nsISupports* supports = values[i];
-        nsCOMPtr<nsINode> node = do_QueryInterface(supports);
-
-        if (node) {
-          rv = nsContentUtils::CanCallerAccess(node)
-                   ? NS_OK
-                   : NS_ERROR_DOM_SECURITY_ERR;
-        } else {
-          // We only support arrays of DOM nodes.
-          rv = NS_ERROR_ILLEGAL_VALUE;
+        nsINode* node = txXPathNativeNode::getNode(nodeSet->get(i));
+        if (!nsContentUtils::CanCallerAccess(node)) {
+          aError.ThrowSecurityError(
+              "Caller is not allowed to access node in node-set.");
+          return;
         }
-
-        if (NS_FAILED(rv)) {
-          while (i < count) {
-            NS_IF_RELEASE(values[i]);
-            ++i;
-          }
-          free(array);
-
-          return rv;
-        }
-
-        NS_RELEASE(supports);
       }
-
-      free(array);
-
-      break;
-    }
-
-    default: {
-      return NS_ERROR_FAILURE;
     }
   }
 
   int32_t nsId = kNameSpaceID_Unknown;
-  nsresult rv = nsContentUtils::NameSpaceManager()->RegisterNameSpace(
-      aNamespaceURI, nsId);
-  NS_ENSURE_SUCCESS(rv, rv);
+  aError =
+      nsNameSpaceManager::GetInstance()->RegisterNameSpace(aNamespaceURI, nsId);
+  if (aError.Failed()) {
+    return;
+  }
+
   RefPtr<nsAtom> localName = NS_Atomize(aLocalName);
   txExpandedName varName(nsId, localName);
 
-  txVariable* var = static_cast<txVariable*>(mVariables.get(varName));
-  if (var) {
-    var->setValue(value);
-    return NS_OK;
+  UniquePtr<OwningXSLTParameterValue> value =
+      txVariable::convertToOwning(aValue, aError);
+  if (aError.Failed()) {
+    return;
   }
 
-  var = new txVariable(value);
-  return mVariables.add(varName, var);
+  txVariable* var = static_cast<txVariable*>(mVariables.get(varName));
+  if (var) {
+    var->setValue(std::move(value));
+    return;
+  }
+
+  UniquePtr<txVariable> newVar = MakeUnique<txVariable>(std::move(value));
+  mVariables.add(varName, newVar.release());
 }
 
-already_AddRefed<nsIVariant> txMozillaXSLTProcessor::GetParameter(
+void txMozillaXSLTProcessor::GetParameter(
     const nsAString& aNamespaceURI, const nsAString& aLocalName,
-    ErrorResult& aRv) {
+    Nullable<OwningXSLTParameterValue>& aValue, ErrorResult& aRv) {
   int32_t nsId = kNameSpaceID_Unknown;
-  nsresult rv = nsContentUtils::NameSpaceManager()->RegisterNameSpace(
-      aNamespaceURI, nsId);
+  nsresult rv =
+      nsNameSpaceManager::GetInstance()->RegisterNameSpace(aNamespaceURI, nsId);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
-    return nullptr;
+    return;
   }
   RefPtr<nsAtom> localName = NS_Atomize(aLocalName);
   txExpandedName varName(nsId, localName);
 
   txVariable* var = static_cast<txVariable*>(mVariables.get(varName));
   if (!var) {
-    return nullptr;
+    return;
   }
 
-  nsCOMPtr<nsIVariant> result;
-  rv = var->getValue(getter_AddRefs(result));
-  if (NS_FAILED(rv)) {
-    aRv.Throw(rv);
-    return nullptr;
-  }
-  return result.forget();
+  aValue.SetValue(var->getUnionValue());
 }
 
 void txMozillaXSLTProcessor::RemoveParameter(const nsAString& aNamespaceURI,
                                              const nsAString& aLocalName,
                                              ErrorResult& aRv) {
   int32_t nsId = kNameSpaceID_Unknown;
-  nsresult rv = nsContentUtils::NameSpaceManager()->RegisterNameSpace(
-      aNamespaceURI, nsId);
+  nsresult rv =
+      nsNameSpaceManager::GetInstance()->RegisterNameSpace(aNamespaceURI, nsId);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.Throw(rv);
     return;
@@ -932,7 +927,7 @@ void txMozillaXSLTProcessor::reportError(nsresult aResult,
     mErrorText.Assign(aErrorText);
   } else {
     nsCOMPtr<nsIStringBundleService> sbs =
-        mozilla::services::GetStringBundleService();
+        mozilla::components::StringBundle::Service();
     if (sbs) {
       nsString errorText;
       sbs->FormatStatusMessage(aResult, u"", errorText);
@@ -1027,8 +1022,7 @@ void txMozillaXSLTProcessor::notifyError() {
   MOZ_ASSERT(document->GetReadyStateEnum() == Document::READYSTATE_LOADING,
              "Bad readyState.");
   document->SetReadyStateInternal(Document::READYSTATE_INTERACTIVE);
-
-  mObserver->OnTransformDone(mTransformResult, document);
+  mObserver->OnTransformDone(mSource->OwnerDoc(), mTransformResult, document);
 }
 
 nsresult txMozillaXSLTProcessor::ensureStylesheet() {
@@ -1101,20 +1095,6 @@ already_AddRefed<txMozillaXSLTProcessor> txMozillaXSLTProcessor::Constructor(
   return processor.forget();
 }
 
-void txMozillaXSLTProcessor::SetParameter(JSContext* aCx,
-                                          const nsAString& aNamespaceURI,
-                                          const nsAString& aLocalName,
-                                          JS::Handle<JS::Value> aValue,
-                                          mozilla::ErrorResult& aRv) {
-  nsCOMPtr<nsIVariant> val;
-  aRv = nsContentUtils::XPConnect()->JSToVariant(aCx, aValue,
-                                                 getter_AddRefs(val));
-  if (aRv.Failed()) {
-    return;
-  }
-  aRv = SetParameter(aNamespaceURI, aLocalName, val);
-}
-
 /* static*/
 nsresult txMozillaXSLTProcessor::Startup() {
   if (!txXSLTProcessor::init()) {
@@ -1140,191 +1120,109 @@ void txMozillaXSLTProcessor::Shutdown() {
   }
 }
 
-/* static*/
-nsresult txVariable::Convert(nsIVariant* aValue, txAExprResult** aResult) {
-  *aResult = nullptr;
-
-  uint16_t dataType = aValue->GetDataType();
-  switch (dataType) {
-    // Number
-    case nsIDataType::VTYPE_INT8:
-    case nsIDataType::VTYPE_INT16:
-    case nsIDataType::VTYPE_INT32:
-    case nsIDataType::VTYPE_INT64:
-    case nsIDataType::VTYPE_UINT8:
-    case nsIDataType::VTYPE_UINT16:
-    case nsIDataType::VTYPE_UINT32:
-    case nsIDataType::VTYPE_UINT64:
-    case nsIDataType::VTYPE_FLOAT:
-    case nsIDataType::VTYPE_DOUBLE: {
-      double value;
-      nsresult rv = aValue->GetAsDouble(&value);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      *aResult = new NumberResult(value, nullptr);
-      NS_ADDREF(*aResult);
-
-      return NS_OK;
+/* static */
+UniquePtr<txVariable::OwningXSLTParameterValue> txVariable::convertToOwning(
+    const XSLTParameterValue& aValue, ErrorResult& aError) {
+  UniquePtr<OwningXSLTParameterValue> value =
+      MakeUnique<OwningXSLTParameterValue>();
+  if (aValue.IsUnrestrictedDouble()) {
+    value->SetAsUnrestrictedDouble() = aValue.GetAsUnrestrictedDouble();
+  } else if (aValue.IsBoolean()) {
+    value->SetAsBoolean() = aValue.GetAsBoolean();
+  } else if (aValue.IsString()) {
+    value->SetAsString() = aValue.GetAsString();
+  } else if (aValue.IsNode()) {
+    value->SetAsNode() = aValue.GetAsNode();
+  } else if (aValue.IsNodeSequence()) {
+    value->SetAsNodeSequence() = aValue.GetAsNodeSequence();
+  } else if (aValue.IsXPathResult()) {
+    // Clone the XPathResult so that mutations don't affect this variable.
+    RefPtr<XPathResult> clone = aValue.GetAsXPathResult().Clone(aError);
+    if (aError.Failed()) {
+      return nullptr;
     }
+    value->SetAsXPathResult() = *clone;
+  } else {
+    MOZ_ASSERT(false, "Unknown type?");
+  }
+  return value;
+}
 
-    // Boolean
-    case nsIDataType::VTYPE_BOOL: {
-      bool value;
-      nsresult rv = aValue->GetAsBool(&value);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      *aResult = new BooleanResult(value);
-      NS_ADDREF(*aResult);
-
-      return NS_OK;
-    }
-
-    // String
-    case nsIDataType::VTYPE_CHAR:
-    case nsIDataType::VTYPE_WCHAR:
-    case nsIDataType::VTYPE_CHAR_STR:
-    case nsIDataType::VTYPE_WCHAR_STR:
-    case nsIDataType::VTYPE_STRING_SIZE_IS:
-    case nsIDataType::VTYPE_WSTRING_SIZE_IS:
-    case nsIDataType::VTYPE_UTF8STRING:
-    case nsIDataType::VTYPE_CSTRING:
-    case nsIDataType::VTYPE_ASTRING: {
-      nsAutoString value;
-      nsresult rv = aValue->GetAsAString(value);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      *aResult = new StringResult(value, nullptr);
-      NS_ADDREF(*aResult);
-
-      return NS_OK;
-    }
-
-    // Nodeset
-    case nsIDataType::VTYPE_INTERFACE:
-    case nsIDataType::VTYPE_INTERFACE_IS: {
-      nsCOMPtr<nsISupports> supports;
-      nsresult rv = aValue->GetAsISupports(getter_AddRefs(supports));
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      nsCOMPtr<nsINode> node = do_QueryInterface(supports);
-      if (node) {
-        UniquePtr<txXPathNode> xpathNode(
-            txXPathNativeNode::createXPathNode(node));
-        if (!xpathNode) {
-          return NS_ERROR_FAILURE;
-        }
-
-        *aResult = new txNodeSet(*xpathNode, nullptr);
-        if (!*aResult) {
-          return NS_ERROR_OUT_OF_MEMORY;
-        }
-
-        NS_ADDREF(*aResult);
-
-        return NS_OK;
-      }
-
-      nsCOMPtr<nsIXPathResult> xpathResult = do_QueryInterface(supports);
-      if (xpathResult) {
-        return xpathResult->GetExprResult(aResult);
-      }
-
-      nsCOMPtr<nsINodeList> nodeList = do_QueryInterface(supports);
-      if (nodeList) {
-        RefPtr<txNodeSet> nodeSet = new txNodeSet(nullptr);
-        if (!nodeSet) {
-          return NS_ERROR_OUT_OF_MEMORY;
-        }
-
-        uint32_t length = nodeList->Length();
-
-        uint32_t i;
-        for (i = 0; i < length; ++i) {
-          UniquePtr<txXPathNode> xpathNode(
-              txXPathNativeNode::createXPathNode(nodeList->Item(i)));
-          if (!xpathNode) {
-            return NS_ERROR_FAILURE;
-          }
-
-          nodeSet->add(*xpathNode);
-        }
-
-        NS_ADDREF(*aResult = nodeSet);
-
-        return NS_OK;
-      }
-
-      // Convert random JS Objects to a string.
-      nsCOMPtr<nsIXPConnectJSObjectHolder> holder = do_QueryInterface(supports);
-      if (holder) {
-        JSContext* cx = nsContentUtils::GetCurrentJSContext();
-        NS_ENSURE_TRUE(cx, NS_ERROR_NOT_AVAILABLE);
-
-        JS::Rooted<JSObject*> jsobj(cx, holder->GetJSObject());
-        NS_ENSURE_STATE(jsobj);
-
-        JS::Rooted<JS::Value> v(cx, JS::ObjectValue(*jsobj));
-        JS::Rooted<JSString*> str(cx, JS::ToString(cx, v));
-        NS_ENSURE_TRUE(str, NS_ERROR_FAILURE);
-
-        nsAutoJSString value;
-        NS_ENSURE_TRUE(value.init(cx, str), NS_ERROR_FAILURE);
-
-        *aResult = new StringResult(value, nullptr);
-        NS_ADDREF(*aResult);
-
-        return NS_OK;
-      }
-
-      break;
-    }
-
-    case nsIDataType::VTYPE_ARRAY: {
-      uint16_t type;
-      nsIID iid;
-      uint32_t count;
-      void* array;
-      nsresult rv = aValue->GetAsArray(&type, &iid, &count, &array);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      NS_ASSERTION(type == nsIDataType::VTYPE_INTERFACE ||
-                       type == nsIDataType::VTYPE_INTERFACE_IS,
-                   "Huh, we checked this in SetParameter?");
-
-      nsISupports** values = static_cast<nsISupports**>(array);
-
-      RefPtr<txNodeSet> nodeSet = new txNodeSet(nullptr);
-
-      uint32_t i;
-      for (i = 0; i < count; ++i) {
-        nsISupports* supports = values[i];
-        nsCOMPtr<nsINode> node = do_QueryInterface(supports);
-        NS_ASSERTION(node, "Huh, we checked this in SetParameter?");
-
-        UniquePtr<txXPathNode> xpathNode(
-            txXPathNativeNode::createXPathNode(node));
-        if (!xpathNode) {
-          while (i < count) {
-            NS_RELEASE(values[i]);
-            ++i;
-          }
-          free(array);
-
-          return NS_ERROR_FAILURE;
-        }
-
-        nodeSet->add(*xpathNode);
-
-        NS_RELEASE(supports);
-      }
-
-      free(array);
-
-      NS_ADDREF(*aResult = nodeSet);
-
-      return NS_OK;
-    }
+/* static */
+nsresult txVariable::convert(const OwningXSLTParameterValue& aUnionValue,
+                             txAExprResult** aValue) {
+  if (aUnionValue.IsUnrestrictedDouble()) {
+    NS_ADDREF(*aValue = new NumberResult(aUnionValue.GetAsUnrestrictedDouble(),
+                                         nullptr));
+    return NS_OK;
   }
 
-  return NS_ERROR_ILLEGAL_VALUE;
+  if (aUnionValue.IsBoolean()) {
+    NS_ADDREF(*aValue = new BooleanResult(aUnionValue.GetAsBoolean()));
+    return NS_OK;
+  }
+
+  if (aUnionValue.IsString()) {
+    NS_ADDREF(*aValue = new StringResult(aUnionValue.GetAsString(), nullptr));
+    return NS_OK;
+  }
+
+  if (aUnionValue.IsNode()) {
+    nsINode& node = aUnionValue.GetAsNode();
+    UniquePtr<txXPathNode> xpathNode(txXPathNativeNode::createXPathNode(&node));
+    if (!xpathNode) {
+      return NS_ERROR_FAILURE;
+    }
+
+    NS_ADDREF(*aValue = new txNodeSet(*xpathNode, nullptr));
+    return NS_OK;
+  }
+
+  if (aUnionValue.IsNodeSequence()) {
+    RefPtr<txNodeSet> nodeSet(new txNodeSet(nullptr));
+    const Sequence<OwningNonNull<nsINode>>& values =
+        aUnionValue.GetAsNodeSequence();
+    for (const auto& node : values) {
+      UniquePtr<txXPathNode> xpathNode(
+          txXPathNativeNode::createXPathNode(node.get()));
+      if (!xpathNode) {
+        return NS_ERROR_FAILURE;
+      }
+
+      nodeSet->append(*xpathNode);
+    }
+    nodeSet.forget(aValue);
+    return NS_OK;
+  }
+
+  MOZ_ASSERT(aUnionValue.IsXPathResult());
+
+  XPathResult& xpathResult = aUnionValue.GetAsXPathResult();
+  if (xpathResult.ResultType() == XPathResult::NUMBER_TYPE) {
+    IgnoredErrorResult rv;
+    NS_ADDREF(*aValue =
+                  new NumberResult(xpathResult.GetNumberValue(rv), nullptr));
+    MOZ_ASSERT(!rv.Failed());
+    return NS_OK;
+  }
+
+  if (xpathResult.ResultType() == XPathResult::BOOLEAN_TYPE) {
+    IgnoredErrorResult rv;
+    NS_ADDREF(*aValue = new BooleanResult(xpathResult.GetBooleanValue(rv)));
+    MOZ_ASSERT(!rv.Failed());
+    return NS_OK;
+  }
+
+  if (xpathResult.ResultType() == XPathResult::STRING_TYPE) {
+    IgnoredErrorResult rv;
+    nsString value;
+    xpathResult.GetStringValue(value, rv);
+    NS_ADDREF(*aValue = new StringResult(value, nullptr));
+    MOZ_ASSERT(!rv.Failed());
+    return NS_OK;
+  }
+
+  // If the XPathResult holds a nodeset, then it will keep the nodes alive and
+  // we'll hold the XPathResult alive.
+  return xpathResult.GetExprResult(aValue);
 }

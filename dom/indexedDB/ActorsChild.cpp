@@ -36,6 +36,7 @@
 #include "mozilla/dom/IPCBlobUtils.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
+#include "mozilla/dom/quota/ResultExtensions.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/TaskQueue.h"
@@ -50,7 +51,6 @@
 #include "nsPIDOMWindow.h"
 #include "nsThreadUtils.h"
 #include "nsTraceRefcnt.h"
-#include "PermissionRequestBase.h"
 #include "ProfilerHelpers.h"
 #include "ReportInternalError.h"
 #include "ThreadLocal.h"
@@ -141,7 +141,7 @@ void MaybeCollectGarbageOnIPCMessage() {
 }
 
 class MOZ_STACK_CLASS AutoSetCurrentTransaction final {
-  typedef mozilla::ipc::BackgroundChildImpl BackgroundChildImpl;
+  using BackgroundChildImpl = mozilla::ipc::BackgroundChildImpl;
 
   Maybe<IDBTransaction&> const mTransaction;
   Maybe<IDBTransaction&> mPreviousTransaction;
@@ -335,30 +335,6 @@ nsresult GetResult(JSContext* aCx, const nsTArray<Key>* aKeys,
   return NS_OK;
 }
 }  // namespace detail
-
-class PermissionRequestMainProcessHelper final : public PermissionRequestBase {
-  BackgroundFactoryRequestChild* mActor;
-  SafeRefPtr<IDBFactory> mFactory;
-
- public:
-  PermissionRequestMainProcessHelper(BackgroundFactoryRequestChild* aActor,
-                                     SafeRefPtr<IDBFactory> aFactory,
-                                     Element* aOwnerElement,
-                                     nsIPrincipal* aPrincipal)
-      : PermissionRequestBase(aOwnerElement, aPrincipal),
-        mActor(aActor),
-        mFactory(std::move(aFactory)) {
-    MOZ_ASSERT(aActor);
-    MOZ_ASSERT(mFactory);
-    aActor->AssertIsOnOwningThread();
-  }
-
- protected:
-  ~PermissionRequestMainProcessHelper() = default;
-
- private:
-  virtual void OnPromptComplete(PermissionValue aPermissionValue) override;
-};
 
 auto DeserializeStructuredCloneFiles(
     IDBDatabase* aDatabase,
@@ -662,181 +638,8 @@ PRFileDesc* GetFileDescriptorFromStream(nsIInputStream* aStream) {
   return fileDesc;
 }
 
-class WorkerPermissionChallenge;
-
-// This class calles WorkerPermissionChallenge::OperationCompleted() in the
-// worker thread.
-class WorkerPermissionOperationCompleted final : public WorkerControlRunnable {
-  RefPtr<WorkerPermissionChallenge> mChallenge;
-
- public:
-  WorkerPermissionOperationCompleted(WorkerPrivate* aWorkerPrivate,
-                                     WorkerPermissionChallenge* aChallenge)
-      : WorkerControlRunnable(aWorkerPrivate, WorkerThreadUnchangedBusyCount),
-        mChallenge(aChallenge) {
-    MOZ_ASSERT(NS_IsMainThread());
-  }
-
-  virtual bool WorkerRun(JSContext* aCx,
-                         WorkerPrivate* aWorkerPrivate) override;
-};
-
-// This class used to do prompting in the main thread and main process.
-class WorkerPermissionRequest final : public PermissionRequestBase {
-  RefPtr<WorkerPermissionChallenge> mChallenge;
-
- public:
-  WorkerPermissionRequest(Element* aElement, nsIPrincipal* aPrincipal,
-                          WorkerPermissionChallenge* aChallenge)
-      : PermissionRequestBase(aElement, aPrincipal), mChallenge(aChallenge) {
-    MOZ_ASSERT(XRE_IsParentProcess());
-    MOZ_ASSERT(NS_IsMainThread());
-    MOZ_ASSERT(aChallenge);
-  }
-
- private:
-  ~WorkerPermissionRequest() { MOZ_ASSERT(NS_IsMainThread()); }
-
-  virtual void OnPromptComplete(PermissionValue aPermissionValue) override;
-};
-
-class WorkerPermissionChallenge final : public Runnable {
- public:
-  WorkerPermissionChallenge(WorkerPrivate* aWorkerPrivate,
-                            BackgroundFactoryRequestChild* aActor,
-                            SafeRefPtr<IDBFactory> aFactory,
-                            PrincipalInfo&& aPrincipalInfo)
-      : Runnable("indexedDB::WorkerPermissionChallenge"),
-        mWorkerPrivate(aWorkerPrivate),
-        mActor(aActor),
-        mFactory(std::move(aFactory)),
-        mPrincipalInfo(std::move(aPrincipalInfo)) {
-    MOZ_ASSERT(mWorkerPrivate);
-    MOZ_ASSERT(aActor);
-    MOZ_ASSERT(mFactory);
-    mWorkerPrivate->AssertIsOnWorkerThread();
-  }
-
-  bool Dispatch() {
-    mWorkerPrivate->AssertIsOnWorkerThread();
-    if (NS_WARN_IF(!mWorkerPrivate->ModifyBusyCountFromWorker(true))) {
-      return false;
-    }
-
-    if (NS_WARN_IF(NS_FAILED(mWorkerPrivate->DispatchToMainThread(this)))) {
-      mWorkerPrivate->ModifyBusyCountFromWorker(false);
-      return false;
-    }
-
-    return true;
-  }
-
-  NS_IMETHOD
-  Run() override {
-    const bool completed = RunInternal();
-    if (completed) {
-      OperationCompleted();
-    }
-
-    return NS_OK;
-  }
-
-  void OperationCompleted() {
-    if (NS_IsMainThread()) {
-      const RefPtr<WorkerPermissionOperationCompleted> runnable =
-          new WorkerPermissionOperationCompleted(mWorkerPrivate, this);
-
-      MOZ_ALWAYS_TRUE(runnable->Dispatch());
-      return;
-    }
-
-    MOZ_ASSERT(mActor);
-    mActor->AssertIsOnOwningThread();
-
-    MaybeCollectGarbageOnIPCMessage();
-
-    const SafeRefPtr<IDBFactory> factory = std::move(mFactory);
-    Unused << factory;  // XXX see Bug 1605075
-
-    mActor->SendPermissionRetry();
-    mActor = nullptr;
-
-    mWorkerPrivate->AssertIsOnWorkerThread();
-    mWorkerPrivate->ModifyBusyCountFromWorker(false);
-  }
-
- private:
-  bool RunInternal() {
-    MOZ_ASSERT(NS_IsMainThread());
-
-    // Walk up to our containing page
-    WorkerPrivate* wp = mWorkerPrivate;
-    while (wp->GetParent()) {
-      wp = wp->GetParent();
-    }
-
-    nsPIDOMWindowInner* const window = wp->GetWindow();
-    if (!window) {
-      return true;
-    }
-
-    IDB_TRY_UNWRAP(auto principal,
-                   mozilla::ipc::PrincipalInfoToPrincipal(mPrincipalInfo),
-                   true);
-
-    if (XRE_IsParentProcess()) {
-      const nsCOMPtr<Element> ownerElement =
-          do_QueryInterface(window->GetChromeEventHandler());
-      if (NS_WARN_IF(!ownerElement)) {
-        return true;
-      }
-
-      RefPtr<WorkerPermissionRequest> helper =
-          new WorkerPermissionRequest(ownerElement, principal, this);
-
-      IDB_TRY_INSPECT(const PermissionRequestBase::PermissionValue& permission,
-                      helper->PromptIfNeeded(), true);
-
-      MOZ_ASSERT(permission == PermissionRequestBase::kPermissionAllowed ||
-                 permission == PermissionRequestBase::kPermissionDenied ||
-                 permission == PermissionRequestBase::kPermissionPrompt);
-
-      return permission != PermissionRequestBase::kPermissionPrompt;
-    }
-
-    BrowserChild* browserChild = BrowserChild::GetFrom(window);
-    MOZ_ASSERT(browserChild);
-
-    RefPtr<WorkerPermissionChallenge> self(this);
-    browserChild->SendIndexedDBPermissionRequest(principal)->Then(
-        GetCurrentSerialEventTarget(), __func__,
-        [self](const uint32_t& aPermission) { self->OperationCompleted(); },
-        [](const mozilla::ipc::ResponseRejectReason) {});
-    return false;
-  }
-
- private:
-  WorkerPrivate* const mWorkerPrivate;
-  BackgroundFactoryRequestChild* mActor;
-  SafeRefPtr<IDBFactory> mFactory;
-  const PrincipalInfo mPrincipalInfo;
-};
-
-void WorkerPermissionRequest::OnPromptComplete(
-    PermissionValue aPermissionValue) {
-  MOZ_ASSERT(NS_IsMainThread());
-  mChallenge->OperationCompleted();
-}
-
-bool WorkerPermissionOperationCompleted::WorkerRun(
-    JSContext* aCx, WorkerPrivate* aWorkerPrivate) {
-  aWorkerPrivate->AssertIsOnWorkerThread();
-  mChallenge->OperationCompleted();
-  return true;
-}
-
 class MOZ_STACK_CLASS AutoSetCurrentFileHandle final {
-  typedef mozilla::ipc::BackgroundChildImpl BackgroundChildImpl;
+  using BackgroundChildImpl = mozilla::ipc::BackgroundChildImpl;
 
   IDBFileHandle* const mFileHandle;
   IDBFileHandle* mPreviousFileHandle;
@@ -1148,23 +951,6 @@ class BackgroundRequestChild::PreprocessHelper final
 };
 
 /*******************************************************************************
- * Local class implementations
- ******************************************************************************/
-
-void PermissionRequestMainProcessHelper::OnPromptComplete(
-    PermissionValue aPermissionValue) {
-  MOZ_ASSERT(mActor);
-  mActor->AssertIsOnOwningThread();
-
-  MaybeCollectGarbageOnIPCMessage();
-
-  mActor->SendPermissionRetry();
-
-  mActor = nullptr;
-  mFactory = nullptr;
-}
-
-/*******************************************************************************
  * BackgroundRequestChildBase
  ******************************************************************************/
 
@@ -1444,77 +1230,6 @@ mozilla::ipc::IPCResult BackgroundFactoryRequestChild::Recv__delete__(
   if (NS_WARN_IF(!result)) {
     return IPC_FAIL_NO_REASON(this);
   }
-
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult BackgroundFactoryRequestChild::RecvPermissionChallenge(
-    PrincipalInfo&& aPrincipalInfo) {
-  AssertIsOnOwningThread();
-
-  MaybeCollectGarbageOnIPCMessage();
-
-  if (!NS_IsMainThread()) {
-    WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
-    MOZ_ASSERT(workerPrivate);
-    workerPrivate->AssertIsOnWorkerThread();
-
-    RefPtr<WorkerPermissionChallenge> challenge = new WorkerPermissionChallenge(
-        workerPrivate, this, mFactory.clonePtr(), std::move(aPrincipalInfo));
-    if (!challenge->Dispatch()) {
-      return IPC_FAIL_NO_REASON(this);
-    }
-    return IPC_OK();
-  }
-
-  IDB_TRY_UNWRAP(auto principal,
-                 mozilla::ipc::PrincipalInfoToPrincipal(aPrincipalInfo),
-                 IPC_FAIL_NO_REASON(this));
-
-  if (XRE_IsParentProcess()) {
-    nsCOMPtr<nsIGlobalObject> global = mFactory->GetParentObject();
-    nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(global);
-    MOZ_ASSERT(window);
-
-    nsCOMPtr<Element> ownerElement =
-        do_QueryInterface(window->GetChromeEventHandler());
-    if (NS_WARN_IF(!ownerElement)) {
-      // If this fails, the page was navigated. Fail the permission check by
-      // forcing an immediate retry.
-      if (!SendPermissionRetry()) {
-        return IPC_FAIL_NO_REASON(this);
-      }
-      return IPC_OK();
-    }
-
-    RefPtr<PermissionRequestMainProcessHelper> helper =
-        new PermissionRequestMainProcessHelper(this, mFactory.clonePtr(),
-                                               ownerElement, principal);
-
-    IDB_TRY_INSPECT(const PermissionRequestBase::PermissionValue& permission,
-                    helper->PromptIfNeeded(), IPC_FAIL_NO_REASON(this));
-
-    MOZ_ASSERT(permission == PermissionRequestBase::kPermissionAllowed ||
-               permission == PermissionRequestBase::kPermissionDenied ||
-               permission == PermissionRequestBase::kPermissionPrompt);
-
-    if (permission != PermissionRequestBase::kPermissionPrompt) {
-      SendPermissionRetry();
-    }
-    return IPC_OK();
-  }
-
-  RefPtr<BrowserChild> browserChild = mFactory->GetBrowserChild();
-  MOZ_ASSERT(browserChild);
-
-  browserChild->SendIndexedDBPermissionRequest(principal)->Then(
-      GetCurrentSerialEventTarget(), __func__,
-      [this](const uint32_t& aPermission) {
-        this->AssertIsOnOwningThread();
-        MaybeCollectGarbageOnIPCMessage();
-        this->SendPermissionRetry();
-      },
-      [](const mozilla::ipc::ResponseRejectReason) {});
 
   return IPC_OK();
 }
@@ -2440,22 +2155,26 @@ void BackgroundRequestChild::HandleResponse(
 
   nsTArray<StructuredCloneReadInfoChild> cloneReadInfos;
 
-  if (!aResponse.IsEmpty()) {
-    const uint32_t count = aResponse.Length();
+  QM_TRY(OkIf(cloneReadInfos.SetCapacity(aResponse.Length(), fallible)),
+         QM_VOID, ([&aResponse, this](const auto) {
+           // Since we are under memory pressure, release aResponse early.
+           aResponse.Clear();
 
-    cloneReadInfos.SetCapacity(count);
+           DispatchErrorEvent(mRequest, NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR,
+                              AcquireTransaction());
 
-    std::transform(
-        std::make_move_iterator(aResponse.begin()),
-        std::make_move_iterator(aResponse.end()),
-        MakeBackInserter(cloneReadInfos),
-        [database = mTransaction->Database(),
-         this](SerializedStructuredCloneReadInfo&& serializedCloneInfo) {
-          return DeserializeStructuredCloneReadInfo(
-              std::move(serializedCloneInfo), database,
-              [this] { return std::move(*GetNextCloneData()); });
-        });
-  }
+           MOZ_ASSERT(mTransaction->IsAborted());
+         }));
+
+  std::transform(std::make_move_iterator(aResponse.begin()),
+                 std::make_move_iterator(aResponse.end()),
+                 MakeBackInserter(cloneReadInfos),
+                 [database = mTransaction->Database(), this](
+                     SerializedStructuredCloneReadInfo&& serializedCloneInfo) {
+                   return DeserializeStructuredCloneReadInfo(
+                       std::move(serializedCloneInfo), database,
+                       [this] { return std::move(*GetNextCloneData()); });
+                 });
 
   SetResultAndDispatchSuccessEvent(mRequest, AcquireTransaction(),
                                    cloneReadInfos);
@@ -2790,12 +2509,12 @@ nsresult BackgroundRequestChild::PreprocessHelper::ProcessStream() {
       blobInputStream->GetInternalStream();
   MOZ_ASSERT(internalInputStream);
 
-  IDB_TRY(
-      SnappyUncompressStructuredCloneData(*internalInputStream, *mCloneData));
+  QM_TRY(MOZ_TO_RESULT(
+      SnappyUncompressStructuredCloneData(*internalInputStream, *mCloneData)));
 
   mState = State::Finishing;
 
-  IDB_TRY(mOwningEventTarget->Dispatch(this, NS_DISPATCH_NORMAL));
+  QM_TRY(MOZ_TO_RESULT(mOwningEventTarget->Dispatch(this, NS_DISPATCH_NORMAL)));
 
   return NS_OK;
 }

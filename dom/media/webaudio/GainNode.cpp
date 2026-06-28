@@ -10,8 +10,7 @@
 #include "AudioDestinationNode.h"
 #include "WebAudioUtils.h"
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(GainNode, AudioNode, mGain)
 
@@ -125,7 +124,7 @@ already_AddRefed<GainNode> GainNode::Create(AudioContext& aAudioContext,
     return nullptr;
   }
 
-  audioNode->Gain()->SetValue(aOptions.mGain);
+  audioNode->Gain()->SetInitialValue(aOptions.mGain);
   return audioNode.forget();
 }
 
@@ -144,5 +143,4 @@ JSObject* GainNode::WrapObject(JSContext* aCx,
   return GainNode_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

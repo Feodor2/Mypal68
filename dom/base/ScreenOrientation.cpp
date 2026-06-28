@@ -15,6 +15,7 @@
 
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "nsContentUtils.h"
 
 using namespace mozilla;
@@ -155,8 +156,11 @@ bool ScreenOrientation::LockOrientationTask::OrientationLockContains(
 
 NS_IMETHODIMP
 ScreenOrientation::LockOrientationTask::Run() {
-  // Step to lock the orientation as defined in the spec.
+  if (!mPromise) {
+    return NS_OK;
+  }
 
+  // Step to lock the orientation as defined in the spec.
   if (mDocument->GetOrientationPendingPromise() != mPromise) {
     // The document's pending promise is not associated with this task
     // to lock orientation. There has since been another request to
@@ -179,18 +183,28 @@ ScreenOrientation::LockOrientationTask::Run() {
     return NS_OK;
   }
 
-  ErrorResult rv;
-  bool result = mScreenOrientation->LockDeviceOrientation(mOrientationLock,
-                                                          mIsFullscreen, rv);
-  if (NS_WARN_IF(rv.Failed())) {
-    return rv.StealNSResult();
-  }
+  RefPtr<MozPromise<bool, bool, false>> lockOrientationPromise =
+      mScreenOrientation->LockDeviceOrientation(mOrientationLock,
+                                                mIsFullscreen);
 
-  if (NS_WARN_IF(!result)) {
+  if (NS_WARN_IF(!lockOrientationPromise)) {
     mPromise->MaybeReject(NS_ERROR_UNEXPECTED);
     mDocument->ClearOrientationPendingPromise();
     return NS_OK;
   }
+
+  lockOrientationPromise->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [self = RefPtr{this}](
+          const mozilla::MozPromise<bool, bool, false>::ResolveOrRejectValue&
+              aValue) {
+        if (aValue.IsResolve()) {
+          return NS_OK;
+        }
+        self->mPromise->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
+        self->mDocument->ClearOrientationPendingPromise();
+        return NS_OK;
+      });
 
   BrowsingContext* bc = mDocument->GetBrowsingContext();
   if (OrientationLockContains(bc->GetCurrentOrientationType()) ||
@@ -307,6 +321,12 @@ already_AddRefed<Promise> ScreenOrientation::LockInternal(
   p->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
   return p.forget();
 #else
+  // Bypass locking screen orientation if preference is false
+  if (!StaticPrefs::dom_screenorientation_allow_lock()) {
+    p->MaybeReject(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+    return p.forget();
+  }
+
   LockPermission perm = GetLockOrientationPermission(true);
   if (perm == LOCK_DENIED) {
     p->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
@@ -340,11 +360,10 @@ already_AddRefed<Promise> ScreenOrientation::LockInternal(
 #endif
 }
 
-bool ScreenOrientation::LockDeviceOrientation(
-    hal::ScreenOrientation aOrientation, bool aIsFullscreen, ErrorResult& aRv) {
+RefPtr<MozPromise<bool, bool, false>> ScreenOrientation::LockDeviceOrientation(
+    hal::ScreenOrientation aOrientation, bool aIsFullscreen) {
   if (!GetOwner()) {
-    aRv.Throw(NS_ERROR_UNEXPECTED);
-    return false;
+    return MozPromise<bool, bool, false>::CreateAndReject(false, __func__);
   }
 
   nsCOMPtr<EventTarget> target = GetOwner()->GetDoc();
@@ -353,11 +372,7 @@ bool ScreenOrientation::LockDeviceOrientation(
   // This needs to be done before LockScreenOrientation call to make sure
   // the locking can be unlocked.
   if (aIsFullscreen && !target) {
-    return false;
-  }
-
-  if (NS_WARN_IF(!hal::LockScreenOrientation(aOrientation))) {
-    return false;
+    return MozPromise<bool, bool, false>::CreateAndReject(false, __func__);
   }
 
   // We are fullscreen and lock has been accepted.
@@ -366,15 +381,21 @@ bool ScreenOrientation::LockDeviceOrientation(
       mFullscreenListener = new FullscreenEventListener();
     }
 
-    aRv = target->AddSystemEventListener(u"fullscreenchange"_ns,
-                                         mFullscreenListener,
-                                         /* useCapture = */ true);
-    if (NS_WARN_IF(aRv.Failed())) {
-      return false;
+    nsresult rv = target->AddSystemEventListener(u"fullscreenchange"_ns,
+                                                 mFullscreenListener,
+                                                 /* aUseCapture = */ true);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return MozPromise<bool, bool, false>::CreateAndReject(false, __func__);
     }
   }
 
-  return true;
+  RefPtr<MozPromise<bool, bool, false>> halPromise =
+      hal::LockScreenOrientation(aOrientation);
+  if (halPromise == nullptr) {
+    return MozPromise<bool, bool, false>::CreateAndReject(false, __func__);
+  }
+
+  return halPromise;
 }
 
 void ScreenOrientation::Unlock(ErrorResult& aRv) {
@@ -520,7 +541,7 @@ void ScreenOrientation::Notify(const hal::ScreenConfiguration& aConfiguration) {
   if (doc->Hidden() && !mVisibleListener) {
     mVisibleListener = new VisibleEventListener();
     rv = doc->AddSystemEventListener(u"visibilitychange"_ns, mVisibleListener,
-                                     /* useCapture = */ true);
+                                     /* aUseCapture = */ true);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "AddSystemEventListener failed");
     return;
   }
@@ -539,8 +560,14 @@ void ScreenOrientation::UpdateActiveOrientationLock(
   if (aOrientation == hal::eScreenOrientation_None) {
     hal::UnlockScreenOrientation();
   } else {
-    DebugOnly<bool> ok = hal::LockScreenOrientation(aOrientation);
-    NS_WARNING_ASSERTION(ok, "hal::LockScreenOrientation failed");
+    hal::LockScreenOrientation(aOrientation)
+        ->Then(
+            GetMainThreadSerialEventTarget(), __func__,
+            [](const mozilla::MozPromise<bool, bool,
+                                         false>::ResolveOrRejectValue& aValue) {
+              NS_WARNING_ASSERTION(aValue.IsResolve(),
+                                   "hal::LockScreenOrientation failed");
+            });
   }
 }
 

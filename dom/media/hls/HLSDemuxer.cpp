@@ -10,6 +10,9 @@
 
 #include "HLSUtils.h"
 #include "MediaCodec.h"
+#include "mozilla/java/GeckoAudioInfoWrappers.h"
+#include "mozilla/java/GeckoHLSDemuxerWrapperNatives.h"
+#include "mozilla/java/GeckoVideoInfoWrappers.h"
 #include "mozilla/Unused.h"
 #include "nsPrintfCString.h"
 
@@ -122,7 +125,7 @@ class HLSDemuxer::HLSDemuxerCallbacksSupport
 };
 
 HLSDemuxer::HLSDemuxer(int aPlayerId)
-    : mTaskQueue(new TaskQueue(GetMediaThreadPool(MediaThreadType::PLAYBACK),
+    : mTaskQueue(new TaskQueue(GetMediaThreadPool(MediaThreadType::CONTROLLER),
                                /* aSupportsTailDispatch = */ false)) {
   MOZ_ASSERT(NS_IsMainThread());
   HLSDemuxerCallbacksSupport::Init();
@@ -193,12 +196,6 @@ already_AddRefed<MediaTrackDemuxer> HLSDemuxer::GetTrackDemuxer(
 
 bool HLSDemuxer::IsSeekable() const {
   return !mHLSDemuxerWrapper->IsLiveStream();
-}
-
-UniquePtr<EncryptionInfo> HLSDemuxer::GetCrypto() {
-  // TODO: Currently, our HLS implementation doesn't support encrypted content.
-  // Return null at this stage.
-  return nullptr;
 }
 
 TimeUnit HLSDemuxer::GetNextKeyFrameTime() {
@@ -395,84 +392,6 @@ void HLSTrackDemuxer::UpdateMediaInfo(int index) {
   }
 }
 
-CryptoSample HLSTrackDemuxer::ExtractCryptoSample(
-    size_t aSampleSize, java::sdk::CryptoInfo::LocalRef aCryptoInfo) {
-  if (!aCryptoInfo) {
-    return CryptoSample{};
-  }
-  // Extract Crypto information
-  CryptoSample crypto;
-  char const* msg = "";
-  do {
-    HLS_DEBUG("HLSTrackDemuxer", "Sample has Crypto Info");
-
-    int32_t mode = 0;
-    if (NS_FAILED(aCryptoInfo->Mode(&mode))) {
-      msg = "Error when extracting encryption mode.";
-      break;
-    }
-    // We currently only handle ctr mode.
-    if (mode != java::sdk::MediaCodec::CRYPTO_MODE_AES_CTR) {
-      msg = "Error: unexpected encryption mode.";
-      break;
-    }
-
-    crypto.mCryptoScheme = CryptoScheme::Cenc;
-
-    mozilla::jni::ByteArray::LocalRef ivData;
-    if (NS_FAILED(aCryptoInfo->Iv(&ivData))) {
-      msg = "Error when extracting encryption IV.";
-      break;
-    }
-    // Data in mIV is uint8_t and jbyte is signed char
-    auto&& ivArr = ivData->GetElements();
-    crypto.mIV.AppendElements(reinterpret_cast<uint8_t*>(&ivArr[0]),
-                              ivArr.Length());
-    crypto.mIVSize = ivArr.Length();
-    mozilla::jni::ByteArray::LocalRef keyData;
-    if (NS_FAILED(aCryptoInfo->Key(&keyData))) {
-      msg = "Error when extracting encryption key.";
-      break;
-    }
-    auto&& keyArr = keyData->GetElements();
-    // Data in mKeyId is uint8_t and jbyte is signed char
-    crypto.mKeyId.AppendElements(reinterpret_cast<uint8_t*>(&keyArr[0]),
-                                 keyArr.Length());
-
-    mozilla::jni::IntArray::LocalRef clearData;
-    if (NS_FAILED(aCryptoInfo->NumBytesOfClearData(&clearData))) {
-      msg = "Error when extracting clear data.";
-      break;
-    }
-    // Data in mPlainSizes is uint16_t, NumBytesOfClearData is int32_t
-    // , so need a for loop to copy
-    for (const auto& b : clearData->GetElements()) {
-      crypto.mPlainSizes.AppendElement(b);
-    }
-
-    mozilla::jni::IntArray::LocalRef encryptedData;
-    if (NS_FAILED(aCryptoInfo->NumBytesOfEncryptedData(&encryptedData))) {
-      msg = "Error when extracting encrypted data.";
-      break;
-    }
-    auto&& encryptedArr = encryptedData->GetElements();
-    // Data in mEncryptedSizes is uint32_t, NumBytesOfEncryptedData is int32_t
-    crypto.mEncryptedSizes.AppendElements(
-        reinterpret_cast<uint32_t*>(&encryptedArr[0]), encryptedArr.Length());
-    int subSamplesNum = 0;
-    if (NS_FAILED(aCryptoInfo->NumSubSamples(&subSamplesNum))) {
-      msg = "Error when extracting subsamples.";
-      break;
-    }
-    crypto.mPlainSizes[0] -= (aSampleSize - subSamplesNum);
-
-    return crypto;
-  } while (false);
-
-  HLS_DEBUG("HLSTrackDemuxer", "%s", msg);
-  return CryptoSample{};
-}
-
 RefPtr<MediaRawData> HLSTrackDemuxer::ConvertToMediaRawData(
     java::GeckoHLSSample::LocalRef aSample) {
   java::sdk::BufferInfo::LocalRef info = aSample->Info();
@@ -515,7 +434,6 @@ RefPtr<MediaRawData> HLSTrackDemuxer::ConvertToMediaRawData(
       jni::ByteBuffer::New(writer->Data(), writer->Size());
   aSample->WriteToByteBuffer(dest);
 
-  writer->mCrypto = ExtractCryptoSample(writer->Size(), aSample->CryptoInfo());
   return mrd;
 }
 

@@ -41,6 +41,8 @@ class Storage : public nsISupports, public nsWrapperCache {
 
   virtual int64_t GetOriginQuotaUsage() const = 0;
 
+  virtual void Disconnect() {}
+
   nsIPrincipal* Principal() const { return mPrincipal; }
 
   nsIPrincipal* StoragePrincipal() const { return mStoragePrincipal; }
@@ -112,14 +114,22 @@ class Storage : public nsISupports, public nsWrapperCache {
   virtual void BeginExplicitSnapshot(nsIPrincipal& aSubjectPrincipal,
                                      ErrorResult& aRv) {}
 
+#ifdef ENABLE_TESTS
+  virtual void CheckpointExplicitSnapshot(nsIPrincipal& aSubjectPrincipal,
+                                          ErrorResult& aRv) {}
+#endif
+
   virtual void EndExplicitSnapshot(nsIPrincipal& aSubjectPrincipal,
                                    ErrorResult& aRv) {}
 
 #ifdef ENABLE_TESTS
-  virtual bool GetHasActiveSnapshot(nsIPrincipal& aSubjectPrincipal,
-                                    ErrorResult& aRv) {
+  virtual bool GetHasSnapshot(nsIPrincipal& aSubjectPrincipal,
+                              ErrorResult& aRv) {
     return false;
   }
+
+  virtual int64_t GetSnapshotUsage(nsIPrincipal& aSubjectPrincipal,
+                                   ErrorResult& aRv);
 #endif
 
   //////////////////////////////////////////////////////////////////////////////

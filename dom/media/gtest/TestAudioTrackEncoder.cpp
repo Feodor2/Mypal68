@@ -6,6 +6,7 @@
 #include "OpusTrackEncoder.h"
 
 #include "AudioGenerator.h"
+#include "AudioSampleFormat.h"
 
 using namespace mozilla;
 
@@ -101,7 +102,7 @@ TEST(OpusAudioTrackEncoder, Init)
     // For non-null segments we should init immediately
     OpusTrackEncoder encoder(48000);
     AudioSegment segment;
-    AudioGenerator generator(2, 48000);
+    AudioGenerator<AudioDataValue> generator(2, 48000);
     generator.Generate(segment, 1);
     encoder.TryInit(segment, segment.GetDuration());
     EXPECT_TRUE(encoder.IsInitialized());
@@ -111,7 +112,7 @@ TEST(OpusAudioTrackEncoder, Init)
     // Test low sample rate bound
     OpusTrackEncoder encoder(7999);
     AudioSegment segment;
-    AudioGenerator generator(2, 7999);
+    AudioGenerator<AudioDataValue> generator(2, 7999);
     generator.Generate(segment, 1);
     encoder.TryInit(segment, segment.GetDuration());
     EXPECT_FALSE(encoder.IsInitialized());
@@ -121,7 +122,7 @@ TEST(OpusAudioTrackEncoder, Init)
     // Test low sample rate bound
     OpusTrackEncoder encoder(8000);
     AudioSegment segment;
-    AudioGenerator generator(2, 8000);
+    AudioGenerator<AudioDataValue> generator(2, 8000);
     generator.Generate(segment, 1);
     encoder.TryInit(segment, segment.GetDuration());
     EXPECT_TRUE(encoder.IsInitialized());
@@ -131,7 +132,7 @@ TEST(OpusAudioTrackEncoder, Init)
     // Test high sample rate bound
     OpusTrackEncoder encoder(192001);
     AudioSegment segment;
-    AudioGenerator generator(2, 192001);
+    AudioGenerator<AudioDataValue> generator(2, 192001);
     generator.Generate(segment, 1);
     encoder.TryInit(segment, segment.GetDuration());
     EXPECT_FALSE(encoder.IsInitialized());
@@ -141,7 +142,7 @@ TEST(OpusAudioTrackEncoder, Init)
     // Test high sample rate bound
     OpusTrackEncoder encoder(192000);
     AudioSegment segment;
-    AudioGenerator generator(2, 192000);
+    AudioGenerator<AudioDataValue> generator(2, 192000);
     generator.Generate(segment, 1);
     encoder.TryInit(segment, segment.GetDuration());
     EXPECT_TRUE(encoder.IsInitialized());
@@ -193,7 +194,7 @@ TEST(OpusAudioTrackEncoder, FrameEncode)
   EXPECT_TRUE(encoder.TestOpusRawCreation(channels, sampleRate));
 
   // Generate five seconds of raw audio data.
-  AudioGenerator generator(channels, sampleRate);
+  AudioGenerator<AudioDataValue> generator(channels, sampleRate);
   AudioSegment segment;
   const int32_t samples = sampleRate * 5;
   generator.Generate(segment, samples);

@@ -6,8 +6,7 @@
 #include "mozilla/gmp/GMPTypes.h"
 #include "mozilla/CheckedInt.h"
 
-namespace mozilla {
-namespace gmp {
+namespace mozilla::gmp {
 
 GMPVideoi420FrameImpl::GMPVideoi420FrameImpl(GMPVideoHostImpl* aHost)
     : mYPlane(aHost),
@@ -312,5 +311,4 @@ void GMPVideoi420FrameImpl::ResetSize() {
   mVPlane.ResetSize();
 }
 
-}  // namespace gmp
-}  // namespace mozilla
+}  // namespace mozilla::gmp

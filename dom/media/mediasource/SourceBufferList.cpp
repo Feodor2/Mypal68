@@ -27,9 +27,7 @@ extern mozilla::LogModule* GetMediaSourceAPILog();
 struct JSContext;
 class JSObject;
 
-namespace mozilla {
-
-namespace dom {
+namespace mozilla::dom {
 
 SourceBufferList::~SourceBufferList() = default;
 
@@ -182,6 +180,4 @@ NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 #undef MSE_API
 #undef MSE_DEBUG
-}  // namespace dom
-
-}  // namespace mozilla
+}  // namespace mozilla::dom

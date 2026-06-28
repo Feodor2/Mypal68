@@ -8,9 +8,11 @@
 #include "AudioContext.h"
 #include "CubebUtils.h"
 #include "mozilla/dom/AudioDestinationNodeBinding.h"
-#include "mozilla/dom/OfflineAudioCompletionEvent.h"
-#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/BaseAudioContextBinding.h"
+#include "mozilla/dom/OfflineAudioCompletionEvent.h"
+#include "mozilla/dom/power/PowerManagerService.h"
+#include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/WakeLock.h"
 #include "AudioChannelService.h"
 #include "AudioNodeEngine.h"
 #include "AudioNodeTrack.h"
@@ -26,8 +28,7 @@ extern mozilla::LazyLogModule gAudioChannelLog;
 #define AUDIO_CHANNEL_LOG(msg, ...) \
   MOZ_LOG(gAudioChannelLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
 
-namespace mozilla {
-namespace dom {
+namespace mozilla::dom {
 
 namespace {
 class OnCompleteTask final : public Runnable {
@@ -333,19 +334,13 @@ AudioDestinationNode::AudioDestinationNode(AudioContext* aContext,
   mTrack->AddAudioOutput(nullptr);
 
   if (aAllowedToStart) {
-    graph->NotifyWhenGraphStarted(mTrack)->Then(
-        aContext->GetMainThread(), "AudioDestinationNode OnRunning",
-        [context = RefPtr<AudioContext>(aContext)] {
-          context->OnStateChanged(nullptr, AudioContextState::Running);
-        },
-        [] {
-          NS_WARNING(
-              "AudioDestinationNode's graph never started processing audio");
-        });
+    CreateAudioWakeLockIfNeeded();
   }
 }
 
-AudioDestinationNode::~AudioDestinationNode() {}
+AudioDestinationNode::~AudioDestinationNode() {
+  ReleaseAudioWakeLockIfExists();
+}
 
 size_t AudioDestinationNode::SizeOfExcludingThis(
     MallocSizeOf aMallocSizeOf) const {
@@ -406,10 +401,6 @@ void AudioDestinationNode::DestroyMediaTrack() {
   Context()->ShutdownWorklet();
 
   mTrack->RemoveMainThreadListener(this);
-  MediaTrackGraph* graph = mTrack->Graph();
-  if (graph->IsNonRealtime()) {
-    MediaTrackGraph::DestroyNonRealtimeInstance(graph);
-  }
   AudioNode::DestroyMediaTrack();
 }
 
@@ -481,11 +472,13 @@ void AudioDestinationNode::Unmute() {
 void AudioDestinationNode::Suspend() {
   DestroyAudioChannelAgent();
   SendInt32ParameterToTrack(DestinationNodeEngine::SUSPENDED, 1);
+  ReleaseAudioWakeLockIfExists();
 }
 
 void AudioDestinationNode::Resume() {
   CreateAudioChannelAgent();
   SendInt32ParameterToTrack(DestinationNodeEngine::SUSPENDED, 0);
+  CreateAudioWakeLockIfNeeded();
 }
 
 void AudioDestinationNode::OfflineShutdown() {
@@ -493,7 +486,7 @@ void AudioDestinationNode::OfflineShutdown() {
              "Should only be called on a valid OfflineAudioContext");
 
   if (mTrack) {
-    MediaTrackGraph::DestroyNonRealtimeInstance(mTrack->Graph());
+    mTrack->Graph()->MediaTrackGraph::ForceShutDown();
     mOfflineRenderingRef.Drop(this);
   }
 }
@@ -554,7 +547,7 @@ AudioDestinationNode::WindowSuspendChanged(nsSuspendedTypes aSuspend) {
 
   DisabledTrackMode disabledMode =
       suspended ? DisabledTrackMode::SILENCE_BLACK : DisabledTrackMode::ENABLED;
-  mTrack->SetEnabled(disabledMode);
+  mTrack->SetDisabledTrackMode(disabledMode);
 
   AudioChannelService::AudibleState audible =
       aSuspend == nsISuspendedTypes::NONE_SUSPENDED
@@ -612,6 +605,26 @@ void AudioDestinationNode::StopAudioCapturingTrack() {
   mCaptureTrackPort = nullptr;
 }
 
+void AudioDestinationNode::CreateAudioWakeLockIfNeeded() {
+  if (!mWakeLock) {
+    RefPtr<power::PowerManagerService> pmService =
+        power::PowerManagerService::GetInstance();
+    NS_ENSURE_TRUE_VOID(pmService);
+
+    ErrorResult rv;
+    mWakeLock = pmService->NewWakeLock(NS_LITERAL_STRING("audio-playing"),
+                                       GetOwner(), rv);
+  }
+}
+
+void AudioDestinationNode::ReleaseAudioWakeLockIfExists() {
+  if (mWakeLock) {
+    IgnoredErrorResult rv;
+    mWakeLock->Unlock(rv);
+    mWakeLock = nullptr;
+  }
+}
+
 nsresult AudioDestinationNode::CreateAudioChannelAgent() {
   if (mIsOffline || mAudioChannelAgent) {
     return NS_OK;
@@ -663,5 +676,4 @@ void AudioDestinationNode::NotifyAudibleStateChanged(bool aAudible) {
   mAudioChannelAgent->PullInitialUpdate();
 }
 
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom

@@ -375,6 +375,7 @@ def try_preprocess(compiler, language, source):
          _import='kernel_preprocessor_checks')
 @imports(_from='mozbuild.configure.constants',
          _import='OS_preprocessor_checks')
+@imports(_from='six', _import='iteritems')
 @imports(_from='textwrap', _import='dedent')
 @imports(_from='__builtin__', _import='Exception')
 def get_compiler_info(compiler, language):
@@ -424,7 +425,7 @@ def get_compiler_info(compiler, language):
         ('KERNEL', kernel_preprocessor_checks),
         ('OS', OS_preprocessor_checks),
     ):
-        for n, (value, condition) in enumerate(preprocessor_checks.iteritems()):
+        for n, (value, condition) in enumerate(iteritems(preprocessor_checks)):
             check += dedent('''\
                 #%(if)s %(condition)s
                 %%%(name)s "%(value)s"
@@ -457,7 +458,7 @@ def get_compiler_info(compiler, language):
     # have non-ASCII characters. Treat the output as bytearray.
     data = {}
     for line in result.splitlines():
-        if line.startswith(b'%'):
+        if line.startswith('%'):
             k, _, v = line.partition(' ')
             k = k.lstrip('%')
             data[k] = v.replace(' ', '').lstrip('"').rstrip('"')
@@ -572,11 +573,8 @@ def check_compiler(compiler, language, target):
 @imports(_from='__builtin__', _import='open')
 @imports('json')
 @imports('os')
-@imports('subprocess')
-@imports('sys')
 def get_vc_paths(topsrcdir):
     def vswhere(args):
-        encoding = 'mbcs' if sys.platform == 'win32' else 'utf-8'
         program_files = (os.environ.get('PROGRAMFILES(X86)') or
                          os.environ.get('PROGRAMFILES'))
         if not program_files:
@@ -585,9 +583,7 @@ def get_vc_paths(topsrcdir):
                                'Installer', 'vswhere.exe')
         if not os.path.exists(vswhere):
             return []
-        return json.loads(
-            subprocess.check_output([vswhere, '-format', 'json'] + args)
-            .decode(encoding, 'replace'))
+        return json.loads(check_cmd_output(vswhere, '-format', 'json', *args))
 
     for install in vswhere(['-products', '*', '-requires', 'Microsoft.VisualStudio.Component.VC.Tools.x86.x64']):
         path = install['installationPath']
@@ -708,17 +704,14 @@ def toolchain_search_path_for(host_or_target):
             result.append(vc_compiler_path[0])
 
         # Also add in the location to which `mach bootstrap` or
-        # `mach artifact toolchain` installs clang.
-        bootstrapped = []
-
-        bootstrap_clang_path = os.path.join(mozbuild_state_path, 'clang', 'bin')
-        bootstrapped.append(bootstrap_clang_path)
-
-        bootstrap_cbindgen_path = os.path.join(mozbuild_state_path, 'cbindgen')
-        bootstrapped.append(bootstrap_cbindgen_path)
-
-        bootstrap_nasm_path = os.path.join(mozbuild_state_path, 'nasm')
-        bootstrapped.append(bootstrap_nasm_path)
+        # `mach artifact toolchain` installs clang, cbindgen, etc.
+        bootstrapped = [
+            os.path.join(mozbuild_state_path, *rest) for rest in (
+                ['clang', 'bin'],
+                ['cbindgen'],
+                ['nasm'],
+                ['lucetc'],
+            )]
 
         # Also add the rustup install directory for cargo/rustc.
         rustup_path = os.path.expanduser(os.path.join('~', '.cargo', 'bin'))
@@ -1016,9 +1009,9 @@ def compiler(language, host_or_target, c_compiler=None, other_compiler=None,
             if host_or_target.os == 'Android':
                 raise FatalCheckError('GCC is not supported on Android.\n'
                                       'Please use clang from the Android NDK instead.')
-            if info.version < '6.1.0':
+            if info.version < '7.1.0':
                 raise FatalCheckError(
-                    'Only GCC 6.1 or newer is supported (found version %s).'
+                    'Only GCC 7.1 or newer is supported (found version %s).'
                     % info.version)
 
         if info.type == 'clang-cl':
@@ -1962,22 +1955,20 @@ def select_linker(linker, c_compiler, developer_options, enable_gold,
         env = dict(os.environ)
         env['LD_PRINT_OPTIONS'] = '1'
         retcode, stdout, stderr = get_cmd_output(*cmd, env=env)
-        cmd_output = stdout.decode('utf-8')
-        stderr = stderr.decode('utf-8')
         if retcode == 1 and 'Logging ld64 options' in stderr:
             kind = 'ld64'
 
         elif retcode != 0:
             return None
 
-        elif 'GNU ld' in cmd_output:
+        elif 'GNU ld' in stdout:
             # We are using the normal linker
             kind = 'bfd'
 
-        elif 'GNU gold' in cmd_output:
+        elif 'GNU gold' in stdout:
             kind = 'gold'
 
-        elif 'LLD' in cmd_output:
+        elif 'LLD' in stdout:
             kind = 'lld'
 
         else:
@@ -2083,7 +2074,7 @@ assembler = check_prog('_AS', input=provided_assembler.program,
 def as_with_flags(as_info, assembler, provided_assembler, c_compiler):
     if provided_assembler:
         return provided_assembler.wrapper + \
-            [provided_assembler.program] + \
+            [assembler] + \
             provided_assembler.flags
 
     if as_info.type == 'masm':
@@ -2116,7 +2107,7 @@ def gnu_as(assembler, c_compiler, toolchain_flags):
         # close the stdin pipe.
         # clang will error if it uses its integrated assembler for this target,
         # so handle failures gracefully.
-        if 'GNU' in check_cmd_output(*cmd, stdin=subprocess.PIPE, onerror=lambda: '').decode('utf-8'):
+        if 'GNU' in check_cmd_output(*cmd, stdin=subprocess.PIPE, onerror=lambda: ''):
             return True
 
 
@@ -2333,7 +2324,7 @@ def rc_names(c_compiler, toolchain_prefix):
     if c_compiler.type in ('gcc', 'clang'):
         return tuple('%s%s' % (p, 'windres')
                      for p in ('',) + (toolchain_prefix or ()))
-    return ('rc',)
+    return ('rc.exe',)
 
 
 check_prog('RC', rc_names, paths=sdk_bin_path, when=target_is_windows)

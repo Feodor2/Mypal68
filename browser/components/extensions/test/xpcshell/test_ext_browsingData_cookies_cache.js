@@ -35,7 +35,8 @@ function addCookie(cookie) {
     false,
     Date.now() / 1000 + 10000,
     {},
-    Ci.nsICookie.SAMESITE_NONE
+    Ci.nsICookie.SAMESITE_NONE,
+    Ci.nsICookie.SCHEME_HTTPS
   );
   ok(
     Services.cookies.cookieExists(cookie.host, cookie.path, cookie.name, {}),

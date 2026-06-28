@@ -664,6 +664,7 @@ void MouseScrollHandler::HandleScrollMessageAsMouseWheelMessage(
     case SB_PAGEUP:
       delta = -1.0;
       lineOrPageDelta = -1;
+      [[fallthrough]];
     case SB_PAGEDOWN:
       wheelEvent.mDeltaMode = dom::WheelEvent_Binding::DOM_DELTA_PAGE;
       break;
@@ -671,6 +672,7 @@ void MouseScrollHandler::HandleScrollMessageAsMouseWheelMessage(
     case SB_LINEUP:
       delta = -1.0;
       lineOrPageDelta = -1;
+      [[fallthrough]];
     case SB_LINEDOWN:
       wheelEvent.mDeltaMode = dom::WheelEvent_Binding::DOM_DELTA_LINE;
       break;

@@ -71,10 +71,9 @@ add_task(async function() {
         searchObserver,
         "browser-search-engine-modified"
       );
-      Services.search.addEngine(
+      Services.search.addOpenSearchEngine(
         "http://test:80/browser/browser/base/content/test/about/POSTSearchEngine.xml",
-        null,
-        false
+        null
       );
     });
   });

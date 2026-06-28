@@ -161,7 +161,7 @@ class nsTimerImpl {
   mozilla::TimeStamp mTimeout;
 
   RefPtr<nsITimer> mITimer;
-  Lock mMutex;
+  Lock2 mMutex;
   Callback mCallback;
   // Counter because in rare cases we can Fire reentrantly
   unsigned int mFiring;

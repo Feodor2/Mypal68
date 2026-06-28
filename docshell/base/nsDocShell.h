@@ -188,9 +188,11 @@ class nsDocShell final : public nsDocLoader,
 
   NS_FORWARD_SAFE_NSIDOMSTORAGEMANAGER(TopSessionStorageManager())
 
-  // Create a new nsDocShell object, initializing it.
+  // Create a new nsDocShell object.
   static already_AddRefed<nsDocShell> Create(
       mozilla::dom::BrowsingContext* aBrowsingContext);
+
+  bool Initialize();
 
   NS_IMETHOD Stop() override {
     // Need this here because otherwise nsIWebNavigation::Stop
@@ -1191,7 +1193,7 @@ class nsDocShell final : public nsDocLoader,
   bool mInEnsureScriptEnv;
 #endif
 
-  bool mCreated : 1;
+  bool mInitialized : 1;
   bool mAllowSubframes : 1;
   bool mAllowPlugins : 1;
   bool mAllowJavascript : 1;

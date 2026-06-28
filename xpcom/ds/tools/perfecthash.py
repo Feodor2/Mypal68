@@ -22,7 +22,18 @@ small dataset it was designed for. In the future we may want to optimize further
 """
 
 from collections import namedtuple
+from mozbuild.util import ensure_bytes
 import textwrap
+import six
+
+
+# Iteration over bytestrings works differently in Python 2 and 3; this function
+# captures the two possibilities. Returns an 'int' given the output of iterating
+# through a bytestring regardless of the input.
+def _ord(c):
+    if six.PY3:
+        return c
+    return ord(c)
 
 
 class PerfectHash(object):
@@ -114,13 +125,14 @@ class PerfectHash(object):
         stored in that table is used as the offset basis for indexing into the
         values table."""
         for byte in memoryview(key):
-            basis ^= ord(byte)      # xor-in the byte
+            obyte = _ord(byte)
+            basis ^= obyte          # xor-in the byte
             basis *= cls.FNV_PRIME  # Multiply by the FNV prime
             basis &= cls.U32_MAX    # clamp to 32-bits
         return basis
 
     def key(self, entry):
-        return memoryview(self._key(entry))
+        return memoryview(ensure_bytes(self._key(entry)))
 
     def get_raw_index(self, key):
         """Determine the index in self.entries without validating"""
@@ -288,7 +300,7 @@ class CGHelper(object):
                             can be used for additional checks, e.g. for keys
                             not in the table."""
 
-        assert all(ord(b) <= 0x7f
+        assert all(_ord(b) <= 0x7f
                    for e in self.phf.entries
                    for b in self.phf.key(e)), "non-ASCII key"
 

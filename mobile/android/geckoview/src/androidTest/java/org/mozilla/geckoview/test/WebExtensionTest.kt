@@ -4,7 +4,6 @@
 package org.mozilla.geckoview.test
 
 import android.support.test.InstrumentationRegistry
-import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.ReuseSession
 
 import android.support.test.filters.MediumTest
 import android.support.test.runner.AndroidJUnit4
@@ -18,7 +17,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.*
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule
-import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDevToolsAPI
 import org.mozilla.geckoview.test.util.Callbacks
 import org.mozilla.geckoview.test.util.HttpBin
 import java.net.URI
@@ -27,7 +25,6 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 @MediumTest
-@ReuseSession(false)
 class WebExtensionTest : BaseSessionTest() {
     companion object {
         val TEST_ENDPOINT: String = "http://localhost:4243"
@@ -36,14 +33,13 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun registerWebExtension() {
         mainSession.loadUri("example.com")
         sessionRule.waitForPageStop()
 
         // First let's check that the color of the border is empty before loading
         // the WebExtension
-        val colorBefore = sessionRule.evaluateJS(mainSession, "document.body.style.borderColor")
+        val colorBefore = mainSession.evaluateJS("document.body.style.borderColor")
         assertThat("The border color should be empty when loading without extensions.",
                 colorBefore as String, equalTo(""))
 
@@ -56,7 +52,7 @@ class WebExtensionTest : BaseSessionTest() {
         sessionRule.waitForPageStop()
 
         // Check that the WebExtension was applied by checking the border color
-        val color = sessionRule.evaluateJS(mainSession, "document.body.style.borderColor")
+        val color = mainSession.evaluateJS("document.body.style.borderColor")
         assertThat("Content script should have been applied",
                 color as String, equalTo("red"))
 
@@ -67,7 +63,7 @@ class WebExtensionTest : BaseSessionTest() {
         sessionRule.waitForPageStop()
 
         // Check that the WebExtension was not applied after being unregistered
-        val colorAfter = sessionRule.evaluateJS(mainSession, "document.body.style.borderColor")
+        val colorAfter = mainSession.evaluateJS("document.body.style.borderColor")
         assertThat("Content script should have been applied",
                 colorAfter as String, equalTo(""))
     }
@@ -137,7 +133,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun contentMessaging() {
         mainSession.loadUri("example.com")
         sessionRule.waitForPageStop()
@@ -145,7 +140,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun backgroundMessaging() {
         testOnMessage(true)
     }
@@ -212,7 +206,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun contentPortMessaging() {
         mainSession.loadUri("example.com")
         sessionRule.waitForPageStop()
@@ -220,7 +213,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun backgroundPortMessaging() {
         testPortMessage(true)
     }
@@ -294,7 +286,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun contentPortDisconnect() {
         mainSession.loadUri("example.com")
         sessionRule.waitForPageStop()
@@ -307,7 +298,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun contentPortDisconnectAfterRefresh() {
         mainSession.loadUri("example.com")
         sessionRule.waitForPageStop()
@@ -374,7 +364,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun contentPortDisconnectFromApp() {
         mainSession.loadUri("example.com")
         sessionRule.waitForPageStop()
@@ -447,7 +436,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun iframeTopLevel() {
         val httpBin = HttpBin(InstrumentationRegistry.getTargetContext(), URI.create(TEST_ENDPOINT))
 

@@ -277,12 +277,6 @@ var DownloadsCommon = {
       return DownloadsCommon.DOWNLOAD_FINISHED;
     }
     if (download.error) {
-      if (download.error.becauseBlockedByParentalControls) {
-        return DownloadsCommon.DOWNLOAD_BLOCKED_PARENTAL;
-      }
-      if (download.error.becauseBlockedByReputationCheck) {
-        return DownloadsCommon.DOWNLOAD_DIRTY;
-      }
       return DownloadsCommon.DOWNLOAD_FAILED;
     }
     if (download.canceled) {
@@ -540,126 +534,6 @@ var DownloadsCommon = {
         .getService(Ci.nsIExternalProtocolService)
         .loadURI(NetUtil.newURI(aDirectory));
     }
-  },
-
-  /**
-   * Displays an alert message box which asks the user if they want to
-   * unblock the downloaded file or not.
-   *
-   * @param options
-   *        An object with the following properties:
-   *        {
-   *          verdict:
-   *            The detailed reason why the download was blocked, according to
-   *            the "Downloads.Error.BLOCK_VERDICT_" constants. If an unknown
-   *            reason is specified, "Downloads.Error.BLOCK_VERDICT_MALWARE" is
-   *            assumed.
-   *          window:
-   *            The window with which this action is associated.
-   *          dialogType:
-   *            String that determines which actions are available:
-   *             - "unblock" to offer just "unblock".
-   *             - "chooseUnblock" to offer "unblock" and "confirmBlock".
-   *             - "chooseOpen" to offer "open" and "confirmBlock".
-   *        }
-   *
-   * @return {Promise}
-   * @resolves String representing the action that should be executed:
-   *            - "open" to allow the download and open the file.
-   *            - "unblock" to allow the download without opening the file.
-   *            - "confirmBlock" to delete the blocked data permanently.
-   *            - "cancel" to do nothing and cancel the operation.
-   */
-  async confirmUnblockDownload({ verdict, window, dialogType }) {
-    let s = DownloadsCommon.strings;
-
-    // All the dialogs have an action button and a cancel button, while only
-    // some of them have an additonal button to remove the file. The cancel
-    // button must always be the one at BUTTON_POS_1 because this is the value
-    // returned by confirmEx when using ESC or closing the dialog (bug 345067).
-    let title = s.unblockHeaderUnblock;
-    let firstButtonText = s.unblockButtonUnblock;
-    let firstButtonAction = "unblock";
-    let buttonFlags =
-      Ci.nsIPrompt.BUTTON_TITLE_IS_STRING * Ci.nsIPrompt.BUTTON_POS_0 +
-      Ci.nsIPrompt.BUTTON_TITLE_CANCEL * Ci.nsIPrompt.BUTTON_POS_1;
-
-    switch (dialogType) {
-      case "unblock":
-        // Use only the unblock action. The default is to cancel.
-        buttonFlags += Ci.nsIPrompt.BUTTON_POS_1_DEFAULT;
-        break;
-      case "chooseUnblock":
-        // Use the unblock and remove file actions. The default is remove file.
-        buttonFlags +=
-          Ci.nsIPrompt.BUTTON_TITLE_IS_STRING * Ci.nsIPrompt.BUTTON_POS_2 +
-          Ci.nsIPrompt.BUTTON_POS_2_DEFAULT;
-        break;
-      case "chooseOpen":
-        // Use the unblock and open file actions. The default is open file.
-        title = s.unblockHeaderOpen;
-        firstButtonText = s.unblockButtonOpen;
-        firstButtonAction = "open";
-        buttonFlags +=
-          Ci.nsIPrompt.BUTTON_TITLE_IS_STRING * Ci.nsIPrompt.BUTTON_POS_2 +
-          Ci.nsIPrompt.BUTTON_POS_0_DEFAULT;
-        break;
-      default:
-        Cu.reportError("Unexpected dialog type: " + dialogType);
-        return "cancel";
-    }
-
-    let message;
-    switch (verdict) {
-      case Downloads.Error.BLOCK_VERDICT_UNCOMMON:
-        message = s.unblockTypeUncommon2;
-        break;
-      case Downloads.Error.BLOCK_VERDICT_POTENTIALLY_UNWANTED:
-        message = s.unblockTypePotentiallyUnwanted2;
-        break;
-      default:
-        // Assume Downloads.Error.BLOCK_VERDICT_MALWARE
-        message = s.unblockTypeMalware;
-        break;
-    }
-    message += "\n\n" + s.unblockTip2;
-
-    Services.ww.registerNotification(function onOpen(subj, topic) {
-      if (topic == "domwindowopened" && subj instanceof Ci.nsIDOMWindow) {
-        // Make sure to listen for "DOMContentLoaded" because it is fired
-        // before the "load" event.
-        subj.addEventListener(
-          "DOMContentLoaded",
-          function() {
-            if (
-              subj.document.documentURI ==
-              "chrome://global/content/commonDialog.xhtml"
-            ) {
-              Services.ww.unregisterNotification(onOpen);
-              let dialog = subj.document.getElementById("commonDialog");
-              if (dialog) {
-                // Change the dialog to use a warning icon.
-                dialog.classList.add("alert-dialog");
-              }
-            }
-          },
-          { once: true }
-        );
-      }
-    });
-
-    let rv = Services.prompt.confirmEx(
-      window,
-      title,
-      message,
-      buttonFlags,
-      firstButtonText,
-      null,
-      s.unblockButtonConfirmBlock,
-      null,
-      {}
-    );
-    return [firstButtonAction, "cancel", "confirmBlock"][rv];
   },
 };
 
@@ -1190,27 +1064,8 @@ DownloadsIndicatorDataCtor.prototype = {
   onDownloadStateChanged(download) {
     if (
       !download.succeeded &&
-      download.error &&
-      download.error.reputationCheckVerdict
+      download.error
     ) {
-      switch (download.error.reputationCheckVerdict) {
-        case Downloads.Error.BLOCK_VERDICT_UNCOMMON: // fall-through
-        case Downloads.Error.BLOCK_VERDICT_POTENTIALLY_UNWANTED:
-          // Existing higher level attention indication trumps ATTENTION_WARNING.
-          if (this._attention != DownloadsCommon.ATTENTION_SEVERE) {
-            this.attention = DownloadsCommon.ATTENTION_WARNING;
-          }
-          break;
-        case Downloads.Error.BLOCK_VERDICT_MALWARE:
-          this.attention = DownloadsCommon.ATTENTION_SEVERE;
-          break;
-        default:
-          this.attention = DownloadsCommon.ATTENTION_SEVERE;
-          Cu.reportError(
-            "Unknown reputation verdict: " +
-              download.error.reputationCheckVerdict
-          );
-      }
     } else if (download.succeeded) {
       // Existing higher level attention indication trumps ATTENTION_SUCCESS.
       if (

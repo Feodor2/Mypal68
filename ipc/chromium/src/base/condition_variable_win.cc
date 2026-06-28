@@ -17,7 +17,7 @@
   InitializeConditionVariable(&cv_);
 }*/
 
-ConditionVariable::ConditionVariable(Lock& user_lock)
+ConditionVariable::ConditionVariable(Lock2& user_lock)
   : run_state_(RUNNING),
     user_lock_(user_lock),
     recycling_list_size_(0),
@@ -25,7 +25,7 @@ ConditionVariable::ConditionVariable(Lock& user_lock)
   //DCHECK(user_lock);
 }
 
-ConditionVariable::ConditionVariable(Lock& user_lock, const char* aName)
+ConditionVariable::ConditionVariable(Lock2& user_lock, const char* aName)
   : run_state_(RUNNING),
     user_lock_(user_lock),
     recycling_list_size_(0),

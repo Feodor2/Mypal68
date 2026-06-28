@@ -7,6 +7,7 @@
 #include "nsNetCID.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
+#include "mozilla/ScopeExit.h"
 
 nsresult nsSegmentedBuffer::Init(uint32_t aSegmentSize, uint32_t aMaxSize) {
   if (mSegmentArrayCount != 0) {
@@ -65,7 +66,7 @@ char* nsSegmentedBuffer::AppendNewSegment() {
 bool nsSegmentedBuffer::DeleteFirstSegment() {
   NS_ASSERTION(mSegmentArray[mFirstSegmentIndex] != nullptr,
                "deleting bad segment");
-  free(mSegmentArray[mFirstSegmentIndex]);
+  FreeOMT(mSegmentArray[mFirstSegmentIndex]);
   mSegmentArray[mFirstSegmentIndex] = nullptr;
   int32_t last = ModSegArraySize(mLastSegmentIndex - 1);
   if (mFirstSegmentIndex == last) {
@@ -80,7 +81,7 @@ bool nsSegmentedBuffer::DeleteFirstSegment() {
 bool nsSegmentedBuffer::DeleteLastSegment() {
   int32_t last = ModSegArraySize(mLastSegmentIndex - 1);
   NS_ASSERTION(mSegmentArray[last] != nullptr, "deleting bad segment");
-  free(mSegmentArray[last]);
+  FreeOMT(mSegmentArray[last]);
   mSegmentArray[last] = nullptr;
   mLastSegmentIndex = last;
   return (bool)(mLastSegmentIndex == mFirstSegmentIndex);
@@ -98,54 +99,75 @@ bool nsSegmentedBuffer::ReallocLastSegment(size_t aNewSize) {
 }
 
 void nsSegmentedBuffer::Empty() {
-  if (mSegmentArray) {
-    for (uint32_t i = 0; i < mSegmentArrayCount; i++) {
-      if (mSegmentArray[i]) {
-        free(mSegmentArray[i]);
+  auto clearMembers = mozilla::MakeScopeExit([&] {
+    mSegmentArray = nullptr;
+    mSegmentArrayCount = NS_SEGMENTARRAY_INITIAL_COUNT;
+    mFirstSegmentIndex = mLastSegmentIndex = 0;
+  });
+
+  // If mSegmentArray is null, there's no need to actually free anything
+  if (!mSegmentArray) {
+    return;
+  }
+
+  // Dispatch a task that frees up the array. This may run immediately or on
+  // a background thread.
+  FreeOMT([segmentArray = mSegmentArray, arrayCount = mSegmentArrayCount]() {
+    for (uint32_t i = 0; i < arrayCount; i++) {
+      if (segmentArray[i]) {
+        free(segmentArray[i]);
       }
     }
-    free(mSegmentArray);
-    mSegmentArray = nullptr;
-  }
-  mSegmentArrayCount = NS_SEGMENTARRAY_INITIAL_COUNT;
-  mFirstSegmentIndex = mLastSegmentIndex = 0;
+    free(segmentArray);
+  });
 }
 
-#if 0
-void
-TestSegmentedBuffer()
-{
-  nsSegmentedBuffer* buf = new nsSegmentedBuffer();
-  NS_ASSERTION(buf, "out of memory");
-  buf->Init(4, 16);
-  char* seg;
-  bool empty;
-  seg = buf->AppendNewSegment();
-  NS_ASSERTION(seg, "AppendNewSegment failed");
-  seg = buf->AppendNewSegment();
-  NS_ASSERTION(seg, "AppendNewSegment failed");
-  seg = buf->AppendNewSegment();
-  NS_ASSERTION(seg, "AppendNewSegment failed");
-  empty = buf->DeleteFirstSegment();
-  NS_ASSERTION(!empty, "DeleteFirstSegment failed");
-  empty = buf->DeleteFirstSegment();
-  NS_ASSERTION(!empty, "DeleteFirstSegment failed");
-  seg = buf->AppendNewSegment();
-  NS_ASSERTION(seg, "AppendNewSegment failed");
-  seg = buf->AppendNewSegment();
-  NS_ASSERTION(seg, "AppendNewSegment failed");
-  seg = buf->AppendNewSegment();
-  NS_ASSERTION(seg, "AppendNewSegment failed");
-  empty = buf->DeleteFirstSegment();
-  NS_ASSERTION(!empty, "DeleteFirstSegment failed");
-  empty = buf->DeleteFirstSegment();
-  NS_ASSERTION(!empty, "DeleteFirstSegment failed");
-  empty = buf->DeleteFirstSegment();
-  NS_ASSERTION(!empty, "DeleteFirstSegment failed");
-  empty = buf->DeleteFirstSegment();
-  NS_ASSERTION(empty, "DeleteFirstSegment failed");
-  delete buf;
+void nsSegmentedBuffer::FreeOMT(void* aPtr) {
+  FreeOMT([aPtr]() { free(aPtr); });
 }
-#endif
+
+void nsSegmentedBuffer::FreeOMT(std::function<void()>&& aTask) {
+  if (!NS_IsMainThread()) {
+    aTask();
+    return;
+  }
+
+  if (mFreeOMT) {
+    // There is a runnable pending which will handle this object
+    if (mFreeOMT->AddTask(std::move(aTask)) > 1) {
+      return;
+    }
+  } else {
+    mFreeOMT = MakeRefPtr<FreeOMTPointers>();
+    mFreeOMT->AddTask(std::move(aTask));
+  }
+
+  if (!mIOThread) {
+    mIOThread = do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
+  }
+
+  // During the shutdown we are not able to obtain the IOThread and/or the
+  // dispatching of runnable fails.
+  if (!mIOThread || NS_FAILED(mIOThread->Dispatch(NS_NewRunnableFunction(
+                        "nsSegmentedBuffer::FreeOMT",
+                        [obj = mFreeOMT]() { obj->FreeAll(); })))) {
+    mFreeOMT->FreeAll();
+  }
+}
+
+void nsSegmentedBuffer::FreeOMTPointers::FreeAll() {
+  // Take all the tasks from the object. If AddTask is called after we release
+  // the lock, then another runnable will be dispatched for that task. This is
+  // necessary to avoid blocking the main thread while memory is being freed.
+  nsTArray<std::function<void()>> tasks = [this]() {
+    auto t = mTasks.Lock();
+    return std::move(*t);
+  }();
+
+  // Finally run all the tasks to free memory.
+  for (auto& task : tasks) {
+    task();
+  }
+}
 
 ////////////////////////////////////////////////////////////////////////////////

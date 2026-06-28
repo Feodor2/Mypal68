@@ -6,17 +6,17 @@
 #define nsThreadPool_h__
 
 #include "nsIThreadPool.h"
-#include "nsIThread.h"
 #include "nsIRunnable.h"
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/CondVar.h"
 #include "mozilla/EventQueue.h"
-#include "mozilla/Monitor.h"
 #include "base/condition_variable.h"
+
+class nsIThread;
 
 class nsThreadPool final : public nsIThreadPool, public nsIRunnable {
  public:
@@ -35,7 +35,7 @@ class nsThreadPool final : public nsIThreadPool, public nsIRunnable {
   nsresult PutEvent(already_AddRefed<nsIRunnable> aEvent, uint32_t aFlags);
 
   nsCOMArray<nsIThread> mThreads;
-  Lock mMutex;
+  Lock2 mMutex;
   ConditionVariable mEventsAvailable;
   mozilla::EventQueue mEvents;
   uint32_t mThreadLimit;

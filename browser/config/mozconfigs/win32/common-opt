@@ -9,7 +9,5 @@ ac_add_options --enable-update-channel=${MOZ_UPDATE_CHANNEL}
 # Needed to enable breakpad in application.ini
 export MOZILLA_OFFICIAL=1
 
-. $topsrcdir/build/win32/mozconfig.vs-latest
-
 # Package js shell.
 export MOZ_PACKAGE_JSSHELL=1

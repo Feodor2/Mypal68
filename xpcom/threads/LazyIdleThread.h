@@ -16,7 +16,7 @@
 
 #include "base/lock.h"
 #include "nsCOMPtr.h"
-#include "nsTArray.h"
+#include "nsTArrayForwardDeclare.h"
 #include "nsString.h"
 #include "mozilla/Attributes.h"
 
@@ -129,7 +129,7 @@ class LazyIdleThread final : public nsIThread,
   /**
    * Protects data that is accessed on both threads.
    */
-  Lock mMutex;
+  Lock2 mMutex;
 
   /**
    * Touched on both threads but set before mThread is created. Used to direct

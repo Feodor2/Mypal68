@@ -223,7 +223,7 @@ class AsyncExecuteStatements final : public nsIRunnable,
    *     held.  It is always read from within the lock on the background thread,
    *     but not on the calling thread (see shouldNotify for why).
    */
-  Lock& mMutex;
+  Lock2& mMutex;
 
   /**
    * The wrapped SQLite recursive connection mutex.  We use it whenever we call

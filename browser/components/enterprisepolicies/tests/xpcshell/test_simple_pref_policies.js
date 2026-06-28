@@ -474,16 +474,6 @@ const POLICIES_TESTS = [
     },
   },
 
-  // POLICY: CaptivePortal
-  {
-    policies: {
-      CaptivePortal: false,
-    },
-    lockedPrefs: {
-      "network.captive-portal-service.enabled": false,
-    },
-  },
-
   // POLICY: NetworkPrediction
   {
     policies: {

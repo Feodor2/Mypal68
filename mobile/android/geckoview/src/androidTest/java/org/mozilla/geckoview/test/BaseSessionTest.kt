@@ -12,6 +12,7 @@ import org.mozilla.geckoview.test.rule.GeckoSessionTestRule
 
 import org.hamcrest.Matcher
 import org.hamcrest.Matchers
+import org.json.JSONArray
 import org.junit.Assume.assumeThat
 import org.junit.Rule
 import org.junit.rules.ErrorCollector
@@ -39,6 +40,7 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
         const val NEW_SESSION_CHILD_HTML_PATH = "/assets/www/newSession_child.html"
         const val NEW_SESSION_HTML_PATH = "/assets/www/newSession.html"
         const val POPUP_HTML_PATH = "/assets/www/popup.html"
+        const val PROMPT_HTML_PATH = "/assets/www/prompts.html"
         const val SAVE_STATE_PATH = "/assets/www/saveState.html"
         const val TITLE_CHANGE_HTML_PATH = "/assets/www/titleChange.html"
         const val TRACKERS_PATH = "/assets/www/trackers.html"
@@ -83,8 +85,7 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
     val GeckoSession.isRemote
         get() = this.settings.getUseMultiprocess()
 
-    fun createTestUrl(path: String) =
-            GeckoSessionTestRule.APK_URI_PREFIX + path.removePrefix("/")
+    fun createTestUrl(path: String) = GeckoSessionTestRule.TEST_ENDPOINT + path
 
     fun GeckoSession.loadTestPath(path: String) =
             this.loadUri(createTestUrl(path))
@@ -153,18 +154,24 @@ open class BaseSessionTest(noErrorCollector: Boolean = false) {
     fun GeckoSession.evaluateJS(js: String): Any? =
             sessionRule.evaluateJS(this, js)
 
+    fun GeckoSession.evaluatePromiseJS(js: String): GeckoSessionTestRule.ExtensionPromise =
+            sessionRule.evaluatePromiseJS(this, js)
+
     fun GeckoSession.waitForJS(js: String): Any? =
             sessionRule.waitForJS(this, js)
 
-    infix fun Any?.dot(prop: Any): Any? =
-            if (prop is Int) this.asJSList<Any>()[prop] else this.asJSMap<Any>()[prop]
+    @Suppress("UNCHECKED_CAST")
+    fun Any?.asJsonArray(): JSONArray = this as JSONArray
 
     @Suppress("UNCHECKED_CAST")
-    fun <T> Any?.asJSMap(): Map<String, T> = this as Map<String, T>
+    fun<T> Any?.asJSList(): List<T> {
+        val array = this.asJsonArray()
+        val result = ArrayList<T>()
 
-    @Suppress("UNCHECKED_CAST")
-    fun <T> Any?.asJSList(): List<T> = this as List<T>
+        for (i in 0 until array.length()) {
+            result.add(array[i] as T)
+        }
 
-    fun Any?.asJSPromise(): GeckoSessionTestRule.PromiseWrapper =
-            this as GeckoSessionTestRule.PromiseWrapper
+        return result
+    }
 }

@@ -98,11 +98,16 @@ interface nsIFile : nsISupports
      *       The unix style octal permissions.  This may
      *       be ignored on systems that do not need to do
      *       permissions.
+     *
+     *   @param skipAncestors
+     *       Optional; if set to true, we'll skip creating
+     *       ancestor directories (and return an error instead).
      */
-    [must_use] void create(in unsigned long type, in unsigned long permissions);
+    [must_use] void create(in unsigned long type, in unsigned long permissions,
+                           [optional,default(false)] in bool skipAncestors);
 
     /**
-     *  Accessor to the leaf name of the file itself.      
+     *  Accessor to the leaf name of the file itself.
      *  For the |nativeLeafName| method, the nativeLeafName must 
      *  be in the native filesystem charset.
      */
@@ -187,6 +192,18 @@ interface nsIFile : nsISupports
     [noscript] void moveToNative(in nsIFile newParentDir, in ACString newName);
 
     /**
+     *  moveToFollowingLinks[Native]
+     *
+     *  This function is identical to moveTo with the exception that,
+     *  as the name implies, it follows symbolic links.  The XP_UNIX
+     *  implementation always follows symbolic links when moving.  For
+     *  the |MoveToFollowingLinks| method, the newName ust be in the native
+     *  filesystem charset.
+     */
+    void moveToFollowingLinks(in nsIFile newParentDir, in AString newName);
+    [noscript] void moveToFollowingLinksNative(in nsIFile newParentDir, in ACString newName);
+
+    /**
      *  renameTo
      *
      *  This method is identical to moveTo except that if this file or directory
@@ -219,6 +236,16 @@ interface nsIFile : nsISupports
      */
     attribute PRTime lastModifiedTime;
     attribute PRTime lastModifiedTimeOfLink;
+
+    /**
+     * The creation time of file in milliseconds from midnight, January 1, 1970
+     * GMT, if available.
+     *
+     * This attribute is only implemented on Windows and macOS. Accessing this
+     * on another platform will this will throw NS_ERROR_NOT_IMPLEMENTED.
+     */
+    readonly attribute PRTime creationTime;
+    readonly attribute PRTime creationTimeOfLink;
 
     /**
      *  WARNING!  On the Mac, getting/setting the file size with nsIFile
@@ -380,16 +407,6 @@ interface nsIFile : nsISupports
      *       the file this becomes equivalent to
      */
     void initWithFile(in nsIFile aFile);
-    
-    /**
-     *  followLinks
-     *
-     *  This attribute will determine if the nsLocalFile will auto
-     *  resolve symbolic links.  By default, this value will be false
-     *  on all non unix systems.  On unix, this attribute is effectively
-     *  a noop.  
-     */
-    attribute boolean followLinks;  
 
     /**
      * Flag for openNSPRFileDesc(), to hint to the OS that the file will be

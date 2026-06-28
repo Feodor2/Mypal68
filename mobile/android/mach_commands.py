@@ -3,11 +3,11 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 from __future__ import absolute_import, print_function, unicode_literals
+from distutils.file_util import copy_file
 
 import argparse
 import logging
 import os
-import json
 
 import mozpack.path as mozpath
 
@@ -28,6 +28,16 @@ from mach.decorators import (
 )
 
 
+# Mach's conditions facility doesn't support subcommands.  Print a
+# deprecation message ourselves instead.
+LINT_DEPRECATION_MESSAGE = """
+Android lints are now integrated with mozlint.  Instead of
+`mach android {api-lint,checkstyle,findbugs,lint,test}`, run
+`mach lint --linter android-{api-lint,checkstyle,findbugs,lint,test}`.
+Or run `mach lint`.
+"""
+
+
 # NOTE python/mach/mach/commands/commandinfo.py references this function
 #      by name. If this function is renamed or removed, that file should
 #      be updated accordingly as well.
@@ -42,17 +52,6 @@ def REMOVED(cls):
 
 @CommandProvider
 class MachCommands(MachCommandBase):
-    def _root_url(self, artifactdir=None, objdir=None):
-        """Generate a publicly-accessible URL for the tasks's artifacts, or an objdir path"""
-        if 'TASK_ID' in os.environ and 'RUN_ID' in os.environ:
-            import taskcluster_urls
-            from taskgraph.util.taskcluster import get_root_url
-            return taskcluster_urls.api(
-                get_root_url(False), 'queue', 'v1', 'task/{}/runs/{}/artifacts/{}'.format(
-                    os.environ['TASK_ID'], os.environ['RUN_ID'], artifactdir))
-        else:
-            return os.path.join(self.topobjdir, objdir)
-
     @Command('android', category='devenv',
              description='Run Android-specific commands.',
              conditions=[conditions.is_android])
@@ -111,269 +110,39 @@ class MachCommands(MachCommandBase):
         return ret
 
     @SubCommand('android', 'api-lint',
-                """Runs apilint against GeckoView.""")
-    @CommandArgument('args', nargs=argparse.REMAINDER)
-    def android_api_lint(self, args):
-        ret = self.gradle(self.substs['GRADLE_ANDROID_API_LINT_TASKS'] + args, verbose=True)
-        folder = self.substs['GRADLE_ANDROID_GECKOVIEW_APILINT_FOLDER']
-
-        with open(os.path.join(
-                self.topobjdir,
-                '{}/apilint-result.json'.format(folder))) as f:
-            result = json.load(f)
-
-            print('SUITE-START | android-api-lint')
-            for r in result['compat_failures'] + result['failures']:
-                print ('TEST-UNEXPECTED-FAIL | {} | {}'.format(r['detail'], r['msg']))
-            for r in result['api_changes']:
-                print ('TEST-UNEXPECTED-FAIL | {} | Unexpected api change'.format(r))
-            print('SUITE-END | android-api-lint')
-
-        return ret
+                """Run Android api-lint.
+REMOVED/DEPRECATED: Use 'mach lint --linter android-api-lint'.""")
+    def android_apilint_REMOVED(self):
+        print(LINT_DEPRECATION_MESSAGE)
+        return 1
 
     @SubCommand('android', 'test',
-                """Run Android local unit tests.
-                See https://developer.mozilla.org/en-US/docs/Mozilla/Android-specific_test_suites#android-test""")  # NOQA: E501
-    @CommandArgument('args', nargs=argparse.REMAINDER)
-    def android_test(self, args):
-        ret = self.gradle(self.substs['GRADLE_ANDROID_TEST_TASKS'] +
-                          args, verbose=True)
-
-        ret |= self._parse_android_test_results('public/app/unittest',
-                                                'gradle/build/mobile/android/app',
-                                                (self.substs['GRADLE_ANDROID_APP_VARIANT_NAME'],))
-
-        ret |= self._parse_android_test_results('public/geckoview/unittest',
-                                                'gradle/build/mobile/android/geckoview',
-                                                (self.substs['GRADLE_ANDROID_GECKOVIEW_VARIANT_NAME'],))  # NOQA: E501
-
-        return ret
-
-    def _parse_android_test_results(self, artifactdir, gradledir, variants):
-        # Unit tests produce both HTML and XML reports.  Visit the
-        # XML report(s) to report errors and link to the HTML
-        # report(s) for human consumption.
-        import itertools
-        import xml.etree.ElementTree as ET
-
-        from mozpack.files import (
-            FileFinder,
-        )
-
-        ret = 0
-        found_reports = False
-
-        root_url = self._root_url(
-            artifactdir=artifactdir,
-            objdir=gradledir + '/reports/tests')
-
-        def capitalize(s):
-            # Can't use str.capitalize because it lower cases trailing letters.
-            return (s[0].upper() + s[1:]) if s else ''
-
-        for variant in variants:
-            report = 'test{}UnitTest'.format(capitalize(variant))
-            finder = FileFinder(os.path.join(self.topobjdir, gradledir + '/test-results/', report))
-            for p, _ in finder.find('TEST-*.xml'):
-                found_reports = True
-                f = open(os.path.join(finder.base, p), 'rt')
-                tree = ET.parse(f)
-                root = tree.getroot()
-
-                # And make the report display as soon as possible.
-                failed = root.findall('testcase/error') or root.findall('testcase/failure')
-                if failed:
-                    print(
-                        'TEST-UNEXPECTED-FAIL | android-test | There were failing tests. See the reports at: {}/{}/index.html'.format(root_url, report))  # NOQA: E501
-
-                for testcase in root.findall('testcase'):
-                    name = testcase.get('name')
-
-                    # Schema cribbed from
-                    # http://llg.cubic.org/docs/junit/.  There's no
-                    # particular advantage to formatting the error, so
-                    # for now let's just output the unexpected XML
-                    # tag.
-                    error_count = 0
-                    for unexpected in itertools.chain(testcase.findall('error'),
-                                                      testcase.findall('failure')):
-                        print('TEST-START | {}'.format(name))
-                        for line in ET.tostring(unexpected).strip().splitlines():
-                            print('TEST-UNEXPECTED-FAIL | {} | {}'.format(name, line))
-                        error_count += 1
-                        ret |= 1
-
-        if not found_reports:
-            print('TEST-UNEXPECTED-FAIL | android-test | No reports found under {}'.format(gradledir))  # NOQA: E501
-            return 1
-
-        return ret
+                """Run Android test.
+REMOVED/DEPRECATED: Use 'mach lint --linter android-test'.""")
+    def android_test_REMOVED(self):
+        print(LINT_DEPRECATION_MESSAGE)
+        return 1
 
     @SubCommand('android', 'lint',
                 """Run Android lint.
-                See https://developer.mozilla.org/en-US/docs/Mozilla/Android-specific_test_suites#android-lint""")  # NOQA: E501
-    @CommandArgument('args', nargs=argparse.REMAINDER)
-    def android_lint(self, args):
-        ret = self.gradle(self.substs['GRADLE_ANDROID_LINT_TASKS'] +
-                          args, verbose=True)
-
-        # Android Lint produces both HTML and XML reports.  Visit the
-        # XML report(s) to report errors and link to the HTML
-        # report(s) for human consumption.
-        import xml.etree.ElementTree as ET
-
-        root_url = self._root_url(
-            artifactdir='public/android/lint',
-            objdir='gradle/build/mobile/android/app/reports')
-
-        reports = (self.substs['GRADLE_ANDROID_APP_VARIANT_NAME'],)
-        for report in reports:
-            f = open(os.path.join(
-                self.topobjdir,
-                'gradle/build/mobile/android/geckoview/reports/lint-results-{}.xml'.format(report)),  # NOQA: E501
-                     'rt')
-            tree = ET.parse(f)
-            root = tree.getroot()
-
-            # Log reports for Tree Herder "Job Details".
-            html_report_url = '{}/lint-results-{}.html'.format(root_url, report)
-            xml_report_url = '{}/lint-results-{}.xml'.format(root_url, report)
-            print('TinderboxPrint: report<br/><a href="{}">HTML {} report</a>, visit "Inspect Task" link for details'.format(html_report_url, report))  # NOQA: E501
-            print('TinderboxPrint: report<br/><a href="{}">XML {} report</a>, visit "Inspect Task" link for details'.format(xml_report_url, report))  # NOQA: E501
-
-            # And make the report display as soon as possible.
-            if root.findall("issue[@severity='Error']"):
-                print('TEST-UNEXPECTED-FAIL | android-lint | Lint found errors in the project; aborting build. See the report at: {}'.format(html_report_url))  # NOQA: E501
-
-            print('SUITE-START | android-lint | {}'.format(report))
-            for issue in root.findall("issue[@severity='Error']"):
-                # There's no particular advantage to formatting the
-                # error, so for now let's just output the <issue> XML
-                # tag.
-                for line in ET.tostring(issue).strip().splitlines():
-                    print('TEST-UNEXPECTED-FAIL | {}'.format(line))
-                ret |= 1
-            print('SUITE-END | android-lint | {}'.format(report))
-
-        return ret
-
-    def _parse_checkstyle_output(self, output_path):
-        ret = 0
-        # Checkstyle produces both HTML and XML reports.  Visit the
-        # XML report(s) to report errors and link to the HTML
-        # report(s) for human consumption.
-        import xml.etree.ElementTree as ET
-
-        output_absolute_path = os.path.join(self.topobjdir, output_path)
-        f = open(output_absolute_path, 'rt')
-        tree = ET.parse(f)
-        root = tree.getroot()
-
-        # Now the reports, linkified.
-        report_xml = self._root_url(
-            artifactdir='public/android/checkstyle',
-            objdir=output_absolute_path)
-        report_html = self._root_url(
-            artifactdir='public/android/checkstyle',
-            objdir=os.path.splitext(output_absolute_path)[0] + '.html')
-
-        # And make the report display as soon as possible.
-        if root.findall('file/error'):
-            ret |= 1
-
-        if ret:
-            # Log reports for Tree Herder "Job Details".
-            print('TinderboxPrint: report<br/><a href="{}">HTML checkstyle report</a>, visit "Inspect Task" link for details'.format(report_xml))  # NOQA: E501
-            print('TinderboxPrint: report<br/><a href="{}">XML checkstyle report</a>, visit "Inspect Task" link for details'.format(report_html))  # NOQA: E501
-
-            print('TEST-UNEXPECTED-FAIL | android-checkstyle | Checkstyle rule violations were found. See the report at: {}'.format(report_html))  # NOQA: E501
-
-        for file in root.findall('file'):
-            name = file.get('name')
-
-            error_count = 0
-            for error in file.findall('error'):
-                # There's no particular advantage to formatting the
-                # error, so for now let's just output the <error> XML
-                # tag.
-                print('TEST-UNEXPECTED-FAIL | {}'.format(name))
-                for line in ET.tostring(error).strip().splitlines():
-                    print('TEST-UNEXPECTED-FAIL | {}'.format(line))
-                error_count += 1
-
-        return ret
+REMOVED/DEPRECATED: Use 'mach lint --linter android-lint'.""")
+    def android_lint_REMOVED(self):
+        print(LINT_DEPRECATION_MESSAGE)
+        return 1
 
     @SubCommand('android', 'checkstyle',
                 """Run Android checkstyle.
-                See https://developer.mozilla.org/en-US/docs/Mozilla/Android-specific_test_suites#android-checkstyle""")  # NOQA: E501
-    @CommandArgument('args', nargs=argparse.REMAINDER)
-    def android_checkstyle(self, args):
-        ret = self.gradle(self.substs['GRADLE_ANDROID_CHECKSTYLE_TASKS'] +
-                          args, verbose=True)
-        print('SUITE-START | android-checkstyle')
-        for filePath in self.substs['GRADLE_ANDROID_CHECKSTYLE_OUTPUT_FILES']:
-            ret |= self._parse_checkstyle_output(filePath)
-        print('SUITE-END | android-checkstyle')
-
-        return ret
+REMOVED/DEPRECATED: Use 'mach lint --linter android-checkstyle'.""")
+    def android_checkstyle_REMOVED(self):
+        print(LINT_DEPRECATION_MESSAGE)
+        return 1
 
     @SubCommand('android', 'findbugs',
                 """Run Android findbugs.
-                See https://developer.mozilla.org/en-US/docs/Mozilla/Android-specific_test_suites#android-findbugs""")  # NOQA: E501
-    @CommandArgument('args', nargs=argparse.REMAINDER)
-    def android_findbugs(self, dryrun=False, args=[]):
-        ret = self.gradle(self.substs['GRADLE_ANDROID_FINDBUGS_TASKS'] +
-                          args, verbose=True)
-
-        # Findbug produces both HTML and XML reports.  Visit the
-        # XML report(s) to report errors and link to the HTML
-        # report(s) for human consumption.
-        import xml.etree.ElementTree as ET
-
-        root_url = self._root_url(
-            artifactdir='public/android/findbugs',
-            objdir='gradle/build/mobile/android/app/reports/findbugs')
-
-        reports = (self.substs['GRADLE_ANDROID_APP_VARIANT_NAME'],)
-        for report in reports:
-            try:
-                f = open(os.path.join(
-                    self.topobjdir, 'gradle/build/mobile/android/app/reports/findbugs',
-                    'findbugs-{}-output.xml'.format(report)),
-                         'rt')
-            except IOError:
-                continue
-
-            tree = ET.parse(f)
-            root = tree.getroot()
-
-            # Log reports for Tree Herder "Job Details".
-            html_report_url = '{}/findbugs-{}-output.html'.format(root_url, report)
-            xml_report_url = '{}/findbugs-{}-output.xml'.format(root_url, report)
-            print('TinderboxPrint: report<br/><a href="{}">HTML {} report</a>, visit "Inspect Task" link for details'.format(html_report_url, report))  # NOQA: E501
-            print('TinderboxPrint: report<br/><a href="{}">XML {} report</a>, visit "Inspect Task" link for details'.format(xml_report_url, report))  # NOQA: E501
-
-            # And make the report display as soon as possible.
-            if root.findall("./BugInstance"):
-                print('TEST-UNEXPECTED-FAIL | android-findbugs | Findbugs found issues in the project. See the report at: {}'.format(html_report_url))  # NOQA: E501
-
-            print('SUITE-START | android-findbugs | {}'.format(report))
-            for error in root.findall('./BugInstance'):
-                # There's no particular advantage to formatting the
-                # error, so for now let's just output the <error> XML
-                # tag.
-                print('TEST-UNEXPECTED-FAIL | {}:{} | {}'.format(report,
-                                                                 error.get('type'),
-                                                                 error.find('Class')
-                                                                 .get('classname')))
-                for line in ET.tostring(error).strip().splitlines():
-                    print('TEST-UNEXPECTED-FAIL | {}:{} | {}'.format(report,
-                                                                     error.get('type'),
-                                                                     line))
-                ret |= 1
-            print('SUITE-END | android-findbugs | {}'.format(report))
-
-        return ret
+REMOVED/DEPRECATED: Use 'mach lint --linter android-findbugs'.""")
+    def android_findbugs_REMOVED(self):
+        print(LINT_DEPRECATION_MESSAGE)
+        return 1
 
     @SubCommand('android', 'gradle-dependencies',
                 """Collect Android Gradle dependencies.
@@ -428,15 +197,18 @@ class MachCommands(MachCommandBase):
     @CommandArgument('--archive', action='store_true',
                      help='Generate a javadoc archive.')
     @CommandArgument('--upload', metavar='USER/REPO',
-                     help='Upload generated javadoc to Github, '
+                     help='Upload geckoview documentation to Github, '
                      'using the specified USER/REPO.')
     @CommandArgument('--upload-branch', metavar='BRANCH[/PATH]',
-                     default='gh-pages/javadoc',
-                     help='Use the specified branch/path for commits.')
+                     default='gh-pages',
+                     help='Use the specified branch/path for documentation commits.')
+    @CommandArgument('--javadoc-path', metavar='/PATH',
+                     default='javadoc',
+                     help='Use the specified path for javadoc commits.')
     @CommandArgument('--upload-message', metavar='MSG',
                      default='GeckoView docs upload',
                      help='Use the specified message for commits.')
-    def android_geckoview_docs(self, archive, upload, upload_branch,
+    def android_geckoview_docs(self, archive, upload, upload_branch, javadoc_path,
                                upload_message):
 
         tasks = (self.substs['GRADLE_ANDROID_GECKOVIEW_DOCS_ARCHIVE_TASKS'] if archive or upload
@@ -476,21 +248,39 @@ class MachCommands(MachCommandBase):
             env['GIT_SSH_COMMAND'] = 'ssh -i "%s" -o StrictHostKeyChecking=no' % keyfile
 
         # Clone remote repo.
-        branch, _, branch_path = upload_branch.partition('/')
+        branch = upload_branch.format(**fmt)
         repo_url = 'git@github.com:%s.git' % upload
         repo_path = mozpath.abspath('gv-docs-repo')
-        self.run_process(['git', 'clone', '--branch', branch, '--depth', '1',
+        self.run_process(['git', 'clone', '--branch', upload_branch, '--depth', '1',
                           repo_url, repo_path], append_env=env, pass_thru=True)
         env['GIT_DIR'] = mozpath.join(repo_path, '.git')
         env['GIT_WORK_TREE'] = repo_path
         env['GIT_AUTHOR_NAME'] = env['GIT_COMMITTER_NAME'] = 'GeckoView Docs Bot'
         env['GIT_AUTHOR_EMAIL'] = env['GIT_COMMITTER_EMAIL'] = 'nobody@mozilla.com'
 
-        # Extract new javadoc to specified directory inside repo.
+        # Copy over user documentation.
         import mozfile
+
+        docs_path = mozpath.join(self.topsrcdir, 'mobile', 'android', 'docs')
+
+        # Some files need to be in the GH repo root folder and should be
+        # copied over directly
+        root_docs = ["_config.yml", "Gemfile"]
+        for filename in root_docs:
+            src_filepath = mozpath.join(docs_path, filename)
+            dst_filepath = mozpath.join(repo_path, filename)
+            copy_file(src_filepath, dst_filepath, update=1)
+
+        # Remove existing geckoview docs and replace with the local copy
+        src_path = mozpath.join(docs_path, 'geckoview')
+        docs_path = mozpath.join(repo_path, 'geckoview')
+        mozfile.remove(docs_path)
+        os.system("rsync -aruz {} {}".format(src_path, repo_path))
+
+        # Extract new javadoc to specified directory inside repo.
         src_tar = mozpath.join(self.topobjdir, 'gradle', 'build', 'mobile', 'android',
                                'geckoview', 'libs', 'geckoview-javadoc.jar')
-        dst_path = mozpath.join(repo_path, branch_path.format(**fmt))
+        dst_path = mozpath.join(docs_path, javadoc_path)
         mozfile.remove(dst_path)
         mozfile.extract_zip(src_tar, dst_path)
 
@@ -502,7 +292,7 @@ class MachCommands(MachCommandBase):
             self.run_process(['git', 'commit',
                               '--message', upload_message.format(**fmt)],
                              append_env=env, pass_thru=True)
-            self.run_process(['git', 'push', 'origin', 'gh-pages'],
+            self.run_process(['git', 'push', 'origin', branch],
                              append_env=env, pass_thru=True)
 
         mozfile.remove(repo_path)
@@ -564,135 +354,8 @@ class MachCommands(MachCommandBase):
 
     @Command('gradle-install', category='devenv',
              conditions=[REMOVED])
-    def gradle_install(self):
+    def gradle_install_REMOVED(self):
         pass
-
-    @Command('install-android', category='post-build',
-             conditional_name='install',
-             conditions=[conditions.is_android],
-             description='Install an Android package on a device or an emulator.')
-    @CommandArgument('--verbose', '-v', action='store_true',
-                     help='Print verbose output when installing.')
-    def install(self, verbose=False):
-        from mozrunner.devices.android_device import verify_android_device
-        verify_android_device(self, verbose=verbose)
-
-        ret = self._run_make(directory='.', target='install', ensure_exit_code=False)
-        if ret == 0:
-            self.notify('Install complete')
-        return ret
-
-    @Command('run-android', category='post-build',
-             conditional_name='run',
-             conditions=[conditions.is_android],
-             description='Run an application on an Android device or an emulator.')
-    @CommandArgument('--app', help='Android package to run '
-                     '(default: org.mozilla.geckoview_example)',
-                     default='org.mozilla.geckoview_example')
-    @CommandArgument('--intent', help='Android intent action to launch with '
-                     '(default: android.intent.action.VIEW)',
-                     default='android.intent.action.VIEW')
-    @CommandArgument('--setenv', dest='env', action='append',
-                     help='Set target environment variable, like FOO=BAR',
-                     default=[])
-    @CommandArgument('--profile', '-P', help='Path to Gecko profile, like /path/to/host/profile '
-                     'or /path/to/target/profile',
-                     default=None)
-    @CommandArgument('--url', help='URL to open',
-                     default=None)
-    @CommandArgument('--no-install', help='Do not try to install application on device before ' +
-                     'running (default: False)',
-                     action='store_true',
-                     default=False)
-    @CommandArgument('--no-wait', help='Do not wait for application to start before returning ' +
-                     '(default: False)',
-                     action='store_true',
-                     default=False)
-    @CommandArgument('--fail-if-running', help='Fail if application is already running ' +
-                     '(default: False)',
-                     action='store_true',
-                     default=False)
-    @CommandArgument('--restart', help='Stop the application if it is already running ' +
-                     '(default: False)',
-                     action='store_true',
-                     default=False)
-    def run(self, app='org.mozilla.geckoview_example', intent=None,
-            env=[], profile=None,
-            url=None, no_install=None, no_wait=None, fail_if_running=None, restart=None):
-        from mozrunner.devices.android_device import verify_android_device, _get_device
-        from six.moves import shlex_quote
-
-        if app == 'org.mozilla.geckoview_example':
-            activity_name = 'org.mozilla.geckoview_example.GeckoViewActivity'
-        elif app == 'org.mozilla.geckoview.test':
-            activity_name = 'org.mozilla.geckoview.test.TestRunnerActivity'
-        elif 'fennec' in app or 'firefox' in app:
-            activity_name = 'org.mozilla.gecko.BrowserApp'
-        else:
-            raise RuntimeError('Application not recognized: {}'.format(app))
-
-        # `verify_android_device` respects `DEVICE_SERIAL` if it is set and sets it otherwise.
-        verify_android_device(self, app=app, install=not no_install)
-        device_serial = os.environ.get('DEVICE_SERIAL')
-        if not device_serial:
-            print('No ADB devices connected.')
-            return 1
-
-        device = _get_device(self.substs, device_serial=device_serial)
-
-        args = []
-        if profile:
-            if os.path.isdir(profile):
-                host_profile = profile
-                # Always /data/local/tmp, rather than `device.test_root`, because GeckoView only
-                # takes its configuration file from /data/local/tmp, and we want to follow suit.
-                target_profile = '/data/local/tmp/{}-profile'.format(app)
-                device.rm(target_profile, recursive=True, force=True)
-                device.push(host_profile, target_profile)
-                self.log(logging.INFO, "run",
-                         {'host_profile': host_profile, 'target_profile': target_profile},
-                         'Pushed profile from host "{host_profile}" to target "{target_profile}"')
-            else:
-                target_profile = profile
-                self.log(logging.INFO, "run",
-                         {'target_profile': target_profile},
-                         'Using profile from target "{target_profile}"')
-
-            args = ['--profile', shlex_quote(target_profile)]
-
-        extras = {}
-        for i, e in enumerate(env):
-            extras['env{}'.format(i)] = e
-        if args:
-            extras['args'] = " ".join(args)
-        extras['use_multiprocess'] = True  # Only GVE and TRA process this extra.
-
-        if env or args:
-            restart = True
-
-        if restart:
-            fail_if_running = False
-            self.log(logging.INFO, "run",
-                     {'app': app},
-                     'Stopping {app} to ensure clean restart.')
-            device.stop_application(app)
-
-        # We'd prefer to log the actual `am start ...` command, but it's not trivial to wire the
-        # device's logger to mach's logger.
-        self.log(logging.INFO, "run",
-                 {'app': app, 'activity_name': activity_name},
-                 'Starting {app}/{activity_name}.')
-
-        device.launch_application(
-            app_name=app,
-            activity_name=activity_name,
-            intent=intent,
-            extras=extras,
-            url=url,
-            wait=not no_wait,
-            fail_if_running=fail_if_running)
-
-        return 0
 
 
 @CommandProvider

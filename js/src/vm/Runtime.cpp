@@ -297,6 +297,11 @@ void JSRuntime::destroyRuntime() {
 
   gc.finish();
 
+  for (auto [f, data] : cleanupClosures.ref()) {
+    f(data);
+  }
+  cleanupClosures.ref().clear();
+
   defaultLocale = nullptr;
   js_delete(jitRuntime_.ref());
 

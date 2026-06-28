@@ -37,15 +37,27 @@
 
 namespace mozilla {
 
-BasePrincipal::BasePrincipal(PrincipalKind aKind)
-    : mKind(aKind), mHasExplicitDomain(false), mInitialized(false) {}
+BasePrincipal::BasePrincipal(PrincipalKind aKind,
+                             const nsACString& aOriginNoSuffix,
+                             const OriginAttributes& aOriginAttributes)
+    : mOriginNoSuffix(NS_Atomize(aOriginNoSuffix)),
+      mOriginSuffix(aOriginAttributes.CreateSuffixAtom()),
+      mOriginAttributes(aOriginAttributes),
+      mKind(aKind),
+      mHasExplicitDomain(false) {}
 
-BasePrincipal::~BasePrincipal() {}
+BasePrincipal::BasePrincipal(BasePrincipal* aOther,
+                             const OriginAttributes& aOriginAttributes)
+    : mOriginNoSuffix(aOther->mOriginNoSuffix),
+      mOriginSuffix(aOriginAttributes.CreateSuffixAtom()),
+      mOriginAttributes(aOriginAttributes),
+      mKind(aOther->mKind),
+      mHasExplicitDomain(aOther->mHasExplicitDomain) {}
+
+BasePrincipal::~BasePrincipal() = default;
 
 NS_IMETHODIMP
 BasePrincipal::GetOrigin(nsACString& aOrigin) {
-  MOZ_ASSERT(mInitialized);
-
   nsresult rv = GetOriginNoSuffix(aOrigin);
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -91,14 +103,12 @@ BasePrincipal::GetHost(nsACString& aRes) {
 
 NS_IMETHODIMP
 BasePrincipal::GetOriginNoSuffix(nsACString& aOrigin) {
-  MOZ_ASSERT(mInitialized);
   mOriginNoSuffix->ToUTF8String(aOrigin);
   return NS_OK;
 }
 
 NS_IMETHODIMP
 BasePrincipal::GetSiteOrigin(nsACString& aSiteOrigin) {
-  MOZ_ASSERT(mInitialized);
   return GetOrigin(aSiteOrigin);
 }
 
@@ -466,6 +476,11 @@ nsresult BasePrincipal::CheckMayLoadHelper(nsIURI* aURI,
 
 NS_IMETHODIMP
 BasePrincipal::IsThirdPartyURI(nsIURI* aURI, bool* aRes) {
+  if (IsSystemPrincipal()) {
+    *aRes = false;
+    return NS_OK;
+  }
+
   *aRes = true;
   // If we do not have a URI its always 3rd party.
   nsCOMPtr<nsIURI> prinURI;
@@ -489,6 +504,12 @@ BasePrincipal::IsThirdPartyPrincipal(nsIPrincipal* aPrin, bool* aRes) {
 }
 NS_IMETHODIMP
 BasePrincipal::IsThirdPartyChannel(nsIChannel* aChan, bool* aRes) {
+  if (IsSystemPrincipal()) {
+    // Nothing is 3rd party to the system principal.
+    *aRes = false;
+    return NS_OK;
+  }
+
   nsCOMPtr<nsIURI> prinURI;
   GetURI(getter_AddRefs(prinURI));
   ThirdPartyUtil* thirdPartyUtil = ThirdPartyUtil::GetInstance();
@@ -761,6 +782,19 @@ NS_IMETHODIMP BasePrincipal::GetIsOnion(bool* aIsOnion) {
 }
 
 NS_IMETHODIMP
+BasePrincipal::GetScheme(nsACString& aScheme) {
+  aScheme.Truncate();
+
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+
+  return prinURI->GetScheme(aScheme);
+}
+
+NS_IMETHODIMP
 BasePrincipal::SchemeIs(const char* aScheme, bool* aResult) {
   *aResult = false;
   nsCOMPtr<nsIURI> prinURI;
@@ -938,11 +972,10 @@ already_AddRefed<BasePrincipal> BasePrincipal::CreateCodebasePrincipal(
     return principal.forget();
   }
 
-  // Mint a codebase principal.
-  RefPtr<ContentPrincipal> codebase = new ContentPrincipal();
-  rv = codebase->Init(aURI, aAttrs, aOriginNoSuffix);
-  NS_ENSURE_SUCCESS(rv, nullptr);
-  return codebase.forget();
+  // Mint a content principal.
+  RefPtr<ContentPrincipal> principal =
+      new ContentPrincipal(aURI, aAttrs, aOriginNoSuffix);
+  return principal.forget();
 }
 
 already_AddRefed<BasePrincipal> BasePrincipal::CreateCodebasePrincipal(
@@ -978,11 +1011,11 @@ already_AddRefed<BasePrincipal> BasePrincipal::CloneForcingOriginAttributes(
   nsresult rv = GetOriginNoSuffix(originNoSuffix);
   NS_ENSURE_SUCCESS(rv, nullptr);
 
-  nsIURI* uri = static_cast<ContentPrincipal*>(this)->mCodebase;
-  RefPtr<ContentPrincipal> copy = new ContentPrincipal();
-  rv = copy->Init(uri, aOriginAttributes, originNoSuffix);
-  NS_ENSURE_SUCCESS(rv, nullptr);
+  nsCOMPtr<nsIURI> uri;
+  MOZ_ALWAYS_SUCCEEDS(GetURI(getter_AddRefs(uri)));
 
+  RefPtr<ContentPrincipal> copy =
+      new ContentPrincipal(uri, aOriginAttributes, originNoSuffix);
   return copy.forget();
 }
 
@@ -1010,34 +1043,6 @@ bool BasePrincipal::AddonAllowsLoad(nsIURI* aURI,
     return policy->CanAccessURI(aURI, aExplicit);
   }
   return false;
-}
-
-void BasePrincipal::FinishInit(const nsACString& aOriginNoSuffix,
-                               const OriginAttributes& aOriginAttributes) {
-  mInitialized = true;
-  mOriginAttributes = aOriginAttributes;
-
-  // First compute the origin suffix since it's infallible.
-  nsAutoCString originSuffix;
-  mOriginAttributes.CreateSuffix(originSuffix);
-  mOriginSuffix = NS_Atomize(originSuffix);
-
-  MOZ_ASSERT(!aOriginNoSuffix.IsEmpty());
-  mOriginNoSuffix = NS_Atomize(aOriginNoSuffix);
-}
-
-void BasePrincipal::FinishInit(BasePrincipal* aOther,
-                               const OriginAttributes& aOriginAttributes) {
-  mInitialized = true;
-  mOriginAttributes = aOriginAttributes;
-
-  // First compute the origin suffix since it's infallible.
-  nsAutoCString originSuffix;
-  mOriginAttributes.CreateSuffix(originSuffix);
-  mOriginSuffix = NS_Atomize(originSuffix);
-
-  mOriginNoSuffix = aOther->mOriginNoSuffix;
-  mHasExplicitDomain = aOther->mHasExplicitDomain;
 }
 
 NS_IMETHODIMP
@@ -1216,6 +1221,24 @@ BasePrincipal::CreateReferrerInfo(mozilla::dom::ReferrerPolicy aReferrerPolicy,
   }
   info = new dom::ReferrerInfo(prinURI, aReferrerPolicy);
   info.forget(_retval);
+  return NS_OK;
+}
+
+NS_IMPL_ADDREF(BasePrincipal::Deserializer)
+NS_IMPL_RELEASE(BasePrincipal::Deserializer)
+
+NS_INTERFACE_MAP_BEGIN(BasePrincipal::Deserializer)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
+  NS_INTERFACE_MAP_ENTRY(nsISerializable)
+  if (mPrincipal) {
+    return mPrincipal->QueryInterface(aIID, aInstancePtr);
+  } else
+NS_INTERFACE_MAP_END
+
+NS_IMETHODIMP
+BasePrincipal::Deserializer::Write(nsIObjectOutputStream* aStream) {
+  // Read is used still for legacy principals
+  MOZ_RELEASE_ASSERT(false, "Old style serialization is removed");
   return NS_OK;
 }
 

@@ -417,13 +417,6 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsIHapticFeedback"
 );
 
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "ParentalControls",
-  "@mozilla.org/parental-controls-service;1",
-  "nsIParentalControlsService"
-);
-
 XPCOMUtils.defineLazyModuleGetter(
   this,
   "Log",
@@ -660,17 +653,6 @@ var BrowserApp = {
 
     if (this._startupStatus) {
       this.onAppUpdated();
-    }
-
-    if (!ParentalControls.isAllowed(ParentalControls.INSTALL_EXTENSION)) {
-      // Disable extension installs
-      Services.prefs.setIntPref("extensions.enabledScopes", 5);
-      Services.prefs.setIntPref("extensions.autoDisableScopes", 1);
-      Services.prefs.setBoolPref("xpinstall.enabled", false);
-    } else if (ParentalControls.parentalControlsEnabled) {
-      Services.prefs.clearUserPref("extensions.enabledScopes");
-      Services.prefs.clearUserPref("extensions.autoDisableScopes");
-      Services.prefs.setBoolPref("xpinstall.enabled", true);
     }
 
     this.hideH264AddonIfNeeded();

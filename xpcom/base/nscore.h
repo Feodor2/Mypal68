@@ -232,16 +232,17 @@ struct UnusedZero<nsresult> {
 }  // namespace detail
 
 template <typename T>
-class MOZ_MUST_USE_TYPE GenericErrorResult;
+class GenericErrorResult;
 template <>
-class MOZ_MUST_USE_TYPE GenericErrorResult<nsresult>;
+class GenericErrorResult<nsresult>;
 
 struct Ok;
 template <typename V, typename E>
 class Result;
 
 // Allow MOZ_TRY to handle `nsresult` values.
-inline Result<Ok, nsresult> ToResult(nsresult aValue);
+template <typename E = nsresult>
+inline Result<Ok, E> ToResult(nsresult aValue);
 }  // namespace mozilla
 
 /*

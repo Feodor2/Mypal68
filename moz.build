@@ -26,6 +26,10 @@ with Files('CLOBBER'):
 with Files('*configure*'):
     BUG_COMPONENT = ('Firefox Build System', 'General')
 
+with Files("docs/**"):
+    BUG_COMPONENT = ("Firefox Build System", "Generated Documentation")
+    SCHEDULES.exclusive = ['docs']
+
 with Files('mach'):
     BUG_COMPONENT = ('Firefox Build System', 'Mach Core')
 
@@ -36,7 +40,7 @@ with Files('GNUmakefile'):
     BUG_COMPONENT = ('Firefox Build System', 'General')
 
 with Files('*gradle*'):
-    BUG_COMPONENT = ('Firefox for Android', 'Build Config & IDE Support')
+    BUG_COMPONENT = ('Firefox for Android', 'General')
     SCHEDULES.exclusive = ['android']
 
 with Files('*.json'):
@@ -127,5 +131,9 @@ else:
 OBJDIR_PP_FILES['.cargo'] += ['.cargo/config.in']
 
 DEFINES['top_srcdir'] = TOPSRCDIR
+
+SPHINX_TREES['contributing'] = 'docs/contributing'
+
+SPHINX_TREES['code-quality'] = 'docs/code-quality'
 
 include('build/templates.mozbuild')

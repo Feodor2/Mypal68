@@ -438,11 +438,6 @@ NS_IMETHODIMP nsContentTreeOwner::InitWindow(nativeWindow aParentNativeWindow,
   return NS_OK;
 }
 
-NS_IMETHODIMP nsContentTreeOwner::Create() {
-  NS_ASSERTION(false, "You can't call this");
-  return NS_ERROR_UNEXPECTED;
-}
-
 NS_IMETHODIMP nsContentTreeOwner::Destroy() {
   NS_ENSURE_STATE(mAppWindow);
   return mAppWindow->Destroy();
@@ -563,11 +558,6 @@ NS_IMETHODIMP nsContentTreeOwner::GetMainWidget(nsIWidget** aMainWidget) {
   return NS_OK;
 }
 
-NS_IMETHODIMP nsContentTreeOwner::SetFocus() {
-  NS_ENSURE_STATE(mAppWindow);
-  return mAppWindow->SetFocus();
-}
-
 NS_IMETHODIMP nsContentTreeOwner::GetTitle(nsAString& aTitle) {
   NS_ENSURE_STATE(mAppWindow);
 
@@ -584,9 +574,9 @@ NS_IMETHODIMP nsContentTreeOwner::SetTitle(const nsAString& aTitle) {
 NS_IMETHODIMP
 nsContentTreeOwner::ProvideWindow(
     mozIDOMWindowProxy* aParent, uint32_t aChromeFlags, bool aCalledFromJS,
-    bool aPositionSpecified, bool aSizeSpecified, nsIURI* aURI,
-    const nsAString& aName, const nsACString& aFeatures, bool aForceNoOpener,
-    bool aForceNoReferrer, nsDocShellLoadState* aLoadState, bool* aWindowIsNew,
+    bool aWidthSpecified, nsIURI* aURI, const nsAString& aName,
+    const nsACString& aFeatures, bool aForceNoOpener, bool aForceNoReferrer,
+    nsDocShellLoadState* aLoadState, bool* aWindowIsNew,
     mozIDOMWindowProxy** aReturn) {
   NS_ENSURE_ARG_POINTER(aParent);
 
@@ -608,8 +598,7 @@ nsContentTreeOwner::ProvideWindow(
 #endif
 
   int32_t openLocation = nsWindowWatcher::GetWindowOpenLocation(
-      parentWin, aChromeFlags, aCalledFromJS, aPositionSpecified,
-      aSizeSpecified);
+      parentWin, aChromeFlags, aCalledFromJS, aWidthSpecified);
 
   if (openLocation != nsIBrowserDOMWindow::OPEN_NEWTAB &&
       openLocation != nsIBrowserDOMWindow::OPEN_CURRENTWINDOW) {
@@ -699,29 +688,6 @@ nsSiteWindow::GetDimensions(uint32_t aFlags, int32_t* aX, int32_t* aY,
                             int32_t* aCX, int32_t* aCY) {
   // XXX we're ignoring aFlags
   return mAggregator->GetPositionAndSize(aX, aY, aCX, aCY);
-}
-
-NS_IMETHODIMP
-nsSiteWindow::SetFocus(void) {
-#if 0
-  /* This implementation focuses the main document and could make sense.
-     However this method is actually being used from within
-     nsGlobalWindow::Focus (providing a hook for MDI embedding apps)
-     and it's better for our purposes to not pick a document and
-     focus it, but allow nsGlobalWindow to carry on unhindered.
-  */
-  AppWindow *window = mAggregator->AppWindow();
-  if (window) {
-    nsCOMPtr<nsIDocShell> docshell;
-    window->GetDocShell(getter_AddRefs(docshell));
-    if (docShell) {
-      nsCOMPtr<nsPIDOMWindowOuter> domWindow(docShell->GetWindow());
-      if (domWindow)
-        domWindow->Focus();
-    }
-  }
-#endif
-  return NS_OK;
 }
 
 /* this implementation focuses another window. if there isn't another

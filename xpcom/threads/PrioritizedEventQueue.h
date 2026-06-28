@@ -66,7 +66,7 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
   // this queue. This method allows that mutex to be stored so that we can drop
   // it and reacquire it when checking the idle deadline. The mutex must live at
   // least as long as the queue.
-  void SetMutexRef(Lock& aMutex) { mMutex = &aMutex; }
+  void SetMutexRef(Lock2& aMutex) { mMutex = &aMutex; }
 
   void EnableInputEventPrioritization(const AutoLock& aProofOfLock) final;
   void FlushInputEventPrioritization(const AutoLock& aProofOfLock) final;
@@ -111,7 +111,7 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
 
   // We need to drop the queue mutex when checking the idle deadline, so we keep
   // a pointer to it here.
-  Lock* mMutex = nullptr;
+  Lock2* mMutex = nullptr;
 
   TimeDuration mLastEventDelay;
   TimeStamp mLastEventStart;

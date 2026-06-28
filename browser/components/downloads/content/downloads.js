@@ -1052,21 +1052,6 @@ DownloadsViewItem.prototype = {
 
   // Item commands
 
-  downloadsCmd_unblock() {
-    DownloadsPanel.hidePanel();
-    this.confirmUnblock(window, "unblock");
-  },
-
-  downloadsCmd_chooseUnblock() {
-    DownloadsPanel.hidePanel();
-    this.confirmUnblock(window, "chooseUnblock");
-  },
-
-  downloadsCmd_unblockAndOpen() {
-    DownloadsPanel.hidePanel();
-    this.unblockAndOpenDownload().catch(Cu.reportError);
-  },
-
   downloadsCmd_open() {
     this.download.launch().catch(Cu.reportError);
 
@@ -1143,12 +1128,6 @@ var DownloadsViewController = {
     }
     if (!(aCommand in this) && !(aCommand in DownloadsViewItem.prototype)) {
       return false;
-    }
-    // The currently supported commands depend on whether the blocked subview is
-    // showing.  If it is, then take the following path.
-    if (DownloadsView.subViewOpen) {
-      let blockedSubviewCmds = ["downloadsCmd_unblockAndOpen", "cmd_delete"];
-      return blockedSubviewCmds.includes(aCommand);
     }
     // If the blocked subview is not showing, then determine if focus is on a
     // control in the downloads list.
@@ -1509,8 +1488,6 @@ var DownloadsBlockedSubview = {
     e.title.textContent = title;
     e.details1.textContent = details[0];
     e.details2.textContent = details[1];
-    e.openButton.label = s.unblockButtonOpen;
-    e.deleteButton.label = s.unblockButtonConfirmBlock;
 
     let verdict = element.getAttribute("verdict");
     this.subview.setAttribute("verdict", verdict);

@@ -156,6 +156,7 @@ RESFILE = 'widget.res'
 CXXFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
 
 OS_LIBS += [
+    'ntdll',
     'rpcrt4',
     'psapi',
     'urlmon',

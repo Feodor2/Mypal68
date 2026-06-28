@@ -91,7 +91,7 @@ class ThrottledEventQueue::Inner final : public nsISupports {
 #endif
   };
 
-  mutable Lock mMutex;
+  mutable Lock2 mMutex;
   mutable ConditionVariable mIdleCondVar;
 
   // As-of-yet unexecuted runnables queued on this ThrottledEventQueue.

@@ -71,10 +71,9 @@ JSObject* FluentBundleAsyncIterator::WrapObject(
   return FluentBundleAsyncIterator_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-already_AddRefed<Promise> FluentBundleAsyncIterator::Next() {
-  ErrorResult rv;
-  RefPtr<Promise> promise = Promise::Create(mGlobal, rv);
-  if (rv.Failed()) {
+already_AddRefed<Promise> FluentBundleAsyncIterator::Next(ErrorResult& aError) {
+  RefPtr<Promise> promise = Promise::Create(mGlobal, aError);
+  if (aError.Failed()) {
     return nullptr;
   }
 
@@ -201,11 +200,56 @@ void L10nRegistry::ClearSources() {
   ffi::l10nregistry_clear_sources(mRaw.get());
 }
 
-already_AddRefed<FluentBundleIterator> L10nRegistry::GenerateBundlesSync(
-    const Sequence<nsCString>& aLocales,
-    const Sequence<nsCString>& aResourceIds, ErrorResult& aRv) {
-  ffi::L10nRegistryStatus status;
+/* static */
+ffi::GeckoResourceId L10nRegistry::ResourceIdToFFI(
+    const nsCString& aResourceId) {
+  return ffi::GeckoResourceId{
+      aResourceId,
+      ffi::GeckoResourceType::Required,
+  };
+}
 
+/* static */
+ffi::GeckoResourceId L10nRegistry::ResourceIdToFFI(
+    const dom::OwningUTF8StringOrResourceId& aResourceId) {
+  if (aResourceId.IsUTF8String()) {
+    return ffi::GeckoResourceId{
+        aResourceId.GetAsUTF8String(),
+        ffi::GeckoResourceType::Required,
+    };
+  }
+  return ffi::GeckoResourceId{
+      aResourceId.GetAsResourceId().mPath,
+      aResourceId.GetAsResourceId().mOptional
+          ? ffi::GeckoResourceType::Optional
+          : ffi::GeckoResourceType::Required,
+  };
+}
+
+/* static */
+nsTArray<ffi::GeckoResourceId> L10nRegistry::ResourceIdsToFFI(
+    const nsTArray<nsCString>& aResourceIds) {
+  nsTArray<ffi::GeckoResourceId> ffiResourceIds;
+  for (const auto& resourceId : aResourceIds) {
+    ffiResourceIds.EmplaceBack(ResourceIdToFFI(resourceId));
+  }
+  return ffiResourceIds;
+}
+
+/* static */
+nsTArray<ffi::GeckoResourceId> L10nRegistry::ResourceIdsToFFI(
+    const nsTArray<dom::OwningUTF8StringOrResourceId>& aResourceIds) {
+  nsTArray<ffi::GeckoResourceId> ffiResourceIds;
+  for (const auto& resourceId : aResourceIds) {
+    ffiResourceIds.EmplaceBack(ResourceIdToFFI(resourceId));
+  }
+  return ffiResourceIds;
+}
+
+already_AddRefed<FluentBundleIterator> L10nRegistry::GenerateBundlesSync(
+    const nsTArray<nsCString>& aLocales,
+    const nsTArray<ffi::GeckoResourceId>& aResourceIds, ErrorResult& aRv) {
+  ffi::L10nRegistryStatus status;
   UniquePtr<ffi::GeckoFluentBundleIterator> iter(
       ffi::l10nregistry_generate_bundles_sync(
           mRaw, aLocales.Elements(), aLocales.Length(), aResourceIds.Elements(),
@@ -218,11 +262,18 @@ already_AddRefed<FluentBundleIterator> L10nRegistry::GenerateBundlesSync(
   return do_AddRef(new FluentBundleIterator(mGlobal, std::move(iter)));
 }
 
-already_AddRefed<FluentBundleAsyncIterator> L10nRegistry::GenerateBundles(
-    const Sequence<nsCString>& aLocales,
-    const Sequence<nsCString>& aResourceIds, ErrorResult& aRv) {
-  ffi::L10nRegistryStatus status;
+already_AddRefed<FluentBundleIterator> L10nRegistry::GenerateBundlesSync(
+    const dom::Sequence<nsCString>& aLocales,
+    const dom::Sequence<dom::OwningUTF8StringOrResourceId>& aResourceIds,
+    ErrorResult& aRv) {
+  auto ffiResourceIds{ResourceIdsToFFI(aResourceIds)};
+  return GenerateBundlesSync(aLocales, ffiResourceIds, aRv);
+}
 
+already_AddRefed<FluentBundleAsyncIterator> L10nRegistry::GenerateBundles(
+    const nsTArray<nsCString>& aLocales,
+    const nsTArray<ffi::GeckoResourceId>& aResourceIds, ErrorResult& aRv) {
+  ffi::L10nRegistryStatus status;
   UniquePtr<ffi::GeckoFluentBundleAsyncIteratorWrapper> iter(
       ffi::l10nregistry_generate_bundles(
           mRaw, aLocales.Elements(), aLocales.Length(), aResourceIds.Elements(),
@@ -232,6 +283,17 @@ already_AddRefed<FluentBundleAsyncIterator> L10nRegistry::GenerateBundles(
   }
 
   return do_AddRef(new FluentBundleAsyncIterator(mGlobal, std::move(iter)));
+}
+
+already_AddRefed<FluentBundleAsyncIterator> L10nRegistry::GenerateBundles(
+    const dom::Sequence<nsCString>& aLocales,
+    const dom::Sequence<dom::OwningUTF8StringOrResourceId>& aResourceIds,
+    ErrorResult& aRv) {
+  nsTArray<ffi::GeckoResourceId> resourceIds;
+  for (const auto& resourceId : aResourceIds) {
+    resourceIds.EmplaceBack(ResourceIdToFFI(resourceId));
+  }
+  return GenerateBundles(aLocales, resourceIds, aRv);
 }
 
 /* static */

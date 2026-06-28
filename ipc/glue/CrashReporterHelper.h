@@ -6,9 +6,9 @@
 #define mozilla_ipc_CrashReporterHelper_h
 
 #include "CrashReporterHost.h"
-#include "mozilla/ipc/Shmem.h"
 #include "mozilla/UniquePtr.h"
 #include "nsExceptionHandler.h"
+#include "nsICrashService.h"
 
 namespace mozilla {
 namespace ipc {
@@ -18,7 +18,7 @@ namespace ipc {
  * toplevel protocols representing processes. To use this class, you should:
  *
  * 1. Declare a method to initialize the crash reporter in your IPDL:
- *    `async InitCrashReporter(Shmem shmem, NativeThreadId threadId)`
+ *    `async InitCrashReporter(NativeThreadId threadId)`
  *
  * 2. Inherit from this class, providing the appropriate `GeckoProcessType`
  *    enum value for the template parameter PT.
@@ -32,29 +32,42 @@ template <GeckoProcessType PT>
 class CrashReporterHelper {
  public:
   CrashReporterHelper() : mCrashReporter(nullptr) {}
-  IPCResult RecvInitCrashReporter(Shmem&& aShmem,
-                                  const CrashReporter::ThreadId& aThreadId) {
-    mCrashReporter = MakeUnique<ipc::CrashReporterHost>(PT, aShmem, aThreadId);
+  IPCResult RecvInitCrashReporter(const CrashReporter::ThreadId& aThreadId) {
+    mCrashReporter = MakeUnique<ipc::CrashReporterHost>(PT, aThreadId);
     return IPC_OK();
   }
 
  protected:
-  bool GenerateCrashReport(base::ProcessId aPid,
+  void GenerateCrashReport(base::ProcessId aPid,
                            nsString* aMinidumpId = nullptr) {
+    nsAutoString minidumpId;
     if (!mCrashReporter) {
-      CrashReporter::FinalizeOrphanedMinidump(aPid, PT);
-      return false;
+      HandleOrphanedMinidump(aPid, minidumpId);
+    } else if (mCrashReporter->GenerateCrashReport(aPid)) {
+      minidumpId = mCrashReporter->MinidumpID();
     }
 
-    bool generated = mCrashReporter->GenerateCrashReport(aPid);
-    if (generated && aMinidumpId) {
-      *aMinidumpId = mCrashReporter->MinidumpID();
+    if (aMinidumpId) {
+      *aMinidumpId = minidumpId;
     }
 
     mCrashReporter = nullptr;
-    return generated;
   }
 
+ private:
+  void HandleOrphanedMinidump(base::ProcessId aPid, nsString& aMinidumpId) {
+    if (CrashReporter::FinalizeOrphanedMinidump(aPid, PT, &aMinidumpId)) {
+      CrashReporterHost::RecordCrash(PT, nsICrashService::CRASH_TYPE_CRASH,
+                                     aMinidumpId);
+    } else {
+      NS_WARNING(nsPrintfCString("child process pid = %d crashed without "
+                                 "leaving a minidump behind",
+                                 aPid)
+                     .get());
+    }
+  }
+
+ protected:
   UniquePtr<ipc::CrashReporterHost> mCrashReporter;
 };
 

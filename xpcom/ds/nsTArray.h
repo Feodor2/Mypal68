@@ -45,8 +45,6 @@ class nsRegion;
 namespace mozilla {
 namespace layers {
 struct TileClient;
-struct RenderRootDisplayListData;
-struct RenderRootUpdates;
 }  // namespace layers
 }  // namespace mozilla
 
@@ -782,9 +780,6 @@ MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR_FOR_TEMPLATE(std::function)
 MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR(nsRegion)
 MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR(nsIntRegion)
 MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR(mozilla::layers::TileClient)
-MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR(
-    mozilla::layers::RenderRootDisplayListData)
-MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR(mozilla::layers::RenderRootUpdates)
 MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR(
     mozilla::SerializedStructuredCloneBuffer)
 MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR(

@@ -22,6 +22,7 @@ namespace mozilla {
 namespace net {
 
 class SocketProcessBridgeParent;
+class SocketProcessParent;
 
 }  // namespace net
 
@@ -49,6 +50,7 @@ class BackgroundParent final {
   typedef mozilla::dom::ContentParent ContentParent;
   typedef mozilla::ipc::Transport Transport;
   friend class mozilla::net::SocketProcessBridgeParent;
+  friend class mozilla::net::SocketProcessParent;
 
  public:
   // This function allows the caller to determine if the given parent actor
@@ -85,7 +87,8 @@ class BackgroundParent final {
   static bool Alloc(ContentParent* aContent,
                     Endpoint<PBackgroundParent>&& aEndpoint);
 
-  // Only called by SocketProcessBridgeParent for cross-process actors.
+  // Called by SocketProcessBridgeParent and SocketProcessParent for
+  // cross-process actors.
   static bool Alloc(Endpoint<PBackgroundParent>&& aEndpoint);
 };
 

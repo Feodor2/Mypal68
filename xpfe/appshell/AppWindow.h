@@ -15,13 +15,13 @@
 #include "nsString.h"
 #include "nsWeakReference.h"
 #include "nsCOMArray.h"
+#include "nsDocShell.h"
 #include "nsRect.h"
 #include "Units.h"
 #include "mozilla/Mutex.h"
 
 // Interfaces needed
 #include "nsIBaseWindow.h"
-#include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -295,7 +295,7 @@ class AppWindow final : public nsIBaseWindow,
   nsContentTreeOwner* mContentTreeOwner;
   nsContentTreeOwner* mPrimaryContentTreeOwner;
   nsCOMPtr<nsIWidget> mWindow;
-  nsCOMPtr<nsIDocShell> mDocShell;
+  RefPtr<nsDocShell> mDocShell;
   nsCOMPtr<nsPIDOMWindowOuter> mDOMWindow;
   nsWeakPtr mParentWindow;
   nsCOMPtr<nsIPrompt> mPrompter;

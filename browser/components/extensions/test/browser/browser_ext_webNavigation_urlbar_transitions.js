@@ -44,7 +44,7 @@ async function addBookmark(bookmark) {
 async function addSearchEngine(basename) {
   info("Waiting for engine to be added: " + basename);
   let url = getRootDirectory(gTestPath) + basename;
-  let engine = await Services.search.addEngine(url, "", false);
+  let engine = await Services.search.addOpenSearchEngine(url, "");
 
   info(`Search engine added: ${basename}`);
   registerCleanupFunction(async () => Services.search.removeEngine(engine));

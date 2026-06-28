@@ -4,7 +4,7 @@
 
 #include "mozilla/WidgetUtils.h"
 #include "mozilla/dom/ContentParent.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "mozilla/Unused.h"
 #include "nsContentUtils.h"
 #include "nsIBidiKeyboard.h"
@@ -129,7 +129,7 @@ void WidgetUtils::GetBrandShortName(nsAString& aBrandName) {
   aBrandName.Truncate();
 
   nsCOMPtr<nsIStringBundleService> bundleService =
-      mozilla::services::GetStringBundleService();
+      mozilla::components::StringBundle::Service();
 
   nsCOMPtr<nsIStringBundle> bundle;
   if (bundleService) {

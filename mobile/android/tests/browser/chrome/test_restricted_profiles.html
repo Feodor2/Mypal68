@@ -12,29 +12,6 @@ Migrated from Robocop: https://bugzilla.mozilla.org/show_bug.cgi?id=1184186
   <link rel="stylesheet" type="text/css" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script type="application/javascript">
 
-  function test_isUserRestricted() {
-    // Make sure the parental controls service is available
-    ok("@mozilla.org/parental-controls-service;1" in Cc);
-
-    let pc = Cc["@mozilla.org/parental-controls-service;1"].createInstance(Ci.nsIParentalControlsService);
-
-    // In an admin profile, like the tests: enabled = false
-    // In a restricted profile: enabled = true
-    ok(!pc.parentalControlsEnabled);
-    ok(!pc.blockFileDownloadsEnabled);
-
-    ok(pc.isAllowed(Ci.nsIParentalControlsService.DOWNLOAD));
-    ok(pc.isAllowed(Ci.nsIParentalControlsService.INSTALL_EXTENSION));
-    ok(pc.isAllowed(Ci.nsIParentalControlsService.INSTALL_APP));
-    ok(pc.isAllowed(Ci.nsIParentalControlsService.BROWSE));
-    ok(pc.isAllowed(Ci.nsIParentalControlsService.SHARE));
-    ok(pc.isAllowed(Ci.nsIParentalControlsService.BOOKMARK));
-    ok(pc.isAllowed(Ci.nsIParentalControlsService.INSTALL_EXTENSION));
-    ok(pc.isAllowed(Ci.nsIParentalControlsService.MODIFY_ACCOUNTS));
-  }
-
-  test_isUserRestricted();
-
   </script>
 </head>
 <body>

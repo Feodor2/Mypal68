@@ -76,7 +76,7 @@ bool WaitableEvent::IsSignaled() {
 // -----------------------------------------------------------------------------
 class SyncWaiter : public WaitableEvent::Waiter {
  public:
-  SyncWaiter(ConditionVariable* cv, Lock* lock)
+  SyncWaiter(ConditionVariable* cv, Lock2* lock)
       : fired_(false), cv_(cv), lock_(lock), signaling_event_(NULL) {}
 
   bool Fire(WaitableEvent* signaling_event) override {
@@ -117,7 +117,7 @@ class SyncWaiter : public WaitableEvent::Waiter {
  private:
   bool fired_;
   ConditionVariable* const cv_;
-  Lock* const lock_;
+  Lock2* const lock_;
   WaitableEvent* signaling_event_;  // The WaitableEvent which woke us
 };
 
@@ -137,7 +137,7 @@ bool WaitableEvent::TimedWait(const TimeDelta& max_time) {
     return true;
   }
 
-  Lock lock;
+  Lock2 lock;
   lock.Acquire();
   ConditionVariable cv(&lock);
   SyncWaiter sw(&cv, &lock);
@@ -214,7 +214,7 @@ size_t WaitableEvent::WaitMany(WaitableEvent** raw_waitables, size_t count) {
     DCHECK(waitables[i].first != waitables[i + 1].first);
   }
 
-  Lock lock;
+  Lock2 lock;
   ConditionVariable cv(&lock);
   SyncWaiter sw(&cv, &lock);
 

@@ -13,6 +13,7 @@
 #include "prenv.h"
 #include "prprf.h"
 #include "GfxDriverInfo.h"
+#include "mozilla/Components.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/gfx/Logging.h"
@@ -1847,7 +1848,7 @@ void GfxInfo::DescribeFeatures(JSContext* aCx, JS::Handle<JSObject*> aObj) {
     JS_SetProperty(aCx, obj, "textureSharing", val);
 
     bool blacklisted = false;
-    if (nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo()) {
+    if (nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service()) {
       int32_t status;
       nsCString discardFailureId;
       if (SUCCEEDED(

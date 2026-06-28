@@ -399,7 +399,6 @@ bin/libfreebl_32int64_3.so
 #else
 @BINPATH@/crashreporter@BIN_SUFFIX@
 @RESPATH@/crashreporter.ini
-@BINPATH@/minidump-analyzer@BIN_SUFFIX@
 #ifdef XP_UNIX
 @RESPATH@/Throbber-small.gif
 #endif
@@ -408,6 +407,12 @@ bin/libfreebl_32int64_3.so
 #ifdef MOZ_CRASHREPORTER_INJECTOR
 @BINPATH@/breakpadinjector.dll
 #endif
+#endif
+
+; [ minidump-analyzer ]
+;
+#ifdef MOZ_CRASHREPORTER
+@BINPATH@/minidump-analyzer@BIN_SUFFIX@
 #endif
 
 ; Shutdown Terminator
@@ -428,6 +433,7 @@ bin/libfreebl_32int64_3.so
 #ifdef MOZ_DMD
 ; DMD
 @RESPATH@/dmd.py
+@RESPATH@/fix_stacks.py
 @RESPATH@/fix_stack_using_bpsyms.py
 #ifdef XP_MACOSX
 @RESPATH@/fix_macosx_stack.py

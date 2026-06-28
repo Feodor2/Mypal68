@@ -20,9 +20,6 @@ with Files("test/about/**"):
 with Files("test/alerts/**"):
     BUG_COMPONENT = ("Toolkit", "Notifications and Alerts")
 
-with Files("test/captivePortal/**"):
-    BUG_COMPONENT = ("Firefox", "General")
-
 with Files("test/chrome/**"):
     BUG_COMPONENT = ("Firefox", "General")
 

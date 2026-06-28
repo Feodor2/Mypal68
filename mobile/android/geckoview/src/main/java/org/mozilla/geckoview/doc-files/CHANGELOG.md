@@ -8,6 +8,18 @@ exclude: true
 
 <h1> GeckoView API Changelog. </h1>
 
+## v69
+- Modified behavior of ['setAutomaticFontSizeAdjustment'][69.1] so that it no
+  longer has any effect on ['setFontInflationEnabled'][69.2]
+
+[69.1]: ./GeckoRuntimeSettings.html#setAutomaticFontSizeAdjustment-boolean-
+[69.2]: ./GeckoRuntimeSettings.html#setFontInflationEnabled-boolean-
+
+- Added [`GeckoResult.accept`][69.3] for consuming a result without
+  transforming it.
+
+[69.3]: ../GeckoResult.html#accept-org.mozilla.geckoview.GeckoResult.Consumer-org.mozilla.geckoview.GeckoResult.Consumer-
+
 ## v68
 - Added [`GeckoRuntime#configurationChanged`][68.1] to notify the device
   configuration has changed.

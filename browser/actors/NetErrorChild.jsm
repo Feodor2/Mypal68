@@ -122,7 +122,6 @@ class NetErrorChild extends ActorChild {
     return {
       cssClass: searchParams.get("s"),
       error: searchParams.get("e"),
-      captive: searchParams.get("captive"),
     };
   }
 
@@ -756,13 +755,6 @@ class NetErrorChild extends ActorChild {
 
       frameDocShell.document.body.setAttribute("code", msg.data.codeString);
       this._setTechDetails(msg, frameDocShell.document);
-
-      // If captive, return early so we don't set strings outside the
-      // advanced panel on the certificate error page.
-      let { captive } = this.getParams(frameDocShell.document);
-      if (captive) {
-        return;
-      }
 
       this.onCertErrorDetails(msg, frameDocShell);
     }

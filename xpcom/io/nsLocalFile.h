@@ -51,11 +51,11 @@ inline nsresult nsresultForErrno(int aErr) {
     case 0:
       return NS_OK;
 #ifdef EDQUOT
-    case EDQUOT: /* Quota exceeded */
-                 // FALLTHROUGH to return NS_ERROR_FILE_DISK_FULL
+    case EDQUOT:        /* Quota exceeded */
+      [[fallthrough]];  // to NS_ERROR_FILE_NO_DEVICE_SPACE
 #endif
     case ENOSPC:
-      return NS_ERROR_FILE_DISK_FULL;
+      return NS_ERROR_FILE_NO_DEVICE_SPACE;
 #ifdef EISDIR
     case EISDIR: /*      Is a directory. */
       return NS_ERROR_FILE_IS_DIRECTORY;
@@ -106,6 +106,11 @@ inline nsresult nsresultForErrno(int aErr) {
     */
     case EFBIG: /*     File too large. */
       return NS_ERROR_FILE_TOO_BIG;
+
+#ifdef ENOATTR
+    case ENOATTR:
+      return NS_ERROR_NOT_AVAILABLE;
+#endif  // ENOATTR
 
     default:
       return NS_ERROR_FAILURE;

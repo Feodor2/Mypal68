@@ -30,7 +30,10 @@ if CONFIG['MOZ_BUILD_APP'] == 'browser':
     ]
 
 if CONFIG['ENABLE_TESTS'] or CONFIG['MOZ_DMD']:
-    FINAL_TARGET_FILES += ['/tools/rb/fix_stack_using_bpsyms.py']
+    FINAL_TARGET_FILES += [
+        '/tools/rb/fix_stack_using_bpsyms.py',
+        '/tools/rb/fix_stacks.py',
+    ]
     if CONFIG['OS_ARCH'] == 'Darwin':
         FINAL_TARGET_FILES += ['/tools/rb/fix_macosx_stack.py']
     if CONFIG['OS_ARCH'] == 'Linux':
@@ -82,7 +85,7 @@ if CONFIG['MOZ_APP_BASENAME']:
         entry_point='generate',
         inputs=['application.ini.in'],
         flags=['-D%s=%s' % (k, '1' if v is True else v)
-               for k, v in appini_defines.iteritems()])
+               for k, v in sorted(appini_defines.items(), key=lambda t: t[0])])
 
     FINAL_TARGET_FILES += ['!application.ini']
     if CONFIG['MOZ_WIDGET_TOOLKIT'] != 'android' and CONFIG['MOZ_UPDATER']:
@@ -91,26 +94,14 @@ if CONFIG['MOZ_APP_BASENAME']:
     GeneratedFile('application.ini.h', script='appini_header.py',
                   inputs=['!application.ini'])
 
-if CONFIG['ENABLE_TESTS']:
-    GeneratedFile('automation.py', script='gen_automation.py',
-                  inputs=['automation.py.in'])
-
-    TEST_HARNESS_FILES.reftest += [
-        '!automation.py',
-    ]
-
-    TEST_HARNESS_FILES.testing.mochitest += [
-        '!automation.py',
-    ]
-
 # Put a .lldbinit in the bin directory and the objdir, to be picked up
 # automatically by LLDB when we debug executables using either of those two
 # directories as the current working directory.  The .lldbinit file will
 # load $(topsrcdir)/.lldbinit, which is where the actual debugging commands are.
 DEFINES['topsrcdir'] = TOPSRCDIR
 DEFINES['topobjdir'] = TOPOBJDIR
-FINAL_TARGET_PP_FILES += ['.lldbinit.in']
-OBJDIR_FILES += ['!/dist/bin/.lldbinit']
+#FINAL_TARGET_PP_FILES += ['.lldbinit.in']
+#OBJDIR_FILES += ['!/dist/bin/.lldbinit']
 
 # Put the .ycm_extra_conf.py file at the root of the objdir. It is used by
 # the vim plugin YouCompleteMe.

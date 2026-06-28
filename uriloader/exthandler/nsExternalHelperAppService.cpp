@@ -7,6 +7,7 @@
 /* This must occur *after* base/basictypes.h to avoid typedefs conflicts. */
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Base64.h"
+#include "mozilla/Components.h" //MY
 #include "mozilla/ResultExtensions.h"
 
 #include "mozilla/dom/ContentChild.h"
@@ -1151,13 +1152,23 @@ nsExternalAppHandler::nsExternalAppHandler(
     mTempFileExtension = char16_t('.');
   AppendUTF8toUTF16(aTempFileExtension, mTempFileExtension);
 
+  // Get mSuggestedFileName's current file extension.
+  nsAutoString originalFileExt;
+  int32_t pos = mSuggestedFileName.RFindChar('.');
+  if (pos != kNotFound) {
+    mSuggestedFileName.Right(originalFileExt,
+                             mSuggestedFileName.Length() - pos);
+  }
+
   // replace platform specific path separator and illegal characters to avoid
-  // any confusion
-  mSuggestedFileName.ReplaceChar(KNOWN_PATH_SEPARATORS FILE_ILLEGAL_CHARACTERS,
-                                 '_');
-  mTempFileExtension.ReplaceChar(KNOWN_PATH_SEPARATORS FILE_ILLEGAL_CHARACTERS,
-                                 '_');
+  // any confusion.
+  // Try to keep the use of spaces or underscores in sync with the Downloads
+  // code sanitization in DownloadPaths.jsm
+  mSuggestedFileName.ReplaceChar(KNOWN_PATH_SEPARATORS, '_');
+  mSuggestedFileName.ReplaceChar(FILE_ILLEGAL_CHARACTERS, ' ');
   mSuggestedFileName.ReplaceChar(char16_t(0), '_');
+  mTempFileExtension.ReplaceChar(KNOWN_PATH_SEPARATORS, '_');
+  mTempFileExtension.ReplaceChar(FILE_ILLEGAL_CHARACTERS, ' ');
 
   // Remove unsafe bidi characters which might have spoofing implications (bug
   // 511521).
@@ -1178,8 +1189,23 @@ nsExternalAppHandler::nsExternalAppHandler(
   mSuggestedFileName.ReplaceChar(unsafeBidiCharacters, '_');
   mTempFileExtension.ReplaceChar(unsafeBidiCharacters, '_');
 
-  // Make sure extension is correct.
-  EnsureSuggestedFileName();
+  // Remove trailing or leading spaces that we may have generated while
+  // sanitizing.
+  mSuggestedFileName.CompressWhitespace();
+  mTempFileExtension.CompressWhitespace();
+
+  // Append after removing trailing whitespaces from the name.
+  if (originalFileExt.FindCharInSet(
+          KNOWN_PATH_SEPARATORS FILE_ILLEGAL_CHARACTERS) != kNotFound) {
+    // The file extension contains invalid characters and using it would
+    // generate an unusable file, thus use mTempFileExtension instead.
+    mSuggestedFileName.Append(mTempFileExtension);
+    originalFileExt = mTempFileExtension;
+  }
+
+  // Make sure later we won't append mTempFileExtension if it's identical to
+  // the currently used file extension.
+  EnsureTempFileExtension(originalFileExt);
 
   mBufferSize = Preferences::GetUint("network.buffer.cache.size", 4096);
 }
@@ -1288,20 +1314,14 @@ void nsExternalAppHandler::RetargetLoadNotifications(nsIRequest* request) {
  * content-disposition header indicating filename="foobar.exe" from being
  * downloaded to a file with extension .exe and executed.
  */
-void nsExternalAppHandler::EnsureSuggestedFileName() {
+void nsExternalAppHandler::EnsureTempFileExtension(const nsString& aFileExt) {
   // Make sure there is a mTempFileExtension (not "" or ".").
   // Remember that mTempFileExtension will always have the leading "."
   // (the check for empty is just to be safe).
   if (mTempFileExtension.Length() > 1) {
-    // Get mSuggestedFileName's current extension.
-    nsAutoString fileExt;
-    int32_t pos = mSuggestedFileName.RFindChar('.');
-    if (pos != kNotFound)
-      mSuggestedFileName.Right(fileExt, mSuggestedFileName.Length() - pos);
-
     // Now, compare fileExt to mTempFileExtension.
-    if (fileExt.Equals(mTempFileExtension,
-                       nsCaseInsensitiveStringComparator)) {
+    if (aFileExt.Equals(mTempFileExtension,
+                        nsCaseInsensitiveStringComparator)) {
       // Matches -> mTempFileExtension can be empty
       mTempFileExtension.Truncate();
     }
@@ -1710,7 +1730,6 @@ void nsExternalAppHandler::SendStatusChange(ErrorType type, nsresult rv,
       msgId = "noMemory";
       break;
 
-    case NS_ERROR_FILE_DISK_FULL:
     case NS_ERROR_FILE_NO_DEVICE_SPACE:
       // Out of space on target volume.
       msgId = "diskFull";
@@ -1781,7 +1800,7 @@ void nsExternalAppHandler::SendStatusChange(ErrorType type, nsresult rv,
 
   // Get properties file bundle and extract status string.
   nsCOMPtr<nsIStringBundleService> stringService =
-      mozilla::services::GetStringBundleService();
+      mozilla::components::StringBundle::Service();
   if (stringService) {
     nsCOMPtr<nsIStringBundle> bundle;
     if (NS_SUCCEEDED(stringService->CreateBundle(

@@ -15,6 +15,7 @@
 #include "mozilla/HalWakeLockInformation.h"
 #include "mozilla/HalTypes.h"
 #include "mozilla/Types.h"
+#include "mozilla/MozPromise.h"
 
 /*
  * Hal.h contains the public Hal API.
@@ -231,10 +232,10 @@ void NotifyScreenConfigurationChange(
 
 /**
  * Lock the screen orientation to the specific orientation.
- * @return Whether the lock has been accepted.
+ * @return A promise indicating that the screen orientation has been locked.
  */
-MOZ_MUST_USE bool LockScreenOrientation(
-    const hal::ScreenOrientation& aOrientation);
+[[nodiscard]] RefPtr<mozilla::MozPromise<bool, bool, false>>
+LockScreenOrientation(const hal::ScreenOrientation& aOrientation);
 
 /**
  * Unlock the screen orientation.

@@ -41,7 +41,6 @@
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsContentUtils.h"
-#include "nsDocShell.h" //MY68
 #include "nsGlobalWindow.h"
 #include "nsXULTooltipListener.h"
 #include "nsXULPopupManager.h"
@@ -54,6 +53,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/Services.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/dom/BarProps.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/Element.h"
@@ -252,26 +252,18 @@ nsresult AppWindow::Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
   mDocShell->SetOpener(aOpeningTab);
 
   // Make sure to set the item type on the docshell _before_ calling
-  // Create() so it knows what type it is.
-  nsCOMPtr<nsIDocShellTreeItem> docShellAsItem(mDocShell);
-  NS_ENSURE_TRUE(docShellAsItem, NS_ERROR_FAILURE);
+  // InitWindow() so it knows what type it is.
   NS_ENSURE_SUCCESS(EnsureChromeTreeOwner(), NS_ERROR_FAILURE);
 
-  docShellAsItem->SetTreeOwner(mChromeTreeOwner);
+  mDocShell->SetTreeOwner(mChromeTreeOwner);
 
   r.MoveTo(0, 0);
-  nsCOMPtr<nsIBaseWindow> docShellAsWin(do_QueryInterface(mDocShell));
-  NS_ENSURE_SUCCESS(docShellAsWin->InitWindow(nullptr, mWindow, r.X(), r.Y(),
-                                              r.Width(), r.Height()),
+  NS_ENSURE_SUCCESS(mDocShell->InitWindow(nullptr, mWindow, r.X(), r.Y(),
+                                          r.Width(), r.Height()),
                     NS_ERROR_FAILURE);
-  NS_ENSURE_SUCCESS(docShellAsWin->Create(), NS_ERROR_FAILURE);
 
   // Attach a WebProgress listener.during initialization...
-  nsCOMPtr<nsIWebProgress> webProgress(do_GetInterface(mDocShell, &rv));
-  if (webProgress) {
-    webProgress->AddProgressListener(this,
-                                     nsIWebProgress::NOTIFY_STATE_NETWORK);
-  }
+  mDocShell->AddProgressListener(this, nsIWebProgress::NOTIFY_STATE_NETWORK);
 
   if (aOpenerWindow) {
     nsPIDOMWindowOuter* window = mDocShell->GetWindow();
@@ -594,20 +586,13 @@ NS_IMETHODIMP AppWindow::InitWindow(nativeWindow aParentNativeWindow,
   return NS_OK;
 }
 
-NS_IMETHODIMP AppWindow::Create() {
-  // XXX First Check In
-  NS_ASSERTION(false, "Not Yet Implemented");
-  return NS_OK;
-}
-
 NS_IMETHODIMP AppWindow::Destroy() {
-  nsresult rv;
-  nsCOMPtr<nsIWebProgress> webProgress(do_GetInterface(mDocShell, &rv));
-  if (webProgress) {
-    webProgress->RemoveProgressListener(this);
+  nsCOMPtr<nsIAppWindow> kungFuDeathGrip(this);
+
+  if (mDocShell) {
+    mDocShell->RemoveProgressListener(this);
   }
 
-  nsCOMPtr<nsIAppWindow> kungFuDeathGrip(this);
   {
     MutexAutoLock lock(mSPTimerLock);
     if (mSPTimer) {
@@ -633,16 +618,6 @@ NS_IMETHODIMP AppWindow::Destroy() {
 
   nsCOMPtr<nsIAppWindow> parentWindow(do_QueryReferent(mParentWindow));
   if (parentWindow) parentWindow->RemoveChildWindow(this);
-
-  // let's make sure the window doesn't get deleted out from under us
-  // while we are trying to close....this can happen if the docshell
-  // we close ends up being the last owning reference to this AppWindow
-
-  // XXXTAB This shouldn't be an issue anymore because the ownership model
-  // only goes in one direction.  When webshell container is fully removed
-  // try removing this...
-
-  nsCOMPtr<nsIAppWindow> placeHolder = this;
 
   // Remove modality (if any) and hide while destroying. More than
   // a convenience, the hide prevents user interaction with the partially
@@ -694,8 +669,7 @@ NS_IMETHODIMP AppWindow::Destroy() {
 
   mDOMWindow = nullptr;
   if (mDocShell) {
-    nsCOMPtr<nsIBaseWindow> shellAsWin(do_QueryInterface(mDocShell));
-    shellAsWin->Destroy();
+    mDocShell->Destroy();
     mDocShell = nullptr;  // this can cause reentrancy of this function
   }
 
@@ -1030,8 +1004,7 @@ NS_IMETHODIMP AppWindow::SetVisibility(bool aVisibility) {
 
   // XXXTAB Do we really need to show docshell and the window?  Isn't
   // the window good enough?
-  nsCOMPtr<nsIBaseWindow> shellAsWin(do_QueryInterface(mDocShell));
-  shellAsWin->SetVisibility(aVisibility);
+  mDocShell->SetVisibility(aVisibility);
   // Store locally so it doesn't die on us. 'Show' can result in the window
   // being closed with AppWindow::Destroy being called. That would set
   // mWindow to null and posibly destroy the nsIWidget while its Show method
@@ -1081,12 +1054,6 @@ NS_IMETHODIMP AppWindow::GetMainWidget(nsIWidget** aMainWidget) {
 
   *aMainWidget = mWindow;
   NS_IF_ADDREF(*aMainWidget);
-  return NS_OK;
-}
-
-NS_IMETHODIMP AppWindow::SetFocus() {
-  // XXX First Check In
-  NS_ASSERTION(false, "Not Yet Implemented");
   return NS_OK;
 }
 
@@ -2117,14 +2084,12 @@ nsresult AppWindow::SetPrimaryRemoteTabSize(int32_t aWidth, int32_t aHeight) {
 }
 
 nsresult AppWindow::GetRootShellSize(int32_t* aWidth, int32_t* aHeight) {
-  nsCOMPtr<nsIBaseWindow> shellAsWin = do_QueryInterface(mDocShell);
-  NS_ENSURE_TRUE(shellAsWin, NS_ERROR_FAILURE);
-  return shellAsWin->GetSize(aWidth, aHeight);
+  NS_ENSURE_TRUE(mDocShell, NS_ERROR_FAILURE);
+  return mDocShell->GetSize(aWidth, aHeight);
 }
 
 nsresult AppWindow::SetRootShellSize(int32_t aWidth, int32_t aHeight) {
-  nsCOMPtr<nsIDocShellTreeItem> docShellAsItem = mDocShell;
-  return SizeShellTo(docShellAsItem, aWidth, aHeight);
+  return SizeShellTo(mDocShell, aWidth, aHeight);
 }
 
 NS_IMETHODIMP AppWindow::SizeShellTo(nsIDocShellTreeItem* aShellItem,
@@ -2588,15 +2553,15 @@ void AppWindow::SizeShell() {
     nsCOMPtr<nsIContentViewer> cv;
     mDocShell->GetContentViewer(getter_AddRefs(cv));
     if (cv) {
-      nsCOMPtr<nsIDocShellTreeItem> docShellAsItem = mDocShell;
+      RefPtr<nsDocShell> docShell = mDocShell;
       nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
-      docShellAsItem->GetTreeOwner(getter_AddRefs(treeOwner));
+      docShell->GetTreeOwner(getter_AddRefs(treeOwner));
       if (treeOwner) {
         // GetContentSize can fail, so initialise |width| and |height| to be
         // on the safe side.
         int32_t width = 0, height = 0;
         if (NS_SUCCEEDED(cv->GetContentSize(&width, &height))) {
-          treeOwner->SizeShellTo(docShellAsItem, width, height);
+          treeOwner->SizeShellTo(docShell, width, height);
           // Update specified size for the final LoadPositionFromXUL call.
           specWidth = width + windowDiff.width;
           specHeight = height + windowDiff.height;
@@ -2700,9 +2665,8 @@ bool AppWindow::WindowMoved(nsIWidget* aWidget, int32_t x, int32_t y) {
 
 bool AppWindow::WindowResized(nsIWidget* aWidget, int32_t aWidth,
                               int32_t aHeight) {
-  nsCOMPtr<nsIBaseWindow> shellAsWin(do_QueryInterface(mDocShell));
-  if (shellAsWin) {
-    shellAsWin->SetPositionAndSize(0, 0, aWidth, aHeight, 0);
+  if (mDocShell) {
+    mDocShell->SetPositionAndSize(0, 0, aWidth, aHeight, 0);
   }
   // Persist size, but not immediately, in case this OS is firing
   // repeated size events as the user drags the sizing handle

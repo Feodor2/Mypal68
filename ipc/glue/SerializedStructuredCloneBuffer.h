@@ -99,7 +99,8 @@ struct ParamTraits<JSStructuredCloneData> {
     }
 
     *aResult = JSStructuredCloneData(
-        std::move(out), JS::StructuredCloneScope::DifferentProcess);
+        std::move(out), JS::StructuredCloneScope::DifferentProcess,
+        OwnTransferablePolicy::IgnoreTransferablesIfAny);
 
     return true;
   }

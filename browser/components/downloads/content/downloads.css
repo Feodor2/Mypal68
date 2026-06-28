@@ -61,18 +61,9 @@
 .download-state:not(          [state="4"]  /* Paused             */)
                                            .downloadResumeMenuItem,
 
-/* Blocked (dirty) downloads that have not been confirmed and
-   have temporary data. */
-.download-state:not(          [state="8"]  /* Blocked (dirty)    */)
-                                           .downloadUnblockMenuItem,
-.download-state[state="8"]:not(.temporary-block)
-                                           .downloadUnblockMenuItem,
-
 .download-state:not(:-moz-any([state="1"], /* Finished           */
                               [state="2"], /* Failed             */
                               [state="3"], /* Canceled           */
-                              [state="6"], /* Blocked (parental) */
-                              [state="8"], /* Blocked (dirty)    */
                               [state="9"]) /* Blocked (policy)   */)
                                            .downloadRemoveFromHistoryMenuItem,
 

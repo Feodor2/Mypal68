@@ -15,6 +15,7 @@
 #include "mozilla/EventQueue.h"
 #include "base/lock.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/SystemGroup.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TaskQueue.h"
@@ -56,7 +57,7 @@ class BackgroundEventTarget final : public nsIEventTarget {
   nsCOMPtr<nsIThreadPool> mPool;
   nsCOMPtr<nsIThreadPool> mIOPool;
 
-  Lock mMutex;
+  Lock2 mMutex;
   nsTArray<RefPtr<TaskQueue>> mTaskQueues;
 };
 

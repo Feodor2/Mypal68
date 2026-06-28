@@ -5,9 +5,11 @@
 #include <type_traits>
 
 #include "nsComponentManagerUtils.h"
+#include "nsIThread.h"
 #include "nsThreadUtils.h"
 #include "mozilla/IdleTaskRunner.h"
 #include "mozilla/RefCounted.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/UniquePtr.h"
 
 #include "gtest/gtest.h"

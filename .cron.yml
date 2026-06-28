@@ -11,12 +11,14 @@ jobs:
           treeherder-symbol: RPd
           target-tasks-method: daily_releases
       run-on-projects:
-          - mozilla-esr68
+          - mozilla-beta
       when:
           by-project:
-              # No default branch
-              mozilla-esr68:
+              # No default
+              mozilla-beta:
                   - {weekday: 'Monday', hour: 4, minute: 0}
+                  - {weekday: 'Wednesday', hour: 4, minute: 0}
+                  - {weekday: 'Friday', hour: 4, minute: 0}
 
     - name: nightly-desktop
       job:
@@ -82,27 +84,29 @@ jobs:
           - mozilla-central
       when: []  # never (hook only)
 
-    - name: tp6m-fennec-v64
+    - name: tp6m-fennec-v68
       job:
           type: decision-task
-          treeherder-symbol: f64
-          target-tasks-method: fennec_v64
+          treeherder-symbol: f68
+          target-tasks-method: fennec_v68
           include-push-tasks: true
       run-on-projects:
           - mozilla-central
       when:
           - {weekday: 'Saturday', hour: 5, minute: 0}
 
-    - name: android-power-tests
+    - name: general-perf-testing
       job:
           type: decision-task
-          treeherder-symbol: apt
-          target-tasks-method: android_power
+          treeherder-symbol: gpt
+          target-tasks-method: general_perf_testing
           include-push-tasks: true
       run-on-projects:
           - mozilla-central
       when:
-          - {weekday: 'Saturday', hour: 17, minute: 0}
+          - {weekday: 'Monday', hour: 10, minute: 30}
+          - {weekday: 'Wednesday', hour: 10, minute: 30}
+          - {weekday: 'Friday', hour: 10, minute: 30}
 
     - name: searchfox-index
       job:
@@ -181,11 +185,11 @@ jobs:
           - {weekday: 'Monday', hour: 10, minute: 0}
           - {weekday: 'Thursday', hour: 10, minute: 0}
 
-    - name: pipfile-update
+    - name: python-dependency-update
       job:
           type: decision-task
           treeherder-symbol: Nfile
-          target-tasks-method: pipfile_update
+          target-tasks-method: python_dependency_update
       run-on-projects:
           - mozilla-central
       when:
@@ -193,6 +197,33 @@ jobs:
               # No default branch
               mozilla-central:
                   - {weekday: 'Monday', hour: 10, minute: 0}
+
+    - name: raptor-tp6m
+      job:
+          type: decision-task
+          treeherder-symbol: tp6m
+          target-tasks-method: raptor_tp6m
+          include-push-tasks: true
+      run-on-projects:
+          - mozilla-central
+      when:
+          - {weekday: 'Monday', hour: 3, minute: 0}
+          - {weekday: 'Tuesday', hour: 3, minute: 0}
+          - {weekday: 'Wednesday', hour: 3, minute: 0}
+          - {weekday: 'Thursday', hour: 3, minute: 0}
+          - {weekday: 'Friday', hour: 3, minute: 0}
+          - {weekday: 'Saturday', hour: 3, minute: 0}
+          - {weekday: 'Sunday', hour: 3, minute: 0}
+
+    - name: condprof
+      job:
+          type: decision-task
+          treeherder-symbol: condprof
+          target-tasks-method: condprof
+      run-on-projects:
+          - mozilla-central
+      when:
+          - {hour: 16, minute: 00}
 
     - name: l10n-bumper
       job:
@@ -205,3 +236,13 @@ jobs:
           - mozilla-esr68
       when:
           - {minute: 45}
+
+    - name: system-symbols
+      job:
+          type: decision-task
+          treeherder-symbol: system-symbols
+          target-tasks-method: system_symbols
+      run-on-projects:
+          - mozilla-central
+      when:
+          - {hour: 0, minute: 0}

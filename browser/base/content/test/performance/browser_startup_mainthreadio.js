@@ -152,7 +152,6 @@ const startupPhases = {
     {
       // bug 1541491 to stop using this file, bug 1541494 to write correctly.
       path: "ProfLD:compatibility.ini",
-      condition: !WIN, // Visible on Windows with an open marker
       write: 18,
       close: 1,
     },
@@ -240,8 +239,8 @@ const startupPhases = {
       // bug 1546838
       path: "ProfD:xulstore/data.mdb",
       condition: WIN,
+      read: 1,
       write: 1,
-      fsync: 1,
     },
   ],
 
@@ -269,7 +268,7 @@ const startupPhases = {
       path: "ProfD:cookies.sqlite",
       condition: !LINUX,
       stat: 2,
-      read: 2,
+      read: 3,
       write: 1,
     },
     {
@@ -334,12 +333,6 @@ const startupPhases = {
       // sometimes before first paint
       condition: WIN,
       stat: 1,
-    },
-    {
-      // bug 1546838
-      path: "ProfD:xulstore/data.mdb",
-      condition: WIN,
-      read: 1,
     },
   ],
 
@@ -474,19 +467,7 @@ const startupPhases = {
       // bug 1546838
       path: "ProfD:xulstore/data.mdb",
       condition: MAC,
-      write: 3,
-    },
-    {
-      // bug 1543090
-      path: "GreD:omni.ja",
-      condition: WIN,
-      stat: 1,
-    },
-    {
-      // bug 1543090
-      path: "XCurProcD:omni.ja",
-      condition: WIN,
-      stat: 2,
+      write: 1,
     },
   ],
 
@@ -504,7 +485,7 @@ const startupPhases = {
       // bug 1370516 - NSS should be initialized off main thread.
       path: "ProfD:cert9.db",
       condition: WIN,
-      read: 2,
+      read: 5,
       stat: 2,
     },
     {
@@ -539,7 +520,7 @@ const startupPhases = {
       // bug 1370516 - NSS should be initialized off main thread.
       path: "ProfD:key4.db",
       condition: WIN,
-      read: 2,
+      read: 8,
       stat: 2,
     },
     {
@@ -570,12 +551,6 @@ const startupPhases = {
       ignoreIfUnused: true,
       stat: 1,
       close: 1,
-    },
-    {
-      // bug 1003968
-      path: "XREAppDist:searchplugins",
-      condition: WIN,
-      stat: 1,
     },
     {
       path: "XCurProcD:extensions",
@@ -617,6 +592,7 @@ const startupPhases = {
       ignoreIfUnused: true,
       fsync: 1,
       stat: 4,
+      read: 1,
       write: 2,
     },
     {
@@ -625,6 +601,7 @@ const startupPhases = {
       ignoreIfUnused: true,
       stat: 4,
       fsync: 3,
+      read: 36,
       write: 148,
     },
     {
@@ -639,7 +616,7 @@ const startupPhases = {
       path: "ProfD:places.sqlite",
       ignoreIfUnused: true,
       fsync: 2,
-      read: 1,
+      read: 4,
       stat: 3,
       write: 1310,
     },
@@ -649,6 +626,7 @@ const startupPhases = {
       ignoreIfUnused: true,
       fsync: 2,
       stat: 7,
+      read: 2,
       write: 7,
     },
     {
@@ -657,6 +635,7 @@ const startupPhases = {
       ignoreIfUnused: true,
       fsync: 2,
       stat: 7,
+      read: 7,
       write: 15,
     },
     {
@@ -671,7 +650,7 @@ const startupPhases = {
       path: "ProfD:favicons.sqlite",
       ignoreIfUnused: true,
       fsync: 3,
-      read: 4,
+      read: 8,
       stat: 4,
       write: 1300,
     },
@@ -692,12 +671,6 @@ const startupPhases = {
       condition: WIN,
       ignoreIfUnused: true,
       stat: 3,
-    },
-    {
-      // bug 1543090
-      path: "XCurProcD:omni.ja",
-      condition: WIN,
-      stat: 7,
     },
   ],
 };
@@ -923,16 +896,16 @@ add_task(async function() {
         continue;
       }
 
-      // Convert to lower case before comparing because the OS X test slaves
-      // have the 'Firefox' folder in 'Library/Application Support' created
-      // as 'firefox' for some reason.
-      let filename = marker.filename.toLowerCase();
-
-      if (!filename) {
+      if (!marker.filename) {
         // We are still missing the filename on some mainthreadio markers,
         // these markers are currently useless for the purpose of this test.
         continue;
       }
+
+      // Convert to lower case before comparing because the OS X test machines
+      // have the 'Firefox' folder in 'Library/Application Support' created
+      // as 'firefox' for some reason.
+      let filename = marker.filename.toLowerCase();
 
       if (!WIN && filename == "/dev/urandom") {
         continue;

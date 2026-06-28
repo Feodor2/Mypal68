@@ -37,7 +37,6 @@ public final class RemoteManager implements IBinder.DeathRecipient {
     }
 
     private List<CodecProxy> mCodecs = new LinkedList<CodecProxy>();
-    private List<IMediaDrmBridge> mDrmBridges = new LinkedList<IMediaDrmBridge>();
 
     private volatile IMediaManager mRemote;
 
@@ -128,15 +127,14 @@ public final class RemoteManager implements IBinder.DeathRecipient {
     public synchronized CodecProxy createCodec(final boolean isEncoder,
                                                final MediaFormat format,
                                                final GeckoSurface surface,
-                                               final CodecProxy.Callbacks callbacks,
-                                               final String drmStubId) {
+                                               final CodecProxy.Callbacks callbacks) {
         if (mRemote == null) {
             if (DEBUG) Log.d(LOGTAG, "createCodec failed due to not initialize");
             return null;
         }
         try {
             ICodec remote = mRemote.createCodec();
-            CodecProxy proxy = CodecProxy.createCodecProxy(isEncoder, format, surface, callbacks, drmStubId);
+            CodecProxy proxy = CodecProxy.createCodecProxy(isEncoder, format, surface, callbacks);
             if (proxy.init(remote)) {
                 mCodecs.add(proxy);
                 return proxy;
@@ -145,23 +143,6 @@ public final class RemoteManager implements IBinder.DeathRecipient {
             }
         } catch (RemoteException e) {
             e.printStackTrace();
-            return null;
-        }
-    }
-
-    public synchronized IMediaDrmBridge createRemoteMediaDrmBridge(final String keySystem,
-                                                                   final String stubId) {
-        if (mRemote == null) {
-            if (DEBUG) Log.d(LOGTAG, "createRemoteMediaDrmBridge failed due to not initialize");
-            return null;
-        }
-        try {
-            IMediaDrmBridge remoteBridge =
-                mRemote.createRemoteMediaDrmBridge(keySystem, stubId);
-            mDrmBridges.add(remoteBridge);
-            return remoteBridge;
-        } catch (RemoteException e) {
-            Log.e(LOGTAG, "Got exception during createRemoteMediaDrmBridge().", e);
             return null;
         }
     }
@@ -221,7 +202,7 @@ public final class RemoteManager implements IBinder.DeathRecipient {
     }
 
     private void releaseIfNeeded() {
-        if (!mCodecs.isEmpty() || !mDrmBridges.isEmpty()) {
+        if (!mCodecs.isEmpty()) {
             return;
         }
 
@@ -229,23 +210,5 @@ public final class RemoteManager implements IBinder.DeathRecipient {
         mConnection.unlink();
         Context appCtxt = GeckoAppShell.getApplicationContext();
         appCtxt.unbindService(mConnection);
-    }
-
-    public void onRemoteMediaDrmBridgeReleased(final IMediaDrmBridge remote) {
-        if (!mDrmBridges.contains(remote)) {
-            Log.e(LOGTAG, "Try to release unknown remote MediaDrm bridge: " + remote);
-            return;
-        }
-
-        synchronized (this) {
-            if (mDrmBridges.remove(remote)) {
-                try {
-                    mRemote.endRequest();
-                    releaseIfNeeded();
-                } catch (RemoteException | NullPointerException e) {
-                    Log.e(LOGTAG, "Fail to report remote DRM bridge disconnection");
-                }
-            }
-        }
     }
 } // RemoteManager

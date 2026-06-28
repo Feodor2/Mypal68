@@ -18,12 +18,6 @@ function getPersistentStoragePermStatus(origin) {
 // Test listing site using quota usage or site using appcache
 // This is currently disabled because of bug 1414751.
 add_task(async function() {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.storageManager.enabled", true],
-      ["dom.serviceWorkers.enabled", true],
-    ],
-  });
   // Open a test site which would save into appcache
   await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_OFFLINE_URL);
   BrowserTestUtils.removeTab(gBrowser.selectedTab);
@@ -81,12 +75,6 @@ add_task(async function() {
 
 // Test buttons are disabled and loading message shown while updating sites
 add_task(async function() {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.storageManager.enabled", true],
-      ["dom.serviceWorkers.enabled", true],
-    ],
-  });
   let updatedPromise = promiseSiteDataManagerSitesUpdated();
   await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
   await updatedPromise;
@@ -167,12 +155,6 @@ add_task(async function() {
 
 // Test clearing service wroker through the settings panel
 add_task(async function() {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.storageManager.enabled", true],
-      ["dom.serviceWorkers.enabled", true],
-    ],
-  });
   // Register a test service worker
   await loadServiceWorkerTestPage(TEST_SERVICE_WORKER_URL);
   await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
@@ -219,7 +201,8 @@ add_task(async function() {
     false,
     Date.now() + 1000 * 60 * 60,
     {},
-    Ci.nsICookie.SAMESITE_NONE
+    Ci.nsICookie.SAMESITE_NONE,
+    Ci.nsICookie.SCHEME_HTTPS
   );
   Services.cookies.add(
     uri.host,
@@ -231,7 +214,8 @@ add_task(async function() {
     false,
     Date.now() + 1000 * 60 * 60,
     {},
-    Ci.nsICookie.SAMESITE_NONE
+    Ci.nsICookie.SAMESITE_NONE,
+    Ci.nsICookie.SCHEME_HTTPS
   );
   Services.cookies.add(
     uri2.host,
@@ -243,7 +227,8 @@ add_task(async function() {
     false,
     Date.now() + 1000 * 60 * 60,
     {},
-    Ci.nsICookie.SAMESITE_NONE
+    Ci.nsICookie.SAMESITE_NONE,
+    Ci.nsICookie.SCHEME_HTTPS
   );
 
   // Ensure that private browsing cookies are ignored.
@@ -257,7 +242,8 @@ add_task(async function() {
     false,
     Date.now() + 1000 * 60 * 60,
     { privateBrowsingId: 1 },
-    Ci.nsICookie.SAMESITE_NONE
+    Ci.nsICookie.SAMESITE_NONE,
+    Ci.nsICookie.SCHEME_HTTPS
   );
 
   // Get the exact creation date from the cookies (to avoid intermittents

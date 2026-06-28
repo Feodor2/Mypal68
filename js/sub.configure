@@ -7,7 +7,6 @@
 @imports("logging")
 @imports(_from="__builtin__", _import="object")
 @imports(_from="mozbuild.configure.util", _import="ConfigureOutputHandler")
-@imports(_from='mozbuild.util', _import='encode')
 def old_js_configure(build_env):
     class PrefixOutput(object):
         def __init__(self, prefix, fh):

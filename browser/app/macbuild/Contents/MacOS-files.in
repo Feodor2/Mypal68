@@ -10,8 +10,10 @@
 #if defined(MOZ_ASAN) || defined(MOZ_TSAN)
 /llvm-symbolizer
 #endif
+#if defined(MOZ_CRASHREPORTER)
+/minidump-analyzer
+#endif
 /pk12util
 /ssltunnel
-/webrtc-gtest
 /xpcshell
 /XUL

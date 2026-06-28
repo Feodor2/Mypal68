@@ -64,6 +64,7 @@ class GeckoViewNavigation extends GeckoViewModule {
     ]);
 
     this.messageManager.addMessageListener("Browser:LoadURI", this);
+    this._initialAboutBlank = true;
   }
 
   // Bundle event handler.
@@ -495,6 +496,15 @@ class GeckoViewNavigation extends GeckoViewModule {
     try {
       fixedURI = Services.io.createExposableURI(aLocationURI);
     } catch (ex) {}
+
+    // We manually fire the initial about:blank messages to make sure that we
+    // consistently send them so there's nothing to do here.
+    const ignore = this._initialAboutBlank && fixedURI.spec === "about:blank";
+    this._initialAboutBlank = false;
+
+    if (ignore) {
+      return;
+    }
 
     const message = {
       type: "GeckoView:LocationChange",

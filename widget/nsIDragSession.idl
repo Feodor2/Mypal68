@@ -10,7 +10,7 @@
 #include "nsSize.h"
 %}
 
-native nsSize (nsSize);
+native nsSize(nsSize);
 
 webidl DataTransfer;
 webidl Document;

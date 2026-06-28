@@ -6,7 +6,6 @@ package org.mozilla.gecko.media;
 
 import android.media.MediaCodec;
 import android.media.MediaCodec.BufferInfo;
-import android.media.MediaCodec.CryptoInfo;
 import android.media.MediaFormat;
 import android.os.DeadObjectException;
 import android.os.RemoteException;
@@ -35,7 +34,6 @@ public final class CodecProxy {
     private FormatParam mFormat;
     private GeckoSurface mOutputSurface;
     private CallbacksForwarder mCallbacks;
-    private String mRemoteDrmStubId;
     private Queue<Sample> mSurfaceOutputs = new ConcurrentLinkedQueue<>();
     private boolean mFlushed = true;
 
@@ -131,33 +129,29 @@ public final class CodecProxy {
     public static CodecProxy create(final boolean isEncoder,
                                     final MediaFormat format,
                                     final GeckoSurface surface,
-                                    final Callbacks callbacks,
-                                    final String drmStubId) {
-        return RemoteManager.getInstance().createCodec(isEncoder, format, surface, callbacks, drmStubId);
+                                    final Callbacks callbacks) {
+        return RemoteManager.getInstance().createCodec(isEncoder, format, surface, callbacks);
     }
 
     public static CodecProxy createCodecProxy(final boolean isEncoder,
                                               final MediaFormat format,
                                               final GeckoSurface surface,
-                                              final Callbacks callbacks,
-                                              final String drmStubId) {
-        return new CodecProxy(isEncoder, format, surface, callbacks, drmStubId);
+                                              final Callbacks callbacks) {
+        return new CodecProxy(isEncoder, format, surface, callbacks);
     }
 
     private CodecProxy(final boolean isEncoder, final MediaFormat format,
-                       final GeckoSurface surface, final Callbacks callbacks,
-                       final String drmStubId) {
+                       final GeckoSurface surface, final Callbacks callbacks) {
         mIsEncoder = isEncoder;
         mFormat = new FormatParam(format);
         mOutputSurface = surface;
-        mRemoteDrmStubId = drmStubId;
         mCallbacks = new CallbacksForwarder(callbacks);
     }
 
     boolean init(final ICodec remote) {
         try {
             remote.setCallbacks(mCallbacks);
-            if (!remote.configure(mFormat, mOutputSurface, mIsEncoder ? MediaCodec.CONFIGURE_FLAG_ENCODE : 0, mRemoteDrmStubId)) {
+            if (!remote.configure(mFormat, mOutputSurface, mIsEncoder ? MediaCodec.CONFIGURE_FLAG_ENCODE : 0)) {
                 return false;
             }
             remote.start();
@@ -225,8 +219,7 @@ public final class CodecProxy {
     }
 
     @WrapForJNI
-    public synchronized long input(final ByteBuffer bytes, final BufferInfo info,
-                                      final CryptoInfo cryptoInfo) {
+    public synchronized long input(final ByteBuffer bytes, final BufferInfo info) {
         if (mRemote == null) {
             Log.e(LOGTAG, "cannot send input to an ended codec");
             return INVALID_SESSION;
@@ -242,7 +235,7 @@ public final class CodecProxy {
             Sample s = mRemote.dequeueInput(info.size);
             fillInputBuffer(s.bufferId, bytes, info.offset, info.size);
             mSession = s.session;
-            return sendInput(s.set(info, cryptoInfo));
+            return sendInput(s.set(info));
         } catch (RemoteException | NullPointerException e) {
             Log.e(LOGTAG, "fail to dequeue input buffer", e);
         } catch (IOException e) {

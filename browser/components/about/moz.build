@@ -20,7 +20,6 @@ XPCOM_MANIFESTS += [
 ]
 
 EXTRA_JS_MODULES.aboutpages = [
-    'AboutNetErrorHandler.jsm',
     'AboutPrivateBrowsingHandler.jsm',
 ]
 

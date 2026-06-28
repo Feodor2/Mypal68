@@ -6,6 +6,7 @@
 
 #include <knownfolders.h>
 #include <winioctl.h>
+#include <winternl.h>  //MY NtQueryObject
 
 #include "gfxPlatform.h"
 #include "gfxUtils.h"
@@ -2012,8 +2013,6 @@ typedef DWORD(WINAPI* GetFinalPathNameByHandlePtr)(HANDLE hFile,
 bool WinUtils::ResolveJunctionPointsAndSymLinks(std::wstring& aPath) {
   LOG_D("ResolveJunctionPointsAndSymLinks: Resolving path: %S", aPath.c_str());
 
-  wchar_t path[MAX_PATH] = {0};
-
   nsAutoHandle handle(::CreateFileW(
       aPath.c_str(), 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
       nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
@@ -2024,34 +2023,46 @@ bool WinUtils::ResolveJunctionPointsAndSymLinks(std::wstring& aPath) {
     return false;
   }
 
-  // GetFinalPathNameByHandleW is a Vista and later API. Since ESR builds with
-  // XP support still, we need to load the function manually.
-  GetFinalPathNameByHandlePtr getFinalPathNameFnPtr = nullptr;
-  HMODULE kernel32Dll = ::GetModuleHandleW(L"Kernel32");
-  if (kernel32Dll) {
-    getFinalPathNameFnPtr = (GetFinalPathNameByHandlePtr)::GetProcAddress(
-        kernel32Dll, "GetFinalPathNameByHandleW");
+  char buff[1024];
+  WCHAR volume[512];
+  WCHAR drives[512];
+  wchar_t path_final[MAX_PATH] = {0};
+  USHORT* l = (USHORT*)&buff;
+  WCHAR* path = (WCHAR*)(buff + sizeof(USHORT) * 2 + sizeof(PWSTR));
+  path[0] = 0;
+  *l = 0;
+
+  NtQueryObject(handle, (OBJECT_INFORMATION_CLASS)1, buff, 1024, 0);
+
+  if (!path[0] || !*l) return false;
+
+  path[(*l) / 2] = 0;
+  GetLogicalDriveStringsW(512, drives);
+  WCHAR* drive = drives;
+  while (drive[0]) {
+    WCHAR* drive_next = drive + wcslen(drive) + 1;
+
+    drive[2] = 0;
+
+    volume[0] = 0;
+    QueryDosDevice(drive, volume, sizeof(volume) / 2);
+
+    int len = (int)wcslen(volume);
+    if (len > 0 && wcsnicmp(path, volume, len) == 0) {
+      wcscat(path_final, drive);
+      wcscat(path_final, path + len);
+      break;
+    }
+
+    drive = drive_next;
   }
 
-  if (!getFinalPathNameFnPtr) {
-    return false;
-  }
+  int pathLen = wcslen(path_final);
 
-  DWORD pathLen = getFinalPathNameFnPtr(handle, path, MAX_PATH,
-                                        FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
   if (pathLen == 0 || pathLen >= MAX_PATH) {
     return false;
   }
-  aPath = path;
-
-  // GetFinalPathNameByHandle sticks a '\\?\' in front of the path,
-  // but that confuses some APIs so strip it off. It will also put
-  // '\\?\UNC\' in front of network paths, we convert that to '\\'.
-  if (aPath.compare(0, 7, L"\\\\?\\UNC") == 0) {
-    aPath.erase(2, 6);
-  } else if (aPath.compare(0, 4, L"\\\\?\\") == 0) {
-    aPath.erase(0, 4);
-  }
+  aPath = path_final;
 
   LOG_D("ResolveJunctionPointsAndSymLinks: Resolved path to: %S",
         aPath.c_str());

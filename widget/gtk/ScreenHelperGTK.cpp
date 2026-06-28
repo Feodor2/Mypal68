@@ -176,8 +176,7 @@ void ScreenHelperGTK::RefreshScreens() {
     screenList.AppendElement(MakeScreen(defaultScreen, i));
   }
 
-  ScreenManager& screenManager = ScreenManager::GetSingleton();
-  screenManager.Refresh(std::move(screenList));
+  ScreenManager::Refresh(std::move(screenList));
 }
 
 }  // namespace widget

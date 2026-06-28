@@ -12,7 +12,6 @@
 #  include "mozilla/Maybe.h"
 #  include "mozilla/Monitor2.h"
 #  include "mozilla/RefPtr.h"
-#  include "mozilla/Tuple.h"
 #  include "mozilla/UniquePtr.h"
 #  include "mozilla/Variant.h"
 #  include "nsIDirectTaskDispatcher.h"
@@ -1042,7 +1041,7 @@ class MozPromise : public MozPromiseBase {
   };
 
   const char* mCreationSite;  // For logging
-  Lock mMutex;
+  Lock2 mMutex;
   ResolveOrRejectValue mValue;
   bool mUseSynchronousTaskDispatch = false;
   bool mUseDirectTaskDispatch = false;

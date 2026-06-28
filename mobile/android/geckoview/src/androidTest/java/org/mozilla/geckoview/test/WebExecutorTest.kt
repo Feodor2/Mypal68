@@ -33,6 +33,7 @@ import org.junit.*
 
 import org.junit.rules.ExpectedException
 import org.junit.runner.RunWith
+import org.mozilla.geckoview.GeckoResult
 
 import org.mozilla.geckoview.GeckoWebExecutor
 import org.mozilla.geckoview.WebRequest
@@ -54,7 +55,6 @@ class WebExecutorTest {
 
     lateinit var executor: GeckoWebExecutor
     lateinit var server: HttpBin
-    val env = Environment()
 
     @get:Rule val thrown = ExpectedException.none()
 
@@ -85,7 +85,7 @@ class WebExecutorTest {
     }
 
     private fun fetch(request: WebRequest, flags: Int): WebResponse {
-        return executor.fetch(request, flags).poll(env.defaultTimeoutMillis)!!
+        return executor.fetch(request, flags).pollDefault()!!
     }
 
     fun String.toDirectByteBuffer(): ByteBuffer {
@@ -253,7 +253,7 @@ class WebExecutorTest {
 
     @Test
     fun testResolveV4() {
-        val addresses = executor.resolve("localhost").poll()!!
+        val addresses = executor.resolve("localhost").pollDefault()!!
         assertThat("Addresses should not be null",
                 addresses, notNullValue())
         assertThat("First address should be loopback",
@@ -265,7 +265,7 @@ class WebExecutorTest {
     @Test
     @SdkSuppress(minSdkVersion = Build.VERSION_CODES.LOLLIPOP)
     fun testResolveV6() {
-        val addresses = executor.resolve("ip6-localhost").poll()!!
+        val addresses = executor.resolve("ip6-localhost").pollDefault()!!
         assertThat("Addresses should not be null",
                 addresses, notNullValue())
         assertThat("First address should be loopback",
@@ -282,13 +282,13 @@ class WebExecutorTest {
 
     @Test(expected = UnknownHostException::class)
     fun testResolveError() {
-        executor.resolve("this.should.not.resolve").poll()
+        executor.resolve("this.should.not.resolve").pollDefault()
     }
 
     @Test
     fun testFetchStream() {
         val expectedCount = 1 * 1024 * 1024 // 1MB
-        val response = executor.fetch(WebRequest("$TEST_ENDPOINT/bytes/$expectedCount")).poll(env.defaultTimeoutMillis)!!
+        val response = executor.fetch(WebRequest("$TEST_ENDPOINT/bytes/$expectedCount")).pollDefault()!!
 
         assertThat("Status code should match", response.statusCode, equalTo(200))
         assertThat("Content-Length should match", response.headers["Content-Length"]!!.toInt(), equalTo(expectedCount))
@@ -307,7 +307,7 @@ class WebExecutorTest {
     @Test
     fun testFetchStreamCancel() {
         val expectedCount = 1 * 1024 * 1024 // 1MB
-        val response = executor.fetch(WebRequest("$TEST_ENDPOINT/bytes/$expectedCount")).poll(env.defaultTimeoutMillis)!!
+        val response = executor.fetch(WebRequest("$TEST_ENDPOINT/bytes/$expectedCount")).pollDefault()!!
 
         assertThat("Status code should match", response.statusCode, equalTo(200))
         assertThat("Content-Length should match", response.headers["Content-Length"]!!.toInt(), equalTo(expectedCount))

@@ -24,15 +24,6 @@ const EXPECTED_APPMENU_OPEN_REFLOWS = [
 
   {
     stack: [
-      "adjustArrowPosition@chrome://global/content/elements/panel.js",
-      "on_popuppositioned@chrome://global/content/elements/panel.js",
-    ],
-
-    maxCount: 22, // This number should only ever go down - never up.
-  },
-
-  {
-    stack: [
       "_calculateMaxHeight@resource:///modules/PanelMultiView.jsm",
       "handleEvent@resource:///modules/PanelMultiView.jsm",
     ],
@@ -55,19 +46,21 @@ add_task(async function() {
     filter: rects =>
       rects.filter(
         r =>
-          !// We expect the menu button to get into the active state.
-          (
-            r.y1 >= menuButtonRect.top &&
-            r.y2 <= menuButtonRect.bottom &&
-            r.x1 >= menuButtonRect.left &&
-            r.x2 <= menuButtonRect.right
+          !(
+            // We expect the menu button to get into the active state.
+            (
+              r.y1 >= menuButtonRect.top &&
+              r.y2 <= menuButtonRect.bottom &&
+              r.x1 >= menuButtonRect.left &&
+              r.x2 <= menuButtonRect.right
+            )
           )
         // XXX For some reason the menu panel isn't in our screenshots,
         // but that's where we actually expect many changes.
       ),
     exceptions: [
       {
-        name: "the urlbar placeolder moves up and down by a few pixels",
+        name: "the urlbar placeholder moves up and down by a few pixels",
         condition: r =>
           r.x1 >= textBoxRect.left &&
           r.x2 <= textBoxRect.right &&

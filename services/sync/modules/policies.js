@@ -67,12 +67,6 @@ XPCOMUtils.defineLazyServiceGetter(
   "@mozilla.org/widget/idleservice;1",
   "nsIIdleService"
 );
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "CaptivePortalService",
-  "@mozilla.org/network/captive-portal-service;1",
-  "nsICaptivePortalService"
-);
 
 // Get the value for an interval that's stored in preferences. To save users
 // from themselves (and us from them!) the minimum time they can specify
@@ -198,16 +192,10 @@ SyncScheduler.prototype = {
     // no longer attempts to track the actual network state by default, but one
     // thing stays true: if it says we're offline then we are definitely not online.
     //
-    // We also ask the captive portal service if we are behind a locked captive
-    // portal.
-    //
     // We don't check on the NetworkLinkService however, because it gave us
     // false positives in the past in a vm environment.
     try {
-      if (
-        Services.io.offline ||
-        CaptivePortalService.state == CaptivePortalService.LOCKED_PORTAL
-      ) {
+      if (Services.io.offline) {
         return true;
       }
     } catch (ex) {
@@ -273,7 +261,6 @@ SyncScheduler.prototype = {
     Svc.Obs.add("weave:engine:score:updated", this);
     Svc.Obs.add("network:offline-status-changed", this);
     Svc.Obs.add("network:link-status-changed", this);
-    Svc.Obs.add("captive-portal-detected", this);
     Svc.Obs.add("weave:service:sync:start", this);
     Svc.Obs.add("weave:service:sync:finish", this);
     Svc.Obs.add("weave:engine:sync:finish", this);
@@ -290,7 +277,6 @@ SyncScheduler.prototype = {
 
     if (Status.checkSetup() == STATUS_OK) {
       Svc.Obs.add("wake_notification", this);
-      Svc.Obs.add("captive-portal-login-success", this);
       Svc.Obs.add("sleep_notification", this);
       IdleService.addIdleObserver(this, this.idleTime);
     }
@@ -335,7 +321,6 @@ SyncScheduler.prototype = {
         }
         break;
       case "network:offline-status-changed":
-      case "captive-portal-detected":
         // Whether online or offline, we'll reschedule syncs
         this._log.trace("Network offline status change: " + data);
         this.checkSyncStatus();
@@ -471,7 +456,6 @@ SyncScheduler.prototype = {
         Services.prefs.savePrefFile(null);
         IdleService.addIdleObserver(this, this.idleTime);
         Svc.Obs.add("wake_notification", this);
-        Svc.Obs.add("captive-portal-login-success", this);
         Svc.Obs.add("sleep_notification", this);
         break;
       case "weave:service:start-over":
@@ -530,12 +514,6 @@ SyncScheduler.prototype = {
               this.scheduleNextSync(2000, { why: topic });
             }
           }
-        });
-        break;
-      case "captive-portal-login-success":
-        this._log.debug("Captive portal login success. Scheduling a sync.");
-        CommonUtils.nextTick(() => {
-          this.scheduleNextSync(3000, { why: topic });
         });
         break;
       case "sleep_notification":

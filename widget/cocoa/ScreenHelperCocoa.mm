@@ -121,8 +121,7 @@ void ScreenHelperCocoa::RefreshScreens() {
     screens.AppendElement(MakeScreen(screen));
   }
 
-  ScreenManager& screenManager = ScreenManager::GetSingleton();
-  screenManager.Refresh(std::move(screens));
+  ScreenManager::Refresh(std::move(screens));
 
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }

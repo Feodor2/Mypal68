@@ -7,9 +7,10 @@
 #include "WindowIdentifier.h"
 #include "AndroidBridge.h"
 #include "mozilla/dom/network/Constants.h"
-#include "nsIScreenManager.h"
+#include "mozilla/java/GeckoAppShellWrappers.h"
+#include "mozilla/java/GeckoRuntimeWrappers.h"
+#include "mozilla/widget/ScreenManager.h"
 #include "nsPIDOMWindow.h"
-#include "nsServiceManagerUtils.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::hal;
@@ -92,43 +93,17 @@ void GetCurrentScreenConfiguration(ScreenConfiguration* aScreenConfiguration) {
     return;
   }
 
-  nsresult rv;
-  nsCOMPtr<nsIScreenManager> screenMgr =
-      do_GetService("@mozilla.org/gfx/screenmanager;1", &rv);
-  if (NS_FAILED(rv)) {
-    NS_ERROR("Can't find nsIScreenManager!");
-    return;
-  }
-
-  int32_t colorDepth, pixelDepth;
-  int16_t angle;
-  hal::ScreenOrientation orientation;
-  nsCOMPtr<nsIScreen> screen;
-
-  int32_t rectX, rectY, rectWidth, rectHeight;
-
-  screenMgr->GetPrimaryScreen(getter_AddRefs(screen));
-
-  screen->GetRect(&rectX, &rectY, &rectWidth, &rectHeight);
-  screen->GetColorDepth(&colorDepth);
-  screen->GetPixelDepth(&pixelDepth);
-  orientation =
+  RefPtr<widget::Screen> screen =
+      widget::ScreenManager::GetSingleton().GetPrimaryScreen();
+  *aScreenConfiguration = screen->ToScreenConfiguration();
+  aScreenConfiguration->orientation() =
       static_cast<hal::ScreenOrientation>(bridge->GetScreenOrientation());
-  angle = bridge->GetScreenAngle();
-
-  *aScreenConfiguration =
-      hal::ScreenConfiguration(nsIntRect(rectX, rectY, rectWidth, rectHeight),
-                               orientation, angle, colorDepth, pixelDepth);
+  aScreenConfiguration->angle() = bridge->GetScreenAngle();
 }
 
-bool LockScreenOrientation(const hal::ScreenOrientation& aOrientation) {
-  // Force the default orientation to be portrait-primary.
-  hal::ScreenOrientation orientation =
-      aOrientation == eScreenOrientation_Default
-          ? eScreenOrientation_PortraitPrimary
-          : aOrientation;
-
-  switch (orientation) {
+RefPtr<MozPromise<bool, bool, false>> LockScreenOrientation(
+    const hal::ScreenOrientation& aOrientation) {
+  switch (aOrientation) {
     // The Android backend only supports these orientations.
     case eScreenOrientation_PortraitPrimary:
     case eScreenOrientation_PortraitSecondary:
@@ -138,16 +113,34 @@ bool LockScreenOrientation(const hal::ScreenOrientation& aOrientation) {
     case eScreenOrientation_LandscapeSecondary:
     case eScreenOrientation_LandscapePrimary |
         eScreenOrientation_LandscapeSecondary:
-    case eScreenOrientation_Default:
-      java::GeckoAppShell::LockScreenOrientation(orientation);
-      return true;
+    case eScreenOrientation_PortraitPrimary |
+        eScreenOrientation_PortraitSecondary |
+        eScreenOrientation_LandscapePrimary |
+        eScreenOrientation_LandscapeSecondary:
+    case eScreenOrientation_Default: {
+      java::GeckoRuntime::LocalRef runtime = java::GeckoRuntime::GetInstance();
+      if (runtime != NULL) {
+        auto result = runtime->LockScreenOrientation(aOrientation);
+        auto geckoResult = java::GeckoResult::LocalRef(std::move(result));
+        return geckoResult
+                   ? MozPromise<bool, bool, false>::FromGeckoResult(geckoResult)
+                   : MozPromise<bool, bool, false>::CreateAndReject(false,
+                                                                    __func__);
+      } else {
+        return MozPromise<bool, bool, false>::CreateAndReject(false, __func__);
+      }
+    }
     default:
-      return false;
+      NS_WARNING("Unsupported screen orientation type");
+      return MozPromise<bool, bool, false>::CreateAndReject(false, __func__);
   }
 }
 
 void UnlockScreenOrientation() {
-  java::GeckoAppShell::UnlockScreenOrientation();
+  java::GeckoRuntime::LocalRef runtime = java::GeckoRuntime::GetInstance();
+  if (runtime != NULL) {
+    runtime->UnlockScreenOrientation();
+  }
 }
 
 }  // namespace hal_impl

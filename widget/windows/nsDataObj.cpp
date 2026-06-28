@@ -23,7 +23,8 @@
 #include "nsEscape.h"
 #include "nsIURL.h"
 #include "nsNetUtil.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/Unused.h"
 #include "nsIOutputStream.h"
 #include "nscore.h"
@@ -349,7 +350,7 @@ bool nsDataObj::AutoSetEvent::IsWaiting() const {
 
 //-----------------------------------------------------------------------------
 // CMemStream implementation
-Lock nsDataObj::CMemStream::mLock;
+Lock2 nsDataObj::CMemStream::mLock;
 
 //-----------------------------------------------------------------------------
 nsDataObj::CMemStream::CMemStream(nsHGLOBAL aGlobalMem, uint32_t aTotalLength,
@@ -1135,7 +1136,7 @@ static bool CreateFilenameFromTextW(nsString& aText, const wchar_t* aExtension,
 
 static bool GetLocalizedString(const char* aName, nsAString& aString) {
   nsCOMPtr<nsIStringBundleService> stringService =
-      mozilla::services::GetStringBundleService();
+      mozilla::components::StringBundle::Service();
   if (!stringService) return false;
 
   nsCOMPtr<nsIStringBundle> stringBundle;

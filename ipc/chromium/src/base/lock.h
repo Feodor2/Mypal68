@@ -11,12 +11,12 @@
 #include "build/build_config.h"
 
 // A convenient wrapper for an OS specific critical section.
-class Lock {
+class Lock2 {
  public:
   // Optimized wrapper implementation
-  Lock() : lock_() {}
-  explicit Lock(const char* aName): mName(aName), lock_() {}
-  ~Lock() {}
+  Lock2() : lock_() {}
+  explicit Lock2(const char* aName): mName(aName), lock_() {}
+  ~Lock2() {}
   void Acquire() { lock_.Lock(); }
   void Release() { lock_.Unlock(); }
 
@@ -61,7 +61,7 @@ class Lock {
   // Platform specific underlying lock implementation.
   ::base::internal::LockImpl lock_;
 
-  DISALLOW_COPY_AND_ASSIGN(Lock);
+  DISALLOW_COPY_AND_ASSIGN(Lock2);
 };
 
 // A helper class that acquires the given Lock while the AutoLock is in scope.
@@ -69,9 +69,9 @@ class AutoLock {
  public:
   struct AlreadyAcquired {};
 
-  explicit AutoLock(Lock& lock) : lock_(lock) { lock_.Acquire(); }
+  explicit AutoLock(Lock2& lock) : lock_(lock) { lock_.Acquire(); }
 
-  AutoLock(Lock& lock, const AlreadyAcquired&) : lock_(lock) {
+  AutoLock(Lock2& lock, const AlreadyAcquired&) : lock_(lock) {
     lock_.AssertAcquired();
   }
 
@@ -81,7 +81,7 @@ class AutoLock {
   }
 
  private:
-  Lock& lock_;
+  Lock2& lock_;
   DISALLOW_COPY_AND_ASSIGN(AutoLock);
 };
 
@@ -89,7 +89,7 @@ class AutoLock {
 // constructor, and re-Acquire() it in the destructor.
 class AutoUnlock {
  public:
-  explicit AutoUnlock(Lock& lock) : lock_(lock) {
+  explicit AutoUnlock(Lock2& lock) : lock_(lock) {
     // We require our caller to have the lock.
     lock_.AssertAcquired();
     lock_.Release();
@@ -98,7 +98,7 @@ class AutoUnlock {
   ~AutoUnlock() { lock_.Acquire(); }
 
  private:
-  Lock& lock_;
+  Lock2& lock_;
   DISALLOW_COPY_AND_ASSIGN(AutoUnlock);
 };
 

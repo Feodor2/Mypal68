@@ -572,25 +572,22 @@ T* DowncastCCParticipant(void* aPtr) {
 #define NS_DECL_CYCLE_COLLECTION_CLASS_NAME_METHOD(_class) \
   NS_IMETHOD_(const char*) ClassName() override { return #_class; };
 
-#define NS_DECL_CYCLE_COLLECTION_CLASS_BODY_NO_UNLINK(_class, _base)         \
- public:                                                                     \
-  NS_IMETHOD TraverseNative(void* p, nsCycleCollectionTraversalCallback& cb) \
-      override;                                                              \
-  NS_DECL_CYCLE_COLLECTION_CLASS_NAME_METHOD(_class)                         \
-  NS_IMETHOD_(void) DeleteCycleCollectable(void* p) override {               \
-    DowncastCCParticipant<_class>(p)->DeleteCycleCollectable();              \
-  }                                                                          \
-  static _class* Downcast(nsISupports* s) {                                  \
-    return static_cast<_class*>(static_cast<_base*>(s));                     \
-  }                                                                          \
-  static nsISupports* Upcast(_class* p) {                                    \
-    return NS_ISUPPORTS_CAST(_base*, p);                                     \
-  }                                                                          \
-  template <typename T>                                                      \
-  friend nsISupports* ToSupports(T* p, NS_CYCLE_COLLECTION_INNERCLASS* dummy);
-
-#define NS_DECL_CYCLE_COLLECTION_CLASS_BODY(_class, _base)     \
-  NS_DECL_CYCLE_COLLECTION_CLASS_BODY_NO_UNLINK(_class, _base) \
+#define NS_DECL_CYCLE_COLLECTION_CLASS_BODY(_class, _base)                     \
+ public:                                                                       \
+  NS_IMETHOD TraverseNative(void* p, nsCycleCollectionTraversalCallback& cb)   \
+      override;                                                                \
+  NS_DECL_CYCLE_COLLECTION_CLASS_NAME_METHOD(_class)                           \
+  NS_IMETHOD_(void) DeleteCycleCollectable(void* p) override {                 \
+    DowncastCCParticipant<_class>(p)->DeleteCycleCollectable();                \
+  }                                                                            \
+  static _class* Downcast(nsISupports* s) {                                    \
+    return static_cast<_class*>(static_cast<_base*>(s));                       \
+  }                                                                            \
+  static nsISupports* Upcast(_class* p) {                                      \
+    return NS_ISUPPORTS_CAST(_base*, p);                                       \
+  }                                                                            \
+  template <typename T>                                                        \
+  friend nsISupports* ToSupports(T* p, NS_CYCLE_COLLECTION_INNERCLASS* dummy); \
   NS_IMETHOD_(void) Unlink(void* p) override;
 
 #define NS_PARTICIPANT_AS(type, participant) \
@@ -726,8 +723,7 @@ T* DowncastCCParticipant(void* aPtr) {
 #define NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(_class) \
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(_class, _class)
 
-#define NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_BODY_NO_UNLINK(_class,      \
-                                                                _base_class) \
+#define NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_BODY(_class, _base_class)   \
  public:                                                                     \
   NS_IMETHOD TraverseNative(void* p, nsCycleCollectionTraversalCallback& cb) \
       override;                                                              \
@@ -735,10 +731,7 @@ T* DowncastCCParticipant(void* aPtr) {
   static _class* Downcast(nsISupports* s) {                                  \
     return static_cast<_class*>(static_cast<_base_class*>(                   \
         NS_CYCLE_COLLECTION_CLASSNAME(_base_class)::Downcast(s)));           \
-  }
-
-#define NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_BODY(_class, _base_class)     \
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_BODY_NO_UNLINK(_class, _base_class) \
+  }                                                                          \
   NS_IMETHOD_(void) Unlink(void* p) override;
 
 #define NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(_class, _base_class)   \
@@ -753,22 +746,6 @@ T* DowncastCCParticipant(void* aPtr) {
     NS_IMPL_GET_XPCOM_CYCLE_COLLECTION_PARTICIPANT(_class)              \
   };                                                                    \
   NS_CHECK_FOR_RIGHT_PARTICIPANT_IMPL_INHERITED(_class)                 \
-  static NS_CYCLE_COLLECTION_INNERCLASS NS_CYCLE_COLLECTION_INNERNAME;
-
-#define NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_NO_UNLINK(_class,       \
-                                                           _base_class)  \
-  class NS_CYCLE_COLLECTION_INNERCLASS                                   \
-      : public NS_CYCLE_COLLECTION_CLASSNAME(_base_class) {              \
-   public:                                                               \
-    constexpr explicit NS_CYCLE_COLLECTION_INNERCLASS(Flags aFlags = 0)  \
-        : NS_CYCLE_COLLECTION_CLASSNAME(_base_class)(aFlags) {}          \
-                                                                         \
-   private:                                                              \
-    NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED_BODY_NO_UNLINK(_class,      \
-                                                            _base_class) \
-    NS_IMPL_GET_XPCOM_CYCLE_COLLECTION_PARTICIPANT(_class)               \
-  };                                                                     \
-  NS_CHECK_FOR_RIGHT_PARTICIPANT_IMPL_INHERITED(_class)                  \
   static NS_CYCLE_COLLECTION_INNERCLASS NS_CYCLE_COLLECTION_INNERNAME;
 
 #define NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(_class,      \
@@ -1000,6 +977,7 @@ inline void ImplCycleCollectionUnlink(JS::Heap<T*>& aField) {
                                                  js_members_)               \
   NS_IMPL_CYCLE_COLLECTION_CLASS(class_)                                    \
   NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(class_)                             \
+    using ::ImplCycleCollectionUnlink;                                      \
     NS_IMPL_CYCLE_COLLECTION_UNLINK(                                        \
         MOZ_FOR_EACH_EXPAND_HELPER native_members_)                         \
     NS_IMPL_CYCLE_COLLECTION_UNLINK(MOZ_FOR_EACH_EXPAND_HELPER js_members_) \
@@ -1017,6 +995,7 @@ inline void ImplCycleCollectionUnlink(JS::Heap<T*>& aField) {
     class_, _base, native_members_, js_members_)                            \
   NS_IMPL_CYCLE_COLLECTION_CLASS(class_)                                    \
   NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(class_, _base)            \
+    using ::ImplCycleCollectionUnlink;                                      \
     NS_IMPL_CYCLE_COLLECTION_UNLINK(                                        \
         MOZ_FOR_EACH_EXPAND_HELPER native_members_)                         \
     NS_IMPL_CYCLE_COLLECTION_UNLINK(MOZ_FOR_EACH_EXPAND_HELPER js_members_) \

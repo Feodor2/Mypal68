@@ -5,6 +5,7 @@
 #include "StorageBaseStatementInternal.h"
 
 #include "nsProxyRelease.h"
+#include "nsIThread.h" //MY
 
 #include "mozStorageBindingParamsArray.h"
 #include "mozStorageStatementData.h"

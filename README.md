@@ -4,6 +4,24 @@ A browser for Windows XP based on Firefox 68.
 
 ![image](https://user-images.githubusercontent.com/19492771/152347482-f51058cd-2967-4bc5-80fd-5d269c328774.png)
 
+## SYSTEM REQUIREMENTS
+
+### Minimal
+
+ Pentium3 or AthlonXP (SSE version)\
+ 512mb RAM
+
+ Do not expect that modern stuff like the youtube will be usable there.
+
+### Recommended
+
+ Cor2duo level CPU\
+ 2gb RAM
+
+### OS
+
+ Winxp SP3 - Win 8\
+ Win10 never checked, its specific bugs wont fix.
 
 ## KNOWN PROBLEMS
 
@@ -11,7 +29,7 @@ A browser for Windows XP based on Firefox 68.
   multiprocess only this which reaches 1.5gb, so it better here.
   I think this is OS limitation, nothing to do with this.
 
-- x64 does not run on winxp64, wont fix, there is an issue #35 about
+- x64 build does not run on winxp64, wont fix, there is an issue #35 about
 
 - Graphics error on some videocards, look further the issue #428
 
@@ -40,18 +58,17 @@ An issue without details considered as invalid.
 ## IF YOU WANT REPORT A SITE
 
 Report [there](https://github.com/Feodor2/Mypal68/issues/228).
-Put the actual link to the site
-Notice that I never would look to the site which requires the login, including any goolag sites.
+Include the actual URL of the site
+Notice that I won't check sites that require login, including any goolag sites.
 Please try to find what feature is missing by yourself by checking on newer firefoxes and find first version where it works (mozregression day).
 Actually I do not look every site, no time for this.
 
-## YOU MAY DONATE
+## DONATIONS
 
-But only by crypto [Look here](https://github.com/Feodor2/Mypal68/issues/84)
-
+But only by\
+DASH: XetK1TDBqVAyqnTJUd65g9Pi1HcQEtFF2c
 
 ## MY MIRROR PAGES
 
 https://codeberg.org/Theodor2/Mypal68 \
-https://notabug.org/Theodor/Mypal68
 

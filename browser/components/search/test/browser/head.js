@@ -77,10 +77,9 @@ async function promiseNewEngine(basename, options = {}) {
   info("Waiting for engine to be added: " + basename);
   let url = getRootDirectory(options.testPath || gTestPath) + basename;
   let current = await Services.search.getDefault();
-  let engine = await Services.search.addEngine(
+  let engine = await Services.search.addOpenSearchEngine(
     url,
-    options.iconURL || "",
-    false
+    options.iconURL || ""
   );
   info("Search engine added: " + basename);
   if (setAsCurrent) {

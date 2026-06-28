@@ -376,7 +376,9 @@ class MutexBase {
 class MutexBase {
   pthread_mutex_t mMutex;
 
-  DISALLOW_COPY_AND_ASSIGN(MutexBase);
+  MutexBase(const MutexBase&) = delete;
+
+  const MutexBase& operator=(const MutexBase&) = delete;
 
  public:
   MutexBase() { pthread_mutex_init(&mMutex, nullptr); }
@@ -390,7 +392,9 @@ class MutexBase {
 class Mutex : private MutexBase {
   bool mIsLocked;
 
-  DISALLOW_COPY_AND_ASSIGN(Mutex);
+  Mutex(const Mutex&) = delete;
+
+  const Mutex& operator=(const Mutex&) = delete;
 
  public:
   Mutex() : mIsLocked(false) {}
@@ -418,7 +422,9 @@ class Mutex : private MutexBase {
 static Mutex* gStateLock = nullptr;
 
 class AutoLockState {
-  DISALLOW_COPY_AND_ASSIGN(AutoLockState);
+  AutoLockState(const AutoLockState&) = delete;
+
+  const AutoLockState& operator=(const AutoLockState&) = delete;
 
  public:
   AutoLockState() { gStateLock->Lock(); }
@@ -426,7 +432,9 @@ class AutoLockState {
 };
 
 class AutoUnlockState {
-  DISALLOW_COPY_AND_ASSIGN(AutoUnlockState);
+  AutoUnlockState(const AutoUnlockState&) = delete;
+
+  const AutoUnlockState& operator=(const AutoUnlockState&) = delete;
 
  public:
   AutoUnlockState() { gStateLock->Unlock(); }
@@ -459,7 +467,9 @@ class Thread {
 
   Thread() : mBlockIntercepts(false) {}
 
-  DISALLOW_COPY_AND_ASSIGN(Thread);
+  Thread(const Thread&) = delete;
+
+  const Thread& operator=(const Thread&) = delete;
 
   static DMD_THREAD_LOCAL(Thread*) tlsThread;
 
@@ -502,7 +512,9 @@ DMD_THREAD_LOCAL(Thread*) Thread::tlsThread;
 class AutoBlockIntercepts {
   Thread* const mT;
 
-  DISALLOW_COPY_AND_ASSIGN(AutoBlockIntercepts);
+  AutoBlockIntercepts(const AutoBlockIntercepts&) = delete;
+
+  const AutoBlockIntercepts& operator=(const AutoBlockIntercepts&) = delete;
 
  public:
   explicit AutoBlockIntercepts(Thread* aT) : mT(aT) { mT->BlockIntercepts(); }

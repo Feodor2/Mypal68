@@ -12,20 +12,24 @@ git = "https://github.com/mozilla/mp4parse-rust"
 replace-with = "vendored-sources"
 rev = "f7c35a30ff25521bebe64c19d3f306569ecb5385"
 
-[source."https://github.com/mozilla/l10nregistry-rs"]
-git = "https://github.com/mozilla/l10nregistry-rs"
-replace-with = "vendored-sources"
-rev = "fd02134161505f978e132114cbabdac057ce3b71"
-
 [source."https://github.com/hsivonen/packed_simd"]
 branch = "rust_1_32"
 git = "https://github.com/hsivonen/packed_simd"
 replace-with = "vendored-sources"
 
-[source."https://github.com/CraneStation/Cranelift"]
-git = "https://github.com/CraneStation/Cranelift"
+[source."https://github.com/ChunMinChang/coreaudio-sys"]
+git = "https://github.com/ChunMinChang/coreaudio-sys"
+branch = "gecko-build"
 replace-with = "vendored-sources"
-rev = "182414f15c18538dfebbe040469ec8001e93ecc5"
+
+[source."https://github.com/alexcrichton/mio-named-pipes"]
+git = "https://github.com/alexcrichton/mio-named-pipes"
+replace-with = "vendored-sources"
+
+[source."https://github.com/NikVolf/tokio-named-pipes"]
+git = "https://github.com/NikVolf/tokio-named-pipes"
+branch = "stable"
+replace-with = "vendored-sources"
 
 [source.crates-io]
 replace-with = "vendored-sources"

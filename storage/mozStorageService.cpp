@@ -4,6 +4,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/SpinEventLoopUntil.h"
 
 #include "mozStorageService.h"
 #include "mozStorageConnection.h"
@@ -14,6 +15,7 @@
 #include "mozStoragePrivateHelpers.h"
 #include "nsIObserverService.h"
 #include "nsIPropertyBag2.h"
+#include "nsIThread.h" //MY
 #include "mozilla/Services.h"
 #include "mozilla/LateWriteChecks.h"
 #include "mozIStorageCompletionCallback.h"

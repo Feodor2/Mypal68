@@ -52,13 +52,6 @@
 <p>&brandShortName; can’t load this page for some reason.</p>
 ">
 
-<!ENTITY captivePortal.title "Log in to network">
-<!ENTITY captivePortal.longDesc2 "
-<p>You must log in to this network before you can access the Internet.</p>
-">
-
-<!ENTITY openPortalLoginPage.label2 "Open Network Login Page">
-
 <!ENTITY malformedURI.pageTitle "Invalid URL">
 <!-- Localization note (malformedURI.title1) - "Hmm" is a sound made when considering or puzzling over something. You don't have to include it in your translation if your language does not have a written word like this. -->
 <!ENTITY malformedURI.title1 "Hmm. That address doesn’t look right.">

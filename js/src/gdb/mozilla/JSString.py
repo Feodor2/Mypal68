@@ -11,7 +11,7 @@ from mozilla.CellHeader import get_header_length_and_flags
 
 try:
     chr(10000)  # UPPER RIGHT PENCIL
-except ValueError as exc:  # yuck, we are in Python 2.x, so chr() is 8-bit
+except ValueError:  # yuck, we are in Python 2.x, so chr() is 8-bit
     chr = unichr  # replace with teh unicodes
 
 # Forget any printers from previous loads of this module.

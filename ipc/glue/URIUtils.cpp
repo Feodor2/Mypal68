@@ -7,7 +7,6 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/dom/BlobURL.h"
-#include "mozilla/NullPrincipalURI.h"
 #include "nsComponentManagerUtils.h"
 #include "nsDebug.h"
 #include "nsID.h"
@@ -80,10 +79,6 @@ already_AddRefed<nsIURI> DeserializeURI(const URIParams& aParams) {
 
     case URIParams::TIconURIParams:
       mutator = do_CreateInstance(kIconURIMutatorCID);
-      break;
-
-    case URIParams::TNullPrincipalURIParams:
-      mutator = new NullPrincipalURI::Mutator();
       break;
 
     case URIParams::TSimpleNestedURIParams:

@@ -46,6 +46,12 @@ glob:**/*.configure
 # are all somewhere in "tooltool-manifests" directories.
 glob:**/tooltool-manifests/**
 
+# For test chunking
+glob:**/*.ini
+glob:**/*.list
+path:testing/mozbase/manifestparser
+path:testing/runtimes
+
 # For scheduling android-gradle-dependencies.
 path:mobile/android/config/
 glob:**/*.gradle
@@ -56,6 +62,9 @@ path:.cron.yml
 
 # for the wrench-deps toolchain task
 path:gfx/wr/Cargo.lock
+
+# for the wgpu-deps toolchain task
+path:gfx/wgpu/Cargo.lock
 
 # for the mar-tools toolchain task
 path:mfbt/

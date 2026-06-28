@@ -6,7 +6,7 @@
 #include "WinCompositorWindowThread.h"
 #include "mozilla/layers/SynchronousTask.h"
 #include "mozilla/StaticPtr.h"
-#include "mtransport/runnable_utils.h"
+#include "transport/runnable_utils.h"
 
 #if WINVER < 0x0602
 #  define WS_EX_NOREDIRECTIONBITMAP 0x00200000L

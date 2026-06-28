@@ -4,8 +4,6 @@
 //   e - the error code
 //   s - custom CSS class to allow alternate styling/favicons
 //   d - error description
-//   captive - "true" to indicate we're behind a captive portal.
-//             Any other value is ignored.
 
 // Note that this file uses document.documentURI to get
 // the URL (with the format from above). This is because
@@ -28,10 +26,6 @@ function getCSSClass() {
 
 function getDescription() {
   return searchParams.get("d");
-}
-
-function isCaptive() {
-  return searchParams.get("captive") == "true";
 }
 
 function retryThis(buttonEl) {
@@ -170,11 +164,6 @@ function initPage() {
   }
 
   gIsCertError = err == "nssBadCert";
-  // Only worry about captive portals if this is a cert error.
-  let showCaptivePortalUI = isCaptive() && gIsCertError;
-  if (showCaptivePortalUI) {
-    err = "captivePortal";
-  }
 
   let l10nErrId = err;
   let className = getCSSClass();
@@ -214,12 +203,8 @@ function initPage() {
   }
 
   if (gIsCertError) {
-    if (showCaptivePortalUI) {
-      initPageCaptivePortal();
-    } else {
-      initPageCertError();
-      updateContainerPosition();
-    }
+    initPageCertError();
+    updateContainerPosition();
 
     let event = new CustomEvent("AboutNetErrorLoad", { bubbles: true });
     document.getElementById("advancedButton").dispatchEvent(event);
@@ -326,24 +311,6 @@ function updateContainerPosition() {
       textContainer.style.marginTop = `${offset}px`;
     }
   }
-}
-
-function initPageCaptivePortal() {
-  document.body.className = "captiveportal";
-  document
-    .getElementById("openPortalLoginPageButton")
-    .addEventListener("click", () => {
-      RPMSendAsyncMessage("Browser:OpenCaptivePortalPage");
-    });
-
-  addAutofocus("#openPortalLoginPageButton");
-  setupAdvancedButton();
-
-  // When the portal is freed, an event is sent by the parent process
-  // that we can pick up and attempt to reload the original page.
-  RPMAddMessageListener("AboutNetErrorCaptivePortalFreed", () => {
-    document.location.reload();
-  });
 }
 
 function initPageCertError() {

@@ -263,7 +263,7 @@ class nsDataObj : public IDataObject, public IDataObjectAsyncCapability {
 
   // This class must be thread-safe.
   class CMemStream final : public CStreamBase {
-    static Lock mLock;
+    static Lock2 mLock;
     const nsAutoGlobalMem mGlobalMem;
     const RefPtr<AutoCloseEvent> mEvent;
     const uint32_t mTotalLength;

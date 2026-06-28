@@ -491,46 +491,9 @@ DownloadsViewUI.DownloadElementShell.prototype = {
           this.hideButton();
         }
       } else if (this.download.error) {
-        if (this.download.error.becauseBlockedByParentalControls) {
-          // This download was blocked permanently by parental controls.
-          this.showStatusWithDetails(
-            DownloadsCommon.strings.stateBlockedParentalControls
-          );
-          this.hideButton();
-        } else if (this.download.error.becauseBlockedByReputationCheck) {
-          verdict = this.download.error.reputationCheckVerdict;
-          let hover = "";
-          if (!this.download.hasBlockedData) {
-            // This download was blocked permanently by reputation check.
-            this.hideButton();
-          } else if (this.isPanel) {
-            // This download was blocked temporarily by reputation check. In the
-            // Downloads Panel, a subview can be used to remove the file or open
-            // the download anyways.
-            this.showButton("subviewOpenOrRemoveFile");
-            hover = { l10n: "downloads-show-more-information" };
-          } else {
-            // This download was blocked temporarily by reputation check. In the
-            // Downloads View, the interface depends on the threat severity.
-            switch (verdict) {
-              case Downloads.Error.BLOCK_VERDICT_UNCOMMON:
-                this.showButton("askOpenOrRemoveFile");
-                break;
-              case Downloads.Error.BLOCK_VERDICT_POTENTIALLY_UNWANTED:
-                this.showButton("askRemoveFileOrAllow");
-                break;
-              default:
-                // Assume Downloads.Error.BLOCK_VERDICT_MALWARE
-                this.showButton("removeFile");
-                break;
-            }
-          }
-          this.showStatusWithDetails(this.rawBlockedTitleAndDetails[0], hover);
-        } else {
-          // This download failed without being blocked, and can be restarted.
-          this.showStatusWithDetails(DownloadsCommon.strings.stateFailed);
-          this.showButton("retry");
-        }
+        // This download failed without being blocked, and can be restarted.
+        this.showStatusWithDetails(DownloadsCommon.strings.stateFailed);
+        this.showButton("retry");
       } else if (this.download.canceled) {
         if (this.download.hasPartialData) {
           // This download was paused. The main action button will cancel the
@@ -587,72 +550,6 @@ DownloadsViewUI.DownloadElementShell.prototype = {
     } else {
       this.showProgress("undetermined", 100, progressPaused);
     }
-  },
-
-  /**
-   * Returns [title, [details1, details2]] for blocked downloads.
-   */
-  get rawBlockedTitleAndDetails() {
-    let s = DownloadsCommon.strings;
-    if (
-      !this.download.error ||
-      !this.download.error.becauseBlockedByReputationCheck
-    ) {
-      return [null, null];
-    }
-    switch (this.download.error.reputationCheckVerdict) {
-      case Downloads.Error.BLOCK_VERDICT_UNCOMMON:
-        return [s.blockedUncommon2, [s.unblockTypeUncommon2, s.unblockTip2]];
-      case Downloads.Error.BLOCK_VERDICT_POTENTIALLY_UNWANTED:
-        return [
-          s.blockedPotentiallyUnwanted,
-          [s.unblockTypePotentiallyUnwanted2, s.unblockTip2],
-        ];
-      case Downloads.Error.BLOCK_VERDICT_MALWARE:
-        return [s.blockedMalware, [s.unblockTypeMalware, s.unblockTip2]];
-    }
-    throw new Error(
-      "Unexpected reputationCheckVerdict: " +
-        this.download.error.reputationCheckVerdict
-    );
-  },
-
-  /**
-   * Shows the appropriate unblock dialog based on the verdict, and executes the
-   * action selected by the user in the dialog, which may involve unblocking,
-   * opening or removing the file.
-   *
-   * @param window
-   *        The window to which the dialog should be anchored.
-   * @param dialogType
-   *        Can be "unblock", "chooseUnblock", or "chooseOpen".
-   */
-  confirmUnblock(window, dialogType) {
-    DownloadsCommon.confirmUnblockDownload({
-      verdict: this.download.error.reputationCheckVerdict,
-      window,
-      dialogType,
-    })
-      .then(action => {
-        if (action == "open") {
-          return this.unblockAndOpenDownload();
-        } else if (action == "unblock") {
-          return this.download.unblock();
-        } else if (action == "confirmBlock") {
-          return this.download.confirmBlock();
-        }
-        return Promise.resolve();
-      })
-      .catch(Cu.reportError);
-  },
-
-  /**
-   * Unblocks the downloaded file and opens it.
-   *
-   * @return A promise that's resolved after the file has been opened.
-   */
-  unblockAndOpenDownload() {
-    return this.download.unblock().then(() => this.downloadsCmd_open());
   },
 
   /**

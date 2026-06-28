@@ -439,9 +439,6 @@ nsDocShellTreeOwner::InitWindow(nativeWindow aParentNativeWindow,
 }
 
 NS_IMETHODIMP
-nsDocShellTreeOwner::Create() { return NS_ERROR_NULL_POINTER; }
-
-NS_IMETHODIMP
 nsDocShellTreeOwner::Destroy() {
   nsCOMPtr<nsIWebBrowserChrome> webBrowserChrome = GetWebBrowserChrome();
   if (webBrowserChrome) {
@@ -617,15 +614,6 @@ nsDocShellTreeOwner::SetEnabled(bool aEnabled) {
 
 NS_IMETHODIMP
 nsDocShellTreeOwner::GetMainWidget(nsIWidget** aMainWidget) {
-  return NS_ERROR_NULL_POINTER;
-}
-
-NS_IMETHODIMP
-nsDocShellTreeOwner::SetFocus() {
-  nsCOMPtr<nsIEmbeddingSiteWindow> ownerWin = GetOwnerWin();
-  if (ownerWin) {
-    return ownerWin->SetFocus();
-  }
   return NS_ERROR_NULL_POINTER;
 }
 

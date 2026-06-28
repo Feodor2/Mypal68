@@ -2,6 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// This test has been seen timing out locally in non-opt debug builds.
+requestLongerTimeout(2);
+
 var gTests = [
   {
     desc: "getUserMedia audio+video",

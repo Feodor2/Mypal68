@@ -7,11 +7,21 @@
 
 """A parser for cross-platform IDL (XPIDL) files."""
 
+# Note that this file is used by the searchfox indexer in ways that are
+# not tested in Firefox's CI. Please try to keep this file py2-compatible
+# if the burden for that is low. If you are making changes you know to be
+# incompatible with py2, please give a searchfox maintainer a heads-up so
+# that any necessary changes can be made on the searchfox side.
+
+from __future__ import absolute_import
+from __future__ import print_function
+
 import sys
 import os.path
 import re
 from ply import lex
 from ply import yacc
+import six
 from collections import namedtuple
 
 """A type conforms to the following pattern:
@@ -139,8 +149,9 @@ class Builtin(object):
             )
 
         if const:
-            print >>sys.stderr, IDLError(
-                "[const] doesn't make sense on builtin types.", self.location, warning=True)
+            print(IDLError(
+                "[const] doesn't make sense on builtin types.",
+                self.location, warning=True), file=sys.stderr)
             const = "const "
         elif calltype == "in" and self.isPointer():
             const = "const "
@@ -245,7 +256,7 @@ class NameMap(object):
         return self._d[key]
 
     def __iter__(self):
-        return self._d.itervalues()
+        return six.itervalues(self._d)
 
     def __contains__(self, key):
         return key in builtinMap or key in self._d
@@ -1386,7 +1397,7 @@ class Param(object):
             return self.realtype.nativeType(self.paramtype, **kwargs)
         except IDLError as e:
             raise IDLError(e.message, self.location)
-        except TypeError as e:
+        except TypeError:
             raise IDLError("Unexpected parameter attribute", self.location)
 
     def rustType(self):
@@ -1400,7 +1411,7 @@ class Param(object):
             return self.realtype.rustType(self.paramtype, **kwargs)
         except IDLError as e:
             raise IDLError(e.message, self.location)
-        except TypeError as e:
+        except TypeError:
             raise IDLError("Unexpected parameter attribute", self.location)
 
     def toIDL(self):

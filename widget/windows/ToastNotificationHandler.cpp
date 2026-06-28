@@ -9,6 +9,7 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/WindowsVersion.h"
 #include "nsDirectoryServiceDefs.h"
+#include "nsIDUtils.h"
 #include "nsIStringBundle.h"
 #include "nsIURI.h"
 #include "nsIUUIDGenerator.h"
@@ -511,10 +512,7 @@ nsresult ToastNotificationHandler::AsyncSaveImage(imgIRequest* aRequest) {
     return rv;
   }
 
-  char uuidChars[NSID_LENGTH];
-  uuid.ToProvidedString(uuidChars);
-  // Remove the brackets at the beginning and ending of the generated UUID.
-  nsAutoCString uuidStr(Substring(uuidChars + 1, uuidChars + NSID_LENGTH - 2));
+  NSID_TrimBracketsASCII uuidStr(uuid);
   uuidStr.AppendLiteral(".bmp");
   mImageFile->AppendNative(uuidStr);
 

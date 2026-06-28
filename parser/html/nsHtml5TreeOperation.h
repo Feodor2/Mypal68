@@ -357,14 +357,6 @@ struct opUpdateStyleSheet {
   };
 };
 
-struct opProcessMeta {
-  nsIContent** mElement;
-
-  explicit opProcessMeta(nsIContentHandle* aElement) {
-    mElement = static_cast<nsIContent**>(aElement);
-  };
-};
-
 struct opProcessOfflineManifest {
   char16_t* mUrl;
 
@@ -502,7 +494,7 @@ typedef mozilla::Variant<
     // Gecko-specific on-pop ops
     opMarkAsBroken, opRunScript, opRunScriptAsyncDefer,
     opPreventScriptExecution, opDoneAddingChildren, opDoneCreatingElement,
-    opSetDocumentCharset, opCharsetSwitchTo, opUpdateStyleSheet, opProcessMeta,
+    opSetDocumentCharset, opCharsetSwitchTo, opUpdateStyleSheet,
     opProcessOfflineManifest, opMarkMalformedIfScript, opStreamEnded,
     opSetStyleLineNumber, opSetScriptLineNumberAndFreeze, opSvgLoad,
     opMaybeComplainAboutCharset, opMaybeComplainAboutDeepTree, opAddClass,

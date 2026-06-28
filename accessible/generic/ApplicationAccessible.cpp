@@ -11,7 +11,7 @@
 #include "States.h"
 
 #include "nsServiceManagerUtils.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "nsGlobalWindow.h"
 #include "nsIStringBundle.h"
 
@@ -31,7 +31,7 @@ ENameValueFlag ApplicationAccessible::Name(nsString& aName) const {
   aName.Truncate();
 
   nsCOMPtr<nsIStringBundleService> bundleService =
-      mozilla::services::GetStringBundleService();
+      mozilla::components::StringBundle::Service();
 
   NS_ASSERTION(bundleService, "String bundle service must be present!");
   if (!bundleService) return eNameOK;

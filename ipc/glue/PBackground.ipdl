@@ -45,6 +45,7 @@ include protocol PServiceWorkerManager;
 include protocol PServiceWorkerRegistration;
 include protocol PWebAuthnTransaction;
 include protocol PUDPSocket;
+include protocol PVerifySSLServerCert;
 include protocol PVsync;
 
 include DOMTypes;
@@ -56,6 +57,7 @@ include PBackgroundSharedTypes;
 include PBackgroundIDBSharedTypes;
 include PFileSystemParams;
 include ProtocolTypes;
+include PSMIPCTypes;
 include RemoteWorkerTypes;
 include MIDITypes;
 
@@ -69,7 +71,7 @@ using mozilla::dom::cache::Namespace
 namespace mozilla {
 namespace ipc {
 
-sync protocol PBackground
+sync refcounted protocol PBackground
 {
   manages PBackgroundIDBFactory;
   manages PBackgroundIndexedDBUtils;
@@ -114,6 +116,7 @@ sync protocol PBackground
   manages PServiceWorkerRegistration;
   manages PWebAuthnTransaction;
   manages PUDPSocket;
+  manages PVerifySSLServerCert;
   manages PVsync;
 
 parent:
@@ -234,6 +237,17 @@ parent:
 //                       PrincipalInfo aPrincipalInfo);
 
   async PMediaTransport();
+
+  async PVerifySSLServerCert(ByteArray aServerCert,
+                             ByteArray[] aPeerCertChain,
+                             nsCString aHostName,
+                             int32_t aPort,
+                             OriginAttributes aOriginAttributes,
+                             ByteArray? aStapledOCSPResponse,
+                             ByteArray? aSctsFromTLSExtension,
+                             DelegatedCredentialInfoArg? aDcInfo,
+                             uint32_t aProviderFlags,
+                             uint32_t aCertVerifierFlags);
 
 child:
   async PCache();

@@ -174,6 +174,16 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
   // Not from an external interface
 
   /**
+   * Pass a buffer to the JapaneseDetector.
+   */
+  void FeedJapaneseDetector(mozilla::Span<const uint8_t> aBuffer, bool aLast);
+
+  /**
+   * Pass a buffer to the Japanese or Cyrillic detector as appropriate.
+   */
+  void FeedDetector(mozilla::Span<const uint8_t> aBuffer, bool aLast);
+
+  /**
    *  Call this method once you've created a parser, and want to instruct it
    *  about what charset to load
    *
@@ -301,6 +311,12 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
    * Check whether every other byte in the sniffing buffer is zero.
    */
   void SniffBOMlessUTF16BasicLatin(mozilla::Span<const uint8_t> aFromSegment);
+
+  /**
+   * Write the start of the stream to detector.
+   */
+  void FinalizeSniffingWithDetector(mozilla::Span<const uint8_t> aFromSegment,
+                                    uint32_t aCountToSniffingLimit, bool aEof);
 
   /**
    * <meta charset> scan failed. Try chardet if applicable. After this, the
@@ -440,9 +456,9 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
   NotNull<const Encoding*> mEncoding;
 
   /**
-   * The character encoding that is the base expectation for detection.
+   * Whether the Cyrillic or Japanese detector should still be fed.
    */
-  const Encoding* mFeedChardetIfEncoding;
+  bool mFeedChardet;
 
   /**
    * Whether reparse is forbidden
@@ -558,9 +574,14 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
   nsCOMPtr<nsIRunnable> mLoadFlusher;
 
   /**
-   * The chardet instance if chardet is enabled.
+   * The Cyrillic detector if enabled.
    */
   nsCOMPtr<nsICharsetDetector> mChardet;
+
+  /**
+   * The Japanese detector.
+   */
+  mozilla::UniquePtr<mozilla::JapaneseDetector> mJapaneseDetector;
 
   /**
    * Whether the initial charset source was kCharsetFromParentFrame

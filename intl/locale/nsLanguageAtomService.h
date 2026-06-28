@@ -27,6 +27,8 @@ class nsLanguageAtomService final {
  public:
   static nsLanguageAtomService* GetService();
 
+  static void Shutdown();
+
   nsStaticAtom* LookupLanguage(const nsACString& aLanguage);
   already_AddRefed<nsAtom> LookupCharSet(NotNull<const Encoding*> aCharSet);
   nsAtom* GetLocaleLanguage();

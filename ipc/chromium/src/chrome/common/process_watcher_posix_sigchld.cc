@@ -58,7 +58,9 @@ class ChildReaper : public base::MessagePumpLibevent::SignalEvent,
   pid_t process_;
 
  private:
-  DISALLOW_EVIL_CONSTRUCTORS(ChildReaper);
+  ChildReaper(const ChildReaper&) = delete;
+
+  const ChildReaper& operator=(const ChildReaper&) = delete;
 };
 
 // Fear the reaper
@@ -99,7 +101,9 @@ class ChildGrimReaper : public ChildReaper, public mozilla::Runnable {
     process_ = 0;
   }
 
-  DISALLOW_EVIL_CONSTRUCTORS(ChildGrimReaper);
+  ChildGrimReaper(const ChildGrimReaper&) = delete;
+
+  const ChildGrimReaper& operator=(const ChildGrimReaper&) = delete;
 };
 
 class ChildLaxReaper : public ChildReaper,
@@ -134,7 +138,9 @@ class ChildLaxReaper : public ChildReaper,
   }
 
  private:
-  DISALLOW_EVIL_CONSTRUCTORS(ChildLaxReaper);
+  ChildLaxReaper(const ChildLaxReaper&) = delete;
+
+  const ChildLaxReaper& operator=(const ChildLaxReaper&) = delete;
 };
 
 }  // namespace

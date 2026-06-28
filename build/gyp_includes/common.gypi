@@ -532,12 +532,6 @@
           'linux_use_gold_flags%': 0,
         }],
 
-        ['OS=="android"', {
-          'enable_captive_portal_detection%': 0,
-        }, {
-          'enable_captive_portal_detection%': 1,
-        }],
-
         # Enable Skia UI text drawing incrementally on different platforms.
         # http://crbug.com/105550
         #
@@ -665,7 +659,6 @@
     'test_isolation_outdir%': '<(test_isolation_outdir)',
     'enable_automation%': '<(enable_automation)',
     'enable_printing%': '<(enable_printing)',
-    'enable_captive_portal_detection%': '<(enable_captive_portal_detection)',
     'disable_ftp_support%': '<(disable_ftp_support)',
     'force_rlz_use_chrome_net%': '<(force_rlz_use_chrome_net)',
     'enable_task_manager%': '<(enable_task_manager)',
@@ -1786,9 +1779,6 @@
       }],
       ['enable_printing==1', {
         'defines': ['ENABLE_PRINTING=1'],
-      }],
-      ['enable_captive_portal_detection==1', {
-        'defines': ['ENABLE_CAPTIVE_PORTAL_DETECTION=1'],
       }],
       ['disable_ftp_support==1', {
         'defines': ['DISABLE_FTP_SUPPORT=1'],

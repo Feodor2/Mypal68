@@ -300,6 +300,7 @@ async function GetHistoryResource(aProfileFolder) {
           query
         );
         let pageInfos = [];
+        let fallbackVisitDate = new Date();
         for (let row of rows) {
           try {
             // if having typed_count, we changes transition type to typed.
@@ -315,7 +316,8 @@ async function GetHistoryResource(aProfileFolder) {
                 {
                   transition,
                   date: ChromeMigrationUtils.chromeTimeToDate(
-                    row.getResultByName("last_visit_time")
+                    row.getResultByName("last_visit_time"),
+                    fallbackVisitDate
                   ),
                 },
               ],
@@ -351,23 +353,49 @@ async function GetCookiesResource(aProfileFolder) {
     type: MigrationUtils.resourceTypes.COOKIES,
 
     async migrate(aCallback) {
-      // We don't support decrypting cookies yet so only import plaintext ones.
-      let rows = await MigrationUtils.getRowsFromDBWithoutLocks(
+      // Get columns names and set is_sceure, is_httponly fields accordingly.
+      let columns = await MigrationUtils.getRowsFromDBWithoutLocks(
         cookiesPath,
         "Chrome cookies",
-        `SELECT host_key, name, value, path, expires_utc, secure, httponly, encrypted_value
-        FROM cookies
-        WHERE length(encrypted_value) = 0`
+        `PRAGMA table_info(cookies)`
       ).catch(ex => {
         Cu.reportError(ex);
         aCallback(false);
       });
       // If the promise was rejected we will have already called aCallback,
       // so we can just return here.
+      if (!columns) {
+        return;
+      }
+      columns = columns.map(c => c.getResultByName("name"));
+      let isHttponly = columns.includes("is_httponly")
+        ? "is_httponly"
+        : "httponly";
+      let isSecure = columns.includes("is_secure") ? "is_secure" : "secure";
+
+      let source_scheme = columns.includes("source_scheme")
+        ? "source_scheme"
+        : `"${Ci.nsICookie.SCHEME_UNSET}" as source_scheme`;
+
+      // We don't support decrypting cookies yet so only import plaintext ones.
+      let rows = await MigrationUtils.getRowsFromDBWithoutLocks(
+        cookiesPath,
+        "Chrome cookies",
+        `SELECT host_key, name, value, path, expires_utc, ${isSecure}, ${isHttponly}, encrypted_value, ${source_scheme}
+        FROM cookies
+        WHERE length(encrypted_value) = 0`
+      ).catch(ex => {
+        Cu.reportError(ex);
+        aCallback(false);
+      });
+
+      // If the promise was rejected we will have already called aCallback,
+      // so we can just return here.
       if (!rows) {
         return;
       }
 
+      let fallbackExpiryDate = 0;
       for (let row of rows) {
         let host_key = row.getResultByName("host_key");
         if (host_key.match(/^\./)) {
@@ -375,22 +403,39 @@ async function GetCookiesResource(aProfileFolder) {
           host_key = host_key.substr(1);
         }
 
+        let schemeType = Ci.nsICookie.SCHEME_UNSET;
+        switch (row.getResultByName("source_scheme")) {
+          case 1:
+            schemeType = Ci.nsICookie.SCHEME_HTTP;
+            break;
+          case 2:
+            schemeType = Ci.nsICookie.SCHEME_HTTPS;
+            break;
+        }
+
         try {
           let expiresUtc =
             ChromeMigrationUtils.chromeTimeToDate(
-              row.getResultByName("expires_utc")
+              row.getResultByName("expires_utc"),
+              fallbackExpiryDate
             ) / 1000;
+          // No point adding cookies that don't have a valid expiry.
+          if (!expiresUtc) {
+            continue;
+          }
+
           Services.cookies.add(
             host_key,
             row.getResultByName("path"),
             row.getResultByName("name"),
             row.getResultByName("value"),
-            row.getResultByName("secure"),
-            row.getResultByName("httponly"),
+            row.getResultByName(isSecure),
+            row.getResultByName(isHttponly),
             false,
             parseInt(expiresUtc),
             {},
-            Ci.nsICookie.SAMESITE_NONE
+            Ci.nsICookie.SAMESITE_NONE,
+            schemeType
           );
         } catch (e) {
           Cu.reportError(e);
@@ -428,6 +473,7 @@ async function GetWindowsPasswordsResource(aProfileFolder) {
       }
       let crypto = new OSCrypto();
       let logins = [];
+      let fallbackCreationDate = new Date();
       for (let row of rows) {
         try {
           let origin_url = NetUtil.newURI(row.getResultByName("origin_url"));
@@ -449,7 +495,8 @@ async function GetWindowsPasswordsResource(aProfileFolder) {
             usernameElement: row.getResultByName("username_element"),
             passwordElement: row.getResultByName("password_element"),
             timeCreated: ChromeMigrationUtils.chromeTimeToDate(
-              row.getResultByName("date_created") + 0
+              row.getResultByName("date_created") + 0,
+              fallbackCreationDate
             ).getTime(),
             timesUsed: row.getResultByName("times_used") + 0,
           };

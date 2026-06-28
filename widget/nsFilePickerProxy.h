@@ -16,6 +16,9 @@
 class nsIWidget;
 class nsIFile;
 class nsPIDOMWindowInner;
+namespace mozilla::dom {
+class OwningFileOrDirectory; //MY
+}
 
 /**
   This class creates a proxy file picker to be used in content processes.

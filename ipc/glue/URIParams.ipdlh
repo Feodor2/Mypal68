@@ -63,11 +63,6 @@ struct IconURIParams
   int32_t iconState;
 };
 
-struct NullPrincipalURIParams
-{
-  // Purposefully empty. Null principal URIs do not round-trip.
-};
-
 struct HostObjectURIParams
 {
   SimpleURIParams simpleParams;
@@ -80,7 +75,6 @@ union URIParams
   StandardURLParams;
   JARURIParams;
   IconURIParams;
-  NullPrincipalURIParams;
   JSURIParams;
   SimpleNestedURIParams;
   HostObjectURIParams;

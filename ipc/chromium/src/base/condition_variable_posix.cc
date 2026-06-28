@@ -12,7 +12,7 @@
 #include "base/time.h"
 #include "build/build_config.h"
 
-ConditionVariable::ConditionVariable(Lock* user_lock)
+ConditionVariable::ConditionVariable(Lock2* user_lock)
     : user_mutex_(user_lock->lock_.native_handle()) {
   int rv = 0;
   // http://crbug.com/293736
@@ -40,7 +40,7 @@ ConditionVariable::~ConditionVariable() {
   // This hack is necessary to avoid a fatal pthreads subsystem bug in the
   // Darwin kernel. http://crbug.com/517681.
   {
-    Lock lock;
+    Lock2 lock;
     AutoLock l(lock);
     struct timespec ts;
     ts.tv_sec = 0;

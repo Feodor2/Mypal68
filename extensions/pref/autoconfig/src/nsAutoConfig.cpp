@@ -26,6 +26,7 @@
 
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Logging.h"
+#include "mozilla/SpinEventLoopUntil.h"
 
 using mozilla::LogLevel;
 

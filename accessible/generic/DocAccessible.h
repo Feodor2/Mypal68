@@ -10,9 +10,9 @@
 #include "HyperTextAccessibleWrap.h"
 #include "AccEvent.h"
 
-#include "nsAutoPtr.h"
 #include "nsClassHashtable.h"
 #include "nsTHashMap.h"
+#include "mozilla/UniquePtr.h"
 #include "nsIDocumentObserver.h"
 #include "nsIObserver.h"
 #include "nsIScrollPositionListener.h"
@@ -671,7 +671,7 @@ class DocAccessible : public HyperTextAccessibleWrap,
     AttrRelProvider& operator=(const AttrRelProvider&);
   };
 
-  typedef nsTArray<nsAutoPtr<AttrRelProvider>> AttrRelProviders;
+  typedef nsTArray<mozilla::UniquePtr<AttrRelProvider>> AttrRelProviders;
   typedef nsClassHashtable<nsStringHashKey, AttrRelProviders>
       DependentIDsHashtable;
 

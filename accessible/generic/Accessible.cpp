@@ -36,7 +36,6 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLFormElement.h"
 #include "nsIContent.h"
-#include "nsIForm.h"
 #include "nsIFormControl.h"
 
 #include "nsDeckFrame.h"
@@ -62,6 +61,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/BasicEvents.h"
+#include "mozilla/Components.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/FloatingPoint.h"
@@ -275,7 +275,7 @@ KeyBinding Accessible::KeyboardShortcut() const { return KeyBinding(); }
 
 void Accessible::TranslateString(const nsString& aKey, nsAString& aStringOut) {
   nsCOMPtr<nsIStringBundleService> stringBundleService =
-      services::GetStringBundleService();
+      components::StringBundle::Service();
   if (!stringBundleService) return;
 
   nsCOMPtr<nsIStringBundle> stringBundle;
@@ -582,37 +582,6 @@ Accessible* Accessible::ChildAtPoint(int32_t aX, int32_t aY,
 nsRect Accessible::RelativeBounds(nsIFrame** aBoundingFrame) const {
   nsIFrame* frame = GetFrame();
   if (frame && mContent) {
-    bool* pHasHitRegionRect =
-        static_cast<bool*>(mContent->GetProperty(nsGkAtoms::hitregion));
-    MOZ_ASSERT(pHasHitRegionRect == nullptr || *pHasHitRegionRect,
-               "hitregion property is always null or true");
-    bool hasHitRegionRect = pHasHitRegionRect != nullptr && *pHasHitRegionRect;
-
-    if (hasHitRegionRect && mContent->IsElement()) {
-      // This is for canvas fallback content
-      // Find a canvas frame the found hit region is relative to.
-      nsIFrame* canvasFrame = frame->GetParent();
-      if (canvasFrame) {
-        canvasFrame = nsLayoutUtils::GetClosestFrameOfType(
-            canvasFrame, LayoutFrameType::HTMLCanvas);
-      }
-
-      // make the canvas the bounding frame
-      if (canvasFrame) {
-        *aBoundingFrame = canvasFrame;
-        dom::HTMLCanvasElement* canvas =
-            dom::HTMLCanvasElement::FromNode(canvasFrame->GetContent());
-
-        // get the bounding rect of the hit region
-        nsRect bounds;
-        if (canvas && canvas->CountContexts() &&
-            canvas->GetContextAtIndex(0)->GetHitRegionRect(
-                mContent->AsElement(), bounds)) {
-          return bounds;
-        }
-      }
-    }
-
     *aBoundingFrame = nsLayoutUtils::GetContainingBlockForClientRect(frame);
     return nsLayoutUtils::GetAllInFlowRectsUnion(
         frame, *aBoundingFrame, nsLayoutUtils::RECTS_ACCOUNT_FOR_TRANSFORMS);
@@ -1676,9 +1645,7 @@ Relation Accessible::RelationByType(RelationType aType) const {
         nsCOMPtr<nsIFormControl> control(do_QueryInterface(mContent));
         if (control) {
           if (dom::HTMLFormElement* form = control->GetForm()) {
-            nsCOMPtr<nsIContent> formContent =
-                do_QueryInterface(form->GetDefaultSubmitElement());
-            return Relation(mDoc, formContent);
+            return Relation(mDoc, form->GetDefaultSubmitElement());
           }
         }
       } else {
@@ -2634,7 +2601,7 @@ uint32_t KeyBinding::AccelModifier() {
 void KeyBinding::ToPlatformFormat(nsAString& aValue) const {
   nsCOMPtr<nsIStringBundle> keyStringBundle;
   nsCOMPtr<nsIStringBundleService> stringBundleService =
-      mozilla::services::GetStringBundleService();
+      mozilla::components::StringBundle::Service();
   if (stringBundleService)
     stringBundleService->CreateBundle(
         "chrome://global-platform/locale/platformKeys.properties",

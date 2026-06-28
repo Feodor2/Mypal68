@@ -15,7 +15,6 @@
 #include "CrashAnnotations.h"
 //#include "MozglueUtils.h"
 //#include "UntrustedDllsHandler.h"
-#include "nsAutoPtr.h"
 #include "nsWindowsDllInterceptor.h"
 #include "mozilla/CmdLineAndEnvUtils.h"
 #include "mozilla/DebugOnly.h"

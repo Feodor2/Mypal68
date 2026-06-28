@@ -45,7 +45,7 @@ class Monitor2 {
   Monitor2(const Monitor2&);
   Monitor2& operator=(const Monitor2&);
 
-  Lock mMutex;
+  Lock2 mMutex;
   ConditionVariable mCondVar;
 };
 

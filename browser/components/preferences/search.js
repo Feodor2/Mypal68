@@ -500,7 +500,7 @@ EngineStore.prototype = {
 
   _cloneEngine(aEngine) {
     var clonedObj = {};
-    for (var i in aEngine) {
+    for (let i of ["name", "alias", "iconURI", "hidden"]) {
       clonedObj[i] = aEngine[i];
     }
     clonedObj.originalEngine = aEngine;
@@ -549,9 +549,9 @@ EngineStore.prototype = {
       throw new Error("invalid engine?");
     }
 
-    let removedEngine = this._engines.splice(index, 1)[0];
+    this._engines.splice(index, 1)[0];
 
-    if (this._defaultEngines.some(this._isSameEngine, removedEngine)) {
+    if (aEngine.isAppProvided) {
       gSearchPane.showRestoreDefaults(true);
     }
     gSearchPane.buildDefaultEngineDropDown();
@@ -599,7 +599,7 @@ EngineStore.prototype = {
 
   reloadIcons() {
     this._engines.forEach(function(e) {
-      e.uri = e.originalEngine.uri;
+      e.iconURI = e.originalEngine.iconURI;
     });
   },
 };

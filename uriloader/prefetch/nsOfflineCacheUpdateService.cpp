@@ -543,7 +543,7 @@ static nsresult OfflineAppPermForPrincipal(nsIPrincipal* aPrincipal,
   }
 
   nsCOMPtr<nsIPermissionManager> permissionManager =
-      services::GetPermissionManager();
+      components::PermissionManager::Service();
   if (!permissionManager) {
     return NS_OK;
   }
@@ -627,7 +627,7 @@ nsOfflineCacheUpdateService::AllowOfflineApp(nsIPrincipal* aPrincipal) {
     nsOfflineCacheUpdateService::AllowedDomains()->Insert(domain);
   } else {
     nsCOMPtr<nsIPermissionManager> permissionManager =
-        services::GetPermissionManager();
+        components::PermissionManager::Service();
     if (!permissionManager) return NS_ERROR_NOT_AVAILABLE;
 
     rv = permissionManager->AddFromPrincipal(

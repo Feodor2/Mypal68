@@ -46,51 +46,39 @@ static inline ExtensionPolicyService& EPS() {
 
 NS_IMPL_CLASSINFO(ContentPrincipal, nullptr, nsIClassInfo::MAIN_THREAD_ONLY,
                   NS_PRINCIPAL_CID)
-NS_IMPL_QUERY_INTERFACE_CI(ContentPrincipal, nsIPrincipal, nsISerializable)
-NS_IMPL_CI_INTERFACE_GETTER(ContentPrincipal, nsIPrincipal, nsISerializable)
+NS_IMPL_QUERY_INTERFACE_CI(ContentPrincipal, nsIPrincipal)
+NS_IMPL_CI_INTERFACE_GETTER(ContentPrincipal, nsIPrincipal)
 
-ContentPrincipal::ContentPrincipal() : BasePrincipal(eCodebasePrincipal) {}
-
-ContentPrincipal::~ContentPrincipal() {}
-
-nsresult ContentPrincipal::Init(nsIURI* aCodebase,
-                                const OriginAttributes& aOriginAttributes,
-                                const nsACString& aOriginNoSuffix) {
-  NS_ENSURE_ARG(aCodebase);
-
+ContentPrincipal::ContentPrincipal(nsIURI* aURI,
+                                   const OriginAttributes& aOriginAttributes,
+                                   const nsACString& aOriginNoSuffix)
+    : BasePrincipal(eCodebasePrincipal, aOriginNoSuffix, aOriginAttributes),
+      mURI(aURI) {
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   // Assert that the URI we get here isn't any of the schemes that we know we
   // should not get here.  These schemes always either inherit their principal
   // or fall back to a null principal.  These are schemes which return
   // URI_INHERITS_SECURITY_CONTEXT from their protocol handler's
   // GetProtocolFlags function.
-  bool hasFlag;
-  Unused << hasFlag;  // silence possible compiler warnings.
+  bool hasFlag = false;
   MOZ_DIAGNOSTIC_ASSERT(
       NS_SUCCEEDED(NS_URIChainHasFlags(
-          aCodebase, nsIProtocolHandler::URI_INHERITS_SECURITY_CONTEXT,
-          &hasFlag)) &&
+          aURI, nsIProtocolHandler::URI_INHERITS_SECURITY_CONTEXT, &hasFlag)) &&
       !hasFlag);
-
-  mCodebase = aCodebase;
-  FinishInit(aOriginNoSuffix, aOriginAttributes);
-
-  return NS_OK;
+#endif
 }
 
-nsresult ContentPrincipal::Init(ContentPrincipal* aOther,
-                                const OriginAttributes& aOriginAttributes) {
-  NS_ENSURE_ARG(aOther);
+ContentPrincipal::ContentPrincipal(ContentPrincipal* aOther,
+                                   const OriginAttributes& aOriginAttributes)
+    : BasePrincipal(aOther, aOriginAttributes),
+      mURI(aOther->mURI),
+      mDomain(aOther->mDomain),
+      mAddon(aOther->mAddon) {}
 
-  mCodebase = aOther->mCodebase;
-  FinishInit(aOther, aOriginAttributes);
-
-  mDomain = aOther->mDomain;
-  mAddon = aOther->mAddon;
-  return NS_OK;
-}
+ContentPrincipal::~ContentPrincipal() = default;
 
 nsresult ContentPrincipal::GetScriptLocation(nsACString& aStr) {
-  return mCodebase->GetSpec(aStr);
+  return mURI->GetSpec(aStr);
 }
 
 /* static */
@@ -269,13 +257,13 @@ bool ContentPrincipal::SubsumesInternal(
   rv = aOther->GetURI(getter_AddRefs(otherURI));
   NS_ENSURE_SUCCESS(rv, false);
 
-  // Compare codebases.
-  return nsScriptSecurityManager::SecurityCompareURIs(mCodebase, otherURI);
+  // Compare uris.
+  return nsScriptSecurityManager::SecurityCompareURIs(mURI, otherURI);
 }
 
 NS_IMETHODIMP
 ContentPrincipal::GetURI(nsIURI** aURI) {
-  NS_ADDREF(*aURI = mCodebase);
+  NS_ADDREF(*aURI = mURI);
   return NS_OK;
 }
 
@@ -312,7 +300,7 @@ bool ContentPrincipal::MayLoadInternal(nsIURI* aURI) {
     return true;
   }
 
-  if (nsScriptSecurityManager::SecurityCompareURIs(mCodebase, aURI)) {
+  if (nsScriptSecurityManager::SecurityCompareURIs(mURI, aURI)) {
     return true;
   }
 
@@ -320,8 +308,7 @@ bool ContentPrincipal::MayLoadInternal(nsIURI* aURI) {
   // SecurityCompareURIs unless they are identical. Explicitly check file origin
   // policy, in that case.
   if (nsScriptSecurityManager::GetStrictFileOriginPolicy() &&
-      NS_URIIsLocalFile(aURI) &&
-      NS_RelaxStrictFileOriginPolicy(aURI, mCodebase)) {
+      NS_URIIsLocalFile(aURI) && NS_RelaxStrictFileOriginPolicy(aURI, mURI)) {
     return true;
   }
 
@@ -329,7 +316,7 @@ bool ContentPrincipal::MayLoadInternal(nsIURI* aURI) {
 }
 
 uint32_t ContentPrincipal::GetHashValue() {
-  MOZ_ASSERT(mCodebase, "Need a codebase");
+  MOZ_ASSERT(mURI, "Need a principal URI");
 
   nsCOMPtr<nsIURI> uri;
   GetDomain(getter_AddRefs(uri));
@@ -374,12 +361,12 @@ ContentPrincipal::SetDomain(nsIURI* aDomain) {
   return NS_OK;
 }
 
-static nsresult GetSpecialBaseDomain(const nsCOMPtr<nsIURI>& aCodebase,
+static nsresult GetSpecialBaseDomain(const nsCOMPtr<nsIURI>& aURI,
                                      bool* aHandled, nsACString& aBaseDomain) {
   *aHandled = false;
 
   // Special handling for a file URI.
-  if (NS_URIIsLocalFile(aCodebase)) {
+  if (NS_URIIsLocalFile(aURI)) {
     // If strict file origin policy is not in effect, all local files are
     // considered to be same-origin, so return a known dummy domain here.
     if (!nsScriptSecurityManager::GetStrictFileOriginPolicy()) {
@@ -389,7 +376,7 @@ static nsresult GetSpecialBaseDomain(const nsCOMPtr<nsIURI>& aCodebase,
     }
 
     // Otherwise, we return the file path.
-    nsCOMPtr<nsIURL> url = do_QueryInterface(aCodebase);
+    nsCOMPtr<nsIURL> url = do_QueryInterface(aURI);
 
     if (url) {
       *aHandled = true;
@@ -398,20 +385,20 @@ static nsresult GetSpecialBaseDomain(const nsCOMPtr<nsIURI>& aCodebase,
   }
 
   bool hasNoRelativeFlag;
-  nsresult rv = NS_URIChainHasFlags(
-      aCodebase, nsIProtocolHandler::URI_NORELATIVE, &hasNoRelativeFlag);
+  nsresult rv = NS_URIChainHasFlags(aURI, nsIProtocolHandler::URI_NORELATIVE,
+                                    &hasNoRelativeFlag);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
   if (hasNoRelativeFlag) {
     *aHandled = true;
-    return aCodebase->GetSpec(aBaseDomain);
+    return aURI->GetSpec(aBaseDomain);
   }
 
-  if (aCodebase->SchemeIs("indexeddb")) {
+  if (aURI->SchemeIs("indexeddb")) {
     *aHandled = true;
-    return aCodebase->GetSpec(aBaseDomain);
+    return aURI->GetSpec(aBaseDomain);
   }
 
   return NS_OK;
@@ -421,7 +408,7 @@ NS_IMETHODIMP
 ContentPrincipal::GetBaseDomain(nsACString& aBaseDomain) {
   // Handle some special URIs first.
   bool handled;
-  nsresult rv = GetSpecialBaseDomain(mCodebase, &handled, aBaseDomain);
+  nsresult rv = GetSpecialBaseDomain(mURI, &handled, aBaseDomain);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (handled) {
@@ -435,7 +422,7 @@ ContentPrincipal::GetBaseDomain(nsACString& aBaseDomain) {
     return NS_ERROR_FAILURE;
   }
 
-  return thirdPartyUtil->GetBaseDomain(mCodebase, aBaseDomain);
+  return thirdPartyUtil->GetBaseDomain(mURI, aBaseDomain);
 }
 
 NS_IMETHODIMP
@@ -443,7 +430,7 @@ ContentPrincipal::GetSiteOrigin(nsACString& aSiteOrigin) {
   // Handle some special URIs first.
   nsAutoCString baseDomain;
   bool handled;
-  nsresult rv = GetSpecialBaseDomain(mCodebase, &handled, baseDomain);
+  nsresult rv = GetSpecialBaseDomain(mURI, &handled, baseDomain);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (handled) {
@@ -464,7 +451,7 @@ ContentPrincipal::GetSiteOrigin(nsACString& aSiteOrigin) {
   }
 
   bool gotBaseDomain = false;
-  rv = tldService->GetBaseDomain(mCodebase, 0, baseDomain);
+  rv = tldService->GetBaseDomain(mURI, 0, baseDomain);
   if (NS_SUCCEEDED(rv)) {
     gotBaseDomain = true;
   } else {
@@ -479,7 +466,7 @@ ContentPrincipal::GetSiteOrigin(nsACString& aSiteOrigin) {
   // NOTE: Calling `SetHostPort` with a portless domain is insufficient to clear
   // the port, so an extra `SetPort` call has to be made.
   nsCOMPtr<nsIURI> siteUri;
-  NS_MutateURI mutator(mCodebase);
+  NS_MutateURI mutator(mURI);
   mutator.SetUserPass(""_ns).SetPort(-1);
   if (gotBaseDomain) {
     mutator.SetHost(baseDomain);
@@ -508,7 +495,7 @@ nsresult ContentPrincipal::GetSiteIdentifier(SiteIdentifier& aSite) {
 
   RefPtr<BasePrincipal> principal = CreateCodebasePrincipal(siteOrigin);
   if (!principal) {
-    NS_WARNING("could not instantiate codebase principal");
+    NS_WARNING("could not instantiate content principal");
     return NS_ERROR_FAILURE;
   }
 
@@ -518,10 +505,10 @@ nsresult ContentPrincipal::GetSiteIdentifier(SiteIdentifier& aSite) {
 
 WebExtensionPolicy* ContentPrincipal::AddonPolicy() {
   if (!mAddon.isSome()) {
-    NS_ENSURE_TRUE(mCodebase, nullptr);
+    NS_ENSURE_TRUE(mURI, nullptr);
 
-    if (mCodebase->SchemeIs("moz-extension")) {
-      mAddon.emplace(EPS().GetByURL(mCodebase.get()));
+    if (mURI->SchemeIs("moz-extension")) {
+      mAddon.emplace(EPS().GetByURL(mURI.get()));
     } else {
       mAddon.emplace(nullptr);
     }
@@ -532,7 +519,7 @@ WebExtensionPolicy* ContentPrincipal::AddonPolicy() {
 
 NS_IMETHODIMP
 ContentPrincipal::GetAddonId(nsAString& aAddonId) {
-  auto policy = AddonPolicy();
+  auto* policy = AddonPolicy();
   if (policy) {
     policy->GetId(aAddonId);
   } else {
@@ -542,21 +529,23 @@ ContentPrincipal::GetAddonId(nsAString& aAddonId) {
 }
 
 NS_IMETHODIMP
-ContentPrincipal::Read(nsIObjectInputStream* aStream) {
+ContentPrincipal::Deserializer::Read(nsIObjectInputStream* aStream) {
+  MOZ_ASSERT(!mPrincipal);
+
   nsCOMPtr<nsISupports> supports;
-  nsCOMPtr<nsIURI> codebase;
+  nsCOMPtr<nsIURI> principalURI;
   nsresult rv = NS_ReadOptionalObject(aStream, true, getter_AddRefs(supports));
   if (NS_FAILED(rv)) {
     return rv;
   }
 
-  codebase = do_QueryInterface(supports);
+  principalURI = do_QueryInterface(supports);
   // Enforce re-parsing about: URIs so that if they change, we continue to use
   // their new principals correctly.
-  if (codebase->SchemeIs("about")) {
+  if (principalURI->SchemeIs("about")) {
     nsAutoCString spec;
-    codebase->GetSpec(spec);
-    NS_ENSURE_SUCCESS(NS_NewURI(getter_AddRefs(codebase), spec),
+    principalURI->GetSpec(spec);
+    NS_ENSURE_SUCCESS(NS_NewURI(getter_AddRefs(principalURI), spec),
                       NS_ERROR_FAILURE);
   }
 
@@ -590,39 +579,33 @@ ContentPrincipal::Read(nsIObjectInputStream* aStream) {
   Unused << NS_ReadOptionalObject(aStream, true, getter_AddRefs(supports));
 
   nsAutoCString originNoSuffix;
-  rv = GenerateOriginNoSuffixFromURI(codebase, originNoSuffix);
+  rv = GenerateOriginNoSuffixFromURI(principalURI, originNoSuffix);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = Init(codebase, attrs, originNoSuffix);
-  NS_ENSURE_SUCCESS(rv, rv);
+  RefPtr<ContentPrincipal> principal =
+      new ContentPrincipal(principalURI, attrs, originNoSuffix);
 
   // Note: we don't call SetDomain here because we don't need the wrapper
   // recomputation code there (we just created this principal).
-  mDomain = domain;
-  if (mDomain) {
-    SetHasExplicitDomain();
+  if (domain) {
+    principal->mDomain = domain;
+    principal->SetHasExplicitDomain();
   }
 
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-ContentPrincipal::Write(nsIObjectOutputStream* aStream) {
-  // Read is used still for legacy principals
-  MOZ_RELEASE_ASSERT(false, "Old style serialization is removed");
+  mPrincipal = principal.forget();
   return NS_OK;
 }
 
 nsresult ContentPrincipal::PopulateJSONObject(Json::Value& aObject) {
-  nsAutoCString codebase;
-  nsresult rv = mCodebase->GetSpec(codebase);
+  nsAutoCString principalURI;
+  nsresult rv = mURI->GetSpec(principalURI);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // We turn each int enum field into a JSON string key of the object
   // aObject is the inner JSON object that has stringified enum keys
   // An example aObject might be:
   //
-  // eCodebase                   eSuffix
+  // eURI                   eSuffix
   //    |                           |
   //  {"0": "https://mozilla.com", "2": "^privateBrowsingId=1"}
   //    |                |          |         |
@@ -631,7 +614,7 @@ nsresult ContentPrincipal::PopulateJSONObject(Json::Value& aObject) {
   //        Key          ----------------------
   //                                |
   //                              Value
-  aObject[std::to_string(eURI)] = codebase.get();
+  aObject[std::to_string(eURI)] = principalURI.get();
 
   if (mDomain) {
     nsAutoCString domainStr;
@@ -653,7 +636,7 @@ already_AddRefed<BasePrincipal> ContentPrincipal::FromProperties(
     nsTArray<ContentPrincipal::KeyVal>& aFields) {
   MOZ_ASSERT(aFields.Length() == eMax + 1, "Must have all the keys");
   nsresult rv;
-  nsCOMPtr<nsIURI> codebaseURI;
+  nsCOMPtr<nsIURI> principalURI;
   nsCOMPtr<nsIURI> domain;
   nsCOMPtr<nsIContentSecurityPolicy> csp;
   OriginAttributes attrs;
@@ -666,21 +649,22 @@ already_AddRefed<BasePrincipal> ContentPrincipal::FromProperties(
         if (!field.valueWasSerialized) {
           MOZ_ASSERT(
               false,
-              "Content principals require a codebase URI in serialized JSON");
+              "Content principals require a principal URI in serialized JSON");
           return nullptr;
         }
-        rv = NS_NewURI(getter_AddRefs(codebaseURI), field.value.get());
+        rv = NS_NewURI(getter_AddRefs(principalURI), field.value.get());
         NS_ENSURE_SUCCESS(rv, nullptr);
 
         {
           // Enforce re-parsing about: URIs so that if they change, we
           // continue to use their new principals correctly.
           bool isAbout =
-              NS_SUCCEEDED(codebaseURI->SchemeIs("about", &isAbout)) && isAbout;
+              NS_SUCCEEDED(principalURI->SchemeIs("about", &isAbout)) &&
+              isAbout;
           if (isAbout) {
             nsAutoCString spec;
-            codebaseURI->GetSpec(spec);
-            if (NS_FAILED(NS_NewURI(getter_AddRefs(codebaseURI), spec))) {
+            principalURI->GetSpec(spec);
+            if (NS_FAILED(NS_NewURI(getter_AddRefs(principalURI), spec))) {
               return nullptr;
             }
           }
@@ -703,22 +687,19 @@ already_AddRefed<BasePrincipal> ContentPrincipal::FromProperties(
     }
   }
   nsAutoCString originNoSuffix;
-  rv = ContentPrincipal::GenerateOriginNoSuffixFromURI(codebaseURI,
+  rv = ContentPrincipal::GenerateOriginNoSuffixFromURI(principalURI,
                                                        originNoSuffix);
   if (NS_FAILED(rv)) {
     return nullptr;
   }
 
-  RefPtr<ContentPrincipal> codebase = new ContentPrincipal();
-  rv = codebase->Init(codebaseURI, attrs, originNoSuffix);
-  if (NS_FAILED(rv)) {
-    return nullptr;
+  RefPtr<ContentPrincipal> principal =
+      new ContentPrincipal(principalURI, attrs, originNoSuffix);
+
+  principal->mDomain = domain;
+  if (principal->mDomain) {
+    principal->SetHasExplicitDomain();
   }
 
-  codebase->mDomain = domain;
-  if (codebase->mDomain) {
-    codebase->SetHasExplicitDomain();
-  }
-
-  return codebase.forget();
+  return principal.forget();
 }

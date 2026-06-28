@@ -56,7 +56,7 @@ class ThreadEventQueue final : public SynchronizedEventQueue {
   already_AddRefed<nsIThreadObserver> GetObserverOnThread() final;
   void SetObserver(nsIThreadObserver* aObserver) final;
 
-  Lock& MutexRef() { return mLock; }
+  Lock2& MutexRef() { return mLock; }
 
   size_t SizeOfExcludingThis(
       mozilla::MallocSizeOf aMallocSizeOf) const override;
@@ -82,7 +82,7 @@ class ThreadEventQueue final : public SynchronizedEventQueue {
 
   nsTArray<NestedQueueItem> mNestedQueues;
 
-  Lock mLock;
+  Lock2 mLock;
   ConditionVariable mEventsAvailable;
 
   bool mEventsAreDoomed = false;

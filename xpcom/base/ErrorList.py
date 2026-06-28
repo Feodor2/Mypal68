@@ -85,6 +85,9 @@ modules["URL_CLASSIFIER"] = Mod(42)
 # ErrorResult gets its own module to reduce the chance of someone accidentally
 # defining an error code matching one of the ErrorResult ones.
 modules["ERRORRESULT"] = Mod(43)
+# Win32 system error codes, which are not mapped to a specific other value,
+# see Bug 1686041.
+modules["WIN32"] = Mod(44)
 
 # NS_ERROR_MODULE_GENERAL should be used by modules that do not
 # care if return code values overlap. Callers of methods that
@@ -604,7 +607,6 @@ with modules["FILES"]:
     errors["NS_ERROR_FILE_COPY_OR_MOVE_FAILED"] = FAILURE(7)
     errors["NS_ERROR_FILE_ALREADY_EXISTS"] = FAILURE(8)
     errors["NS_ERROR_FILE_INVALID_PATH"] = FAILURE(9)
-    errors["NS_ERROR_FILE_DISK_FULL"] = FAILURE(10)
     errors["NS_ERROR_FILE_CORRUPTED"] = FAILURE(11)
     errors["NS_ERROR_FILE_NOT_DIRECTORY"] = FAILURE(12)
     errors["NS_ERROR_FILE_IS_DIRECTORY"] = FAILURE(13)
@@ -616,6 +618,10 @@ with modules["FILES"]:
     errors["NS_ERROR_FILE_READ_ONLY"] = FAILURE(19)
     errors["NS_ERROR_FILE_DIR_NOT_EMPTY"] = FAILURE(20)
     errors["NS_ERROR_FILE_ACCESS_DENIED"] = FAILURE(21)
+    errors["NS_ERROR_FILE_FS_CORRUPTED"] = FAILURE(22)
+    errors["NS_ERROR_FILE_DEVICE_FAILURE"] = FAILURE(23)
+    errors["NS_ERROR_FILE_DEVICE_TEMPORARY_FAILURE"] = FAILURE(24)
+    errors["NS_ERROR_FILE_INVALID_HANDLE"] = FAILURE(25)
 
     errors["NS_SUCCESS_FILE_DIRECTORY_EMPTY"] = SUCCESS(1)
     # Result codes used by nsIDirectoryServiceProvider2
@@ -1017,7 +1023,6 @@ with modules["STORAGE"]:
 with modules["DOM_FILE"]:
     errors["NS_ERROR_DOM_FILE_NOT_FOUND_ERR"] = FAILURE(0)
     errors["NS_ERROR_DOM_FILE_NOT_READABLE_ERR"] = FAILURE(1)
-    errors["NS_ERROR_DOM_FILE_ABORT_ERR"] = FAILURE(2)
 
 
 # =======================================================================
@@ -1228,11 +1233,11 @@ def error_list_h(output):
 
     output.write("#define NS_ERROR_MODULE_BASE_OFFSET {}\n".format(MODULE_BASE_OFFSET))
 
-    for mod, val in modules.iteritems():
+    for mod, val in modules.items():
         output.write("#define NS_ERROR_MODULE_{} {}\n".format(mod, val.num))
 
     items = []
-    for error, val in errors.iteritems():
+    for error, val in errors.items():
         items.append("  {} = 0x{:X}".format(error, val))
     output.write("""
 enum class nsresult : uint32_t
@@ -1243,7 +1248,7 @@ enum class nsresult : uint32_t
 """.format(",\n".join(items)))
 
     items = []
-    for error, val in errors.iteritems():
+    for error, val in errors.items():
         items.append("  {0} = nsresult::{0}".format(error))
 
     output.write("""
@@ -1280,7 +1285,7 @@ GetErrorNameInternal(nsresult rv)
     # NOTE: Making sure we don't write out duplicate values is important as
     # we're using a switch statement to implement this.
     seen = set()
-    for error, val in errors.iteritems():
+    for error, val in errors.items():
         if val not in seen:
             output.write('  case nsresult::{0}: return "{0}";\n'.format(error))
         seen.add(val)
@@ -1307,9 +1312,9 @@ use super::nsresult;
     output.write("pub const NS_ERROR_MODULE_BASE_OFFSET: nsresult = nsresult({});\n"
                  .format(MODULE_BASE_OFFSET))
 
-    for mod, val in modules.iteritems():
+    for mod, val in modules.items():
         output.write("pub const NS_ERROR_MODULE_{}: nsresult = nsresult({});\n"
                      .format(mod, val.num))
 
-    for error, val in errors.iteritems():
+    for error, val in errors.items():
         output.write("pub const {}: nsresult = nsresult(0x{:X});\n".format(error, val))

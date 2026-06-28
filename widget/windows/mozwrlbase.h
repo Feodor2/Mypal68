@@ -23,7 +23,49 @@ InitializeCriticalSectionEx(
     _In_ DWORD dwSpinCount,
     _In_ DWORD Flags
     );
+#  ifndef THE_WIN8SDK
+VOID
+WINAPI
+ReleaseSRWLockExclusive(
+    _Inout_ PSRWLOCK SRWLock
+    );
 
+VOID
+WINAPI
+ReleaseSRWLockShared(
+    _Inout_ PSRWLOCK SRWLock
+    );
+
+VOID
+WINAPI
+InitializeSRWLock(
+    _Out_ PSRWLOCK SRWLock
+    );
+
+VOID
+WINAPI
+AcquireSRWLockExclusive(
+    _Inout_ PSRWLOCK SRWLock
+    );
+
+BOOLEAN
+WINAPI
+TryAcquireSRWLockExclusive(
+    _Inout_ PSRWLOCK SRWLock
+    );
+
+BOOLEAN
+WINAPI
+TryAcquireSRWLockShared(
+    _Inout_ PSRWLOCK SRWLock
+    );
+
+VOID
+WINAPI
+AcquireSRWLockShared(
+    _Inout_ PSRWLOCK SRWLock
+    );
+#  endif
 #undef WINVER
 #undef _WIN32_WINNT
 #define WINVER 0x600

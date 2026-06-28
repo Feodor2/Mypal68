@@ -34,3 +34,4 @@ FINAL_LIBRARY = 'xul'
 with Files('**'):
     BUG_COMPONENT = ('Core', 'Networking')
 
+include('/ipc/chromium/chromium-config.mozbuild')

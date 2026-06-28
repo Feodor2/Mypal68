@@ -12,10 +12,8 @@
 #include "mozilla/Attributes.h"
 #include "base/lock.h"
 #include "nsIProcess.h"
-#include "nsIFile.h"
 #include "nsIObserver.h"
-#include "nsIWeakReferenceUtils.h"
-#include "nsIObserver.h"
+#include "nsMaybeWeakPtr.h"
 #include "nsString.h"
 #ifndef XP_UNIX
 #  include "prproces.h"
@@ -31,6 +29,8 @@
       0x8A, 0x83, 0x00, 0x10, 0xa4, 0xe0, 0xc9, 0xca \
     }                                                \
   }
+
+class nsIFile;
 
 class nsProcess final : public nsIProcess, public nsIObserver {
  public:
@@ -55,7 +55,7 @@ class nsProcess final : public nsIProcess, public nsIObserver {
                       bool aHoldWeak, bool aArgsUTF8);
 
   PRThread* mThread;
-  Lock mLock;
+  Lock2 mLock;
   bool mShutdown;
   bool mBlocking;
   bool mStartHidden;
@@ -64,8 +64,7 @@ class nsProcess final : public nsIProcess, public nsIObserver {
   nsCOMPtr<nsIFile> mExecutable;
   nsString mTargetPath;
   int32_t mPid;
-  nsCOMPtr<nsIObserver> mObserver;
-  nsWeakPtr mWeakObserver;
+  nsMaybeWeakPtr<nsIObserver> mObserver;
 
   // These members are modified by multiple threads, any accesses should be
   // protected with mLock.

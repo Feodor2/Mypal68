@@ -11,19 +11,15 @@ import os
 import buildconfig
 import mozpack.path as mozpath
 
-# The xpidl parser is not incorporated in the in-tree virtualenv.
-xpidl_dir = mozpath.join(buildconfig.topsrcdir, 'xpcom', 'idl-parser',
-                         'xpidl')
+# The xpidl parser cache directory is not incorporated in the in-tree virtualenv.
 xpidl_cachedir = mozpath.join(buildconfig.topobjdir, 'xpcom', 'idl-parser',
                               'xpidl')
-sys.path.extend([xpidl_dir, xpidl_cachedir])
-import xpidl
+sys.path.append(xpidl_cachedir)
+from xpidl import xpidl
 
 # Load the webidl configuration file.
 glbl = {}
-execfile(mozpath.join(buildconfig.topsrcdir,
-                      'dom', 'bindings', 'Bindings.conf'),
-         glbl)
+exec(open(mozpath.join(buildconfig.topsrcdir, 'dom', 'bindings', 'Bindings.conf')).read(), glbl)
 webidlconfig = glbl['DOMInterfaces']
 
 # Instantiate the parser.
@@ -51,7 +47,7 @@ def loadEventIDL(parser, includePath, eventname):
 class Configuration:
     def __init__(self, filename):
         config = {}
-        execfile(filename, config)
+        exec(open(filename).read(), config)
         self.simple_events = config.get('simple_events', [])
 
 

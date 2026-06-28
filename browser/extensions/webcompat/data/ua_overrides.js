@@ -10,6 +10,9 @@
 if (typeof InterventionHelpers === "undefined") {
   var InterventionHelpers = require("../lib/intervention_helpers");
 }
+if (typeof UAHelpers === "undefined") {
+  var UAHelpers = require("../lib/ua_helpers");
+}
 
 /**
  * For detailed information on our policies, and a documention on this format
@@ -36,18 +39,18 @@ const AVAILABLE_UA_OVERRIDES = [
   },
   {
     /*
-     * Bug 1577519 - att.tv - Create a UA override for att.tv for playback on desktop
+     * Bug 1577519 - directv.com - Create a UA override for directv.com for playback on desktop
      * WebCompat issue #3846 - https://webcompat.com/issues/3846
      *
-     * att.tv (atttvnow.com) is blocking Firefox via UA sniffing. Spoofing as Chrome allows
+     * directv.com (attwatchtv.com) is blocking Firefox via UA sniffing. Spoofing as Chrome allows
      * to access the site and playback works fine. This is former directvnow.com
      */
     id: "bug1577519",
     platform: "desktop",
-    domain: "att.tv",
+    domain: "directv.com",
     bug: "1577519",
     config: {
-      matches: ["*://*.att.tv/*"],
+      matches: ["*://*.directv.com/*", "*://*.attwatchtv.com/*"],
       uaTransformer: originalUA => {
         return (
           UAHelpers.getPrefix(originalUA) +
@@ -102,28 +105,6 @@ const AVAILABLE_UA_OVERRIDES = [
   },
   {
     /*
-     * Bug 1610010 - criticalcareontario.ca - UA override for criticalcareontario.ca
-     * WebCompat issue #40267 - https://webcompat.com/issues/40267
-     *
-     * criticalcareontario.ca enters a reload loop based on UA detection
-     * Spoofing as Chrome prevents the site from doing a constant page refresh
-     */
-    id: "bug1610010",
-    platform: "desktop",
-    domain: "criticalcareontario.ca",
-    bug: "1610010",
-    config: {
-      matches: ["https://www.criticalcareontario.ca/*"],
-      uaTransformer: originalUA => {
-        return (
-          UAHelpers.getPrefix(originalUA) +
-          " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"
-        );
-      },
-    },
-  },
-  {
-    /*
      * Bug 1610026 - www.mobilesuica.com - UA override for www.mobilesuica.com
      * WebCompat issue #4608 - https://webcompat.com/issues/4608
      *
@@ -141,35 +122,6 @@ const AVAILABLE_UA_OVERRIDES = [
           UAHelpers.getPrefix(originalUA) +
           " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 Safari/537.36"
         );
-      },
-    },
-  },
-  {
-    /*
-     * Bug 945963 - tieba.baidu.com serves simplified mobile content to Firefox Android
-     * additionally, Bug 1525839 for more domains
-     * WebCompat issue #18455 - https://webcompat.com/issues/18455
-     *
-     * tieba.baidu.com and tiebac.baidu.com serve a heavily simplified and less functional
-     * mobile experience to Firefox for Android users. Adding the AppleWebKit indicator
-     * to the User Agent gets us the same experience.
-     */
-    id: "bug945963",
-    platform: "android",
-    domain: "tieba.baidu.com",
-    bug: "945963",
-    config: {
-      matches: [
-        "*://baike.baidu.com/*",
-        "*://image.baidu.com/*",
-        "*://news.baidu.com/*",
-        "*://tieba.baidu.com/*",
-        "*://tiebac.baidu.com/*",
-        "*://wenku.baidu.com/*",
-        "*://zhidao.baidu.com/*",
-      ],
-      uaTransformer: originalUA => {
-        return UAHelpers.getDeviceAppropriateChromeUA();
       },
     },
   },
@@ -233,7 +185,8 @@ const AVAILABLE_UA_OVERRIDES = [
     /*
      * Bug 969844 - mobile.de sends desktop site to Firefox on Android
      *
-     * mobile.de sends the desktop site to Fennec. Spooing as Chrome works fine.
+     * mobile.de sends the desktop site to Firefox Mobile.
+     * Spoofing as Chrome works fine.
      */
     id: "bug969844",
     platform: "android",
@@ -248,56 +201,13 @@ const AVAILABLE_UA_OVERRIDES = [
   },
   {
     /*
-     * Bug 1509831 - cc.com - Add UA override for CC.com
-     * WebCompat issue #329 - https://webcompat.com/issues/329
-     *
-     * ComedyCentral blocks Firefox for not being able to play HLS, which was
-     * true in previous versions, but no longer is. With a spoofed Chrome UA,
-     * the site works just fine.
-     */
-    id: "bug1509831",
-    platform: "android",
-    domain: "cc.com",
-    bug: "1509831",
-    config: {
-      matches: ["*://*.cc.com/*"],
-      uaTransformer: _ => {
-        return "Mozilla/5.0 (Linux; Android 6.0.1; SM-G920F Build/MMB29K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.91 Mobile Safari/537.36";
-      },
-    },
-  },
-  {
-    /*
-     * Bug 1508516 - cineflix.com.br - Add UA override for cineflix.com.br/m/
-     * WebCompat issue #21553 - https://webcompat.com/issues/21553
-     *
-     * The site renders a blank page with any Firefox snipped in the UA as it
-     * is running into an exception. Spoofing as Chrome makes the site work
-     * fine.
-     */
-    id: "bug1508516",
-    platform: "android",
-    domain: "cineflix.com.br",
-    bug: "1508516",
-    config: {
-      matches: ["*://*.cineflix.com.br/m/*"],
-      uaTransformer: originalUA => {
-        return (
-          UAHelpers.getPrefix(originalUA) +
-          " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.91 Mobile Safari/537.36"
-        );
-      },
-    },
-  },
-  {
-    /*
      * Bug 1509873 - zmags.com - Add UA override for secure.viewer.zmags.com
      * WebCompat issue #21576 - https://webcompat.com/issues/21576
      *
-     * The zmags viewer locks out Fennec with a "Browser unsupported" message,
-     * but tests showed that it works just fine with a Chrome UA. Outreach
-     * attempts were unsuccessful, and as the site has a relatively high rank,
-     * we alter the UA.
+     * The zmags viewer locks out Firefox Mobile with a "Browser unsupported"
+     * message, but tests showed that it works just fine with a Chrome UA.
+     * Outreach attempts were unsuccessful, and as the site has a relatively
+     * high rank, we alter the UA.
      */
     id: "bug1509873",
     platform: "android",
@@ -310,25 +220,6 @@ const AVAILABLE_UA_OVERRIDES = [
           UAHelpers.getPrefix(originalUA) +
           " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.91 Mobile Safari/537.36"
         );
-      },
-    },
-  },
-  {
-    /*
-     * Bug 1566253 - posts.google.com - Add UA override for posts.google.com
-     * WebCompat issue #17870 - https://webcompat.com/issues/17870
-     *
-     * posts.google.com displaying "Your browser doesn't support this page".
-     * Spoofing as Chrome works fine.
-     */
-    id: "bug1566253",
-    platform: "android",
-    domain: "posts.google.com",
-    bug: "1566253",
-    config: {
-      matches: ["*://posts.google.com/*"],
-      uaTransformer: _ => {
-        return "Mozilla/5.0 (Linux; Android 6.0.1; SM-G900M) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/75.0.3770.101 Mobile Safari/537.36";
       },
     },
   },
@@ -359,8 +250,8 @@ const AVAILABLE_UA_OVERRIDES = [
      *
      * ceskatelevize sets streamingProtocol depending on the User-Agent it sees
      * in the request headers, returning DASH for Chrome, HLS for iOS,
-     * and Flash for Fennec. Since Fennec has no Flash, the video doesn't work.
-     * Spoofing as Chrome makes the video play
+     * and Flash for Firefox Mobile. Since Mobile has no Flash, the video
+     * doesn't work. Spoofing as Chrome makes the video play
      */
     id: "bug1574564",
     platform: "android",
@@ -368,28 +259,6 @@ const AVAILABLE_UA_OVERRIDES = [
     bug: "1574564",
     config: {
       matches: ["*://*.ceskatelevize.cz/*"],
-      uaTransformer: originalUA => {
-        return (
-          UAHelpers.getPrefix(originalUA) +
-          " AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.111 Mobile Safari/537.36"
-        );
-      },
-    },
-  },
-  {
-    /*
-     * Bug 1577250 - UA override for homebook.pl on Firefox for Android
-     * WebCompat issue #24044 - https://webcompat.com/issues/24044
-     *
-     * homebook.pl shows desktop site on Firefox for Android based on
-     * UA detection. Spoofing as Chrome allows to get mobile site.
-     */
-    id: "bug1577250",
-    platform: "android",
-    domain: "homebook.pl",
-    bug: "1577250",
-    config: {
-      matches: ["*://*.homebook.pl/*"],
       uaTransformer: originalUA => {
         return (
           UAHelpers.getPrefix(originalUA) +
@@ -477,27 +346,6 @@ const AVAILABLE_UA_OVERRIDES = [
   },
   {
     /*
-     * Bug 1621065 - UA overrides for bracketchallenge.ncaa.com
-     * Webcompat issue #49886 - https://webcompat.com/issues/49886
-     *
-     * The NCAA bracket challenge website mistakenly classifies
-     * any non-Chrome browser on Android as "is_old_android". As a result,
-     * a modal is shown telling them they have security flaws. We have
-     * attempted to reach out for a fix (and clarification).
-     */
-    id: "bug1621065",
-    platform: "android",
-    domain: "bracketchallenge.ncaa.com",
-    bug: "1621065",
-    config: {
-      matches: ["*://bracketchallenge.ncaa.com/*"],
-      uaTransformer: originalUA => {
-        return originalUA + " Chrome";
-      },
-    },
-  },
-  {
-    /*
      * Bug 1622063 - UA override for wp1-ext.usps.gov
      * Webcompat issue #29867 - https://webcompat.com/issues/29867
      *
@@ -517,39 +365,21 @@ const AVAILABLE_UA_OVERRIDES = [
   },
   {
     /*
-     * Bug 1622081 - UA override for m2.bmo.com
+     * Bug 1697324 - Update the override for mobile2.bmo.com
+     * Previously Bug 1622081 - UA override for mobile2.bmo.com
      * Webcompat issue #45019 - https://webcompat.com/issues/45019
      *
-     * Unless the UA string contains "Chrome", m2.bmo.com will
+     * Unless the UA string contains "Chrome", mobile2.bmo.com will
      * display a modal saying the browser is out-of-date.
      */
-    id: "bug1622081",
+    id: "bug1697324",
     platform: "android",
-    domain: "m2.bmo.com",
-    bug: "1622081",
+    domain: "mobile2.bmo.com",
+    bug: "1697324",
     config: {
-      matches: ["*://m2.bmo.com/*"],
+      matches: ["*://mobile2.bmo.com/*"],
       uaTransformer: originalUA => {
         return originalUA + " Chrome";
-      },
-    },
-  },
-  {
-    /*
-     * Bug 1628462 - UA override for app.pixton.com
-     * Webcompat issue #43438 - https://webcompat.com/issues/43438
-     *
-     * app.pixton.com is showing unsupported message for both Firefox
-     * desktop and mobile. Spoofing as Chrome allows to access the site
-     */
-    id: "bug1628462",
-    platform: "all",
-    domain: "app.pixton.com",
-    bug: "1628462",
-    config: {
-      matches: ["https://*.pixton.com/*"],
-      uaTransformer: () => {
-        return UAHelpers.getDeviceAppropriateChromeUA();
       },
     },
   },
@@ -575,28 +405,8 @@ const AVAILABLE_UA_OVERRIDES = [
   },
   {
     /*
-     * Bug 1630280 - UA override for dominos.ch
-     * Webcompat issue #48273 - https://webcompat.com/issues/48273
-     *
-     * dominos.ch is suggesting downloading their native app and showing
-     * an overlay that can't be removed in Firefox for Android. Spoofing
-     * as Chrome allows to continue to the site
-     */
-    id: "bug1630280",
-    platform: "android",
-    domain: "dominos.ch",
-    bug: "1630280",
-    config: {
-      matches: ["https://*.dominos.ch/*"],
-      uaTransformer: () => {
-        return UAHelpers.getDeviceAppropriateChromeUA();
-      },
-    },
-  },
-  {
-    /*
-     * Bug 1563839 - rolb.santanderbank.com - Build UA override
      * Bug 1646791 - bancosantander.es - Re-add UA override.
+     * Bug 1665129 - *.gruposantander.es - Add wildcard domains.
      * WebCompat issue #33462 - https://webcompat.com/issues/33462
      * SuMo request - https://support.mozilla.org/es/questions/1291085
      *
@@ -604,48 +414,507 @@ const AVAILABLE_UA_OVERRIDES = [
      * xmlDoc.onload whose support has been dropped. It results in missing labels in forms
      * and some other issues.  Adding 'like Gecko' fixes those issues.
      */
-    id: "bug1563839",
+    id: "bug1646791",
     platform: "all",
     domain: "santanderbank.com",
-    bug: "1563839",
+    bug: "1646791",
     config: {
       matches: [
-        "*://*.bancosantander.es*",
+        "*://*.bancosantander.es/*",
+        "*://*.gruposantander.es/*",
         "*://*.santander.co.uk/*",
-        "*://bob.santanderbank.com/*",
-        "*://rolb.santanderbank.com/*",
       ],
       uaTransformer: originalUA => {
-        return originalUA.replace("Gecko", "like Gecko");
+        // The first line related to Firefox 100 is for Bug 1743445.
+        // [TODO]: Remove when bug 1743429 gets backed out.
+        return UAHelpers.capVersionTo99(originalUA).replace(
+          "Gecko",
+          "like Gecko"
+        );
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1651292 - UA override for www.jp.square-enix.com
+     * Webcompat issue #53018 - https://webcompat.com/issues/53018
+     *
+     * Unless the UA string contains "Chrome 66+", a section of
+     * www.jp.square-enix.com will show a never ending LOADING
+     * page.
+     */
+    id: "bug1651292",
+    platform: "android",
+    domain: "www.jp.square-enix.com",
+    bug: "1651292",
+    config: {
+      matches: ["*://www.jp.square-enix.com/music/sem/page/FF7R/ost/*"],
+      uaTransformer: originalUA => {
+        return originalUA + " Chrome/83";
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1666754 - Mobile UA override for lffl.org
+     * Bug 1665720 - lffl.org article page takes 2x as much time to load on Moto G
+     *
+     * This site returns desktop site based on server side UA detection.
+     * Spoofing as Chrome allows to get mobile experience
+     */
+    id: "bug1666754",
+    platform: "android",
+    domain: "lffl.org",
+    bug: "1666754",
+    config: {
+      matches: ["*://*.lffl.org/*"],
+      uaTransformer: () => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1704673 - Add UA override for app.xiaomi.com
+     * Webcompat issue #66163 - https://webcompat.com/issues/66163
+     *
+     * The page isn’t redirecting properly error message received.
+     * Spoofing as Chrome makes the page load
+     */
+    id: "bug1704673",
+    platform: "android",
+    domain: "app.xiaomi.com",
+    bug: "1704673",
+    config: {
+      matches: ["*://app.xiaomi.com/*"],
+      uaTransformer: () => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1712807 - Add UA override for www.dealnews.com
+     * Webcompat issue #39341 - https://webcompat.com/issues/39341
+     *
+     * The sites shows Firefox a different layout compared to Chrome.
+     * Spoofing as Chrome fixes this.
+     */
+    id: "bug1712807",
+    platform: "android",
+    domain: "www.dealnews.com",
+    bug: "1712807",
+    config: {
+      matches: ["*://www.dealnews.com/*"],
+      uaTransformer: () => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1719841 - Add UA override for appmedia.jp
+     * Webcompat issue #78939 - https://webcompat.com/issues/78939
+     *
+     * The sites shows Firefox a desktop version. With Chrome's UA string,
+     * we see a working mobile layout.
+     */
+    id: "bug1719841",
+    platform: "android",
+    domain: "appmedia.jp",
+    bug: "1719841",
+    config: {
+      matches: ["*://appmedia.jp/*"],
+      uaTransformer: () => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1719846 - Add UA override for https://covid.cdc.gov/covid-data-tracker/
+     * Webcompat issue #76944 - https://webcompat.com/issues/76944
+     *
+     * The application locks out Firefox via User Agent sniffing, but in our
+     * tests, there appears to be no reason for this. Everything looks fine if
+     * we spoof as Chrome.
+     */
+    id: "bug1719846",
+    platform: "all",
+    domain: "covid.cdc.gov",
+    bug: "1719846",
+    config: {
+      matches: ["*://covid.cdc.gov/covid-data-tracker/*"],
+      uaTransformer: () => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1719859 - Add UA override for saxoinvestor.fr
+     * Webcompat issue #74678 - https://webcompat.com/issues/74678
+     *
+     * The site blocks Firefox with a server-side UA sniffer. Appending a
+     * Chrome version segment to the UA makes it work.
+     */
+    id: "bug1719859",
+    platform: "all",
+    domain: "saxoinvestor.fr",
+    bug: "1719859",
+    config: {
+      matches: ["*://*.saxoinvestor.fr/*"],
+      uaTransformer: originalUA => {
+        return originalUA + " Chrome/91.0.4472.114";
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1722954 - Add UA override for game.granbluefantasy.jp
+     * Webcompat issue #34310 - https://github.com/webcompat/web-bugs/issues/34310
+     *
+     * The website is sending a version of the site which is too small. Adding a partial
+     * safari iOS version of the UA sends us the right layout.
+     */
+    id: "bug1722954",
+    platform: "android",
+    domain: "granbluefantasy.jp",
+    bug: "1722954",
+    config: {
+      matches: ["*://*.granbluefantasy.jp/*"],
+      uaTransformer: originalUA => {
+        return originalUA + " iPhone OS 12_0 like Mac OS X";
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1738317 - Add UA override for vmos.cn
+     * Webcompat issue #90432 - https://github.com/webcompat/web-bugs/issues/90432
+     *
+     * Firefox for Android receives a desktop-only layout based on server-side
+     * UA sniffing. Spoofing as Chrome works fine.
+     */
+    id: "bug1738317",
+    platform: "android",
+    domain: "vmos.cn",
+    bug: "1738317",
+    config: {
+      matches: ["*://*.vmos.cn/*"],
+      uaTransformer: () => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1738319 - Add UA override for yebocasino.co.za
+     * Webcompat issue #88409 - https://github.com/webcompat/web-bugs/issues/88409
+     *
+     * Firefox for Android is locked out with a "Browser Unsupported" message.
+     * Spoofing as Chrome gets rid of that.
+     */
+    id: "bug1738319",
+    platform: "android",
+    domain: "yebocasino.co.za",
+    bug: "1738319",
+    config: {
+      matches: ["*://*.yebocasino.co.za/*"],
+      uaTransformer: () => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1743627 - Add UA override for renaud-bray.com
+     * Webcompat issue #55276 - https://github.com/webcompat/web-bugs/issues/55276
+     *
+     * Firefox for Android depends on "Version/" being there in the UA string,
+     * or it'll throw a runtime error.
+     */
+    id: "bug1743627",
+    platform: "android",
+    domain: "renaud-bray.com",
+    bug: "1743627",
+    config: {
+      matches: ["*://*.renaud-bray.com/*"],
+      uaTransformer: originalUA => {
+        return originalUA + " Version/0";
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1743745 - Add UA override for www.automesseweb.jp
+     * Webcompat issue #70386 - https://github.com/webcompat/web-bugs/issues/70386
+     *
+     * On Firefox Android, the browser is receiving the desktop layout.
+     *
+     */
+    id: "bug1743745",
+    platform: "android",
+    domain: "automesseweb.jp",
+    bug: "1743745",
+    config: {
+      matches: ["*://*.automesseweb.jp/*"],
+      uaTransformer: () => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1743751 - Add UA override for slrclub.com
+     * Webcompat issue #91373 - https://github.com/webcompat/web-bugs/issues/91373
+     *
+     * On Firefox Android, the browser is receiving the desktop layout.
+     * Spoofing as Chrome works fine.
+     */
+    id: "bug1743751",
+    platform: "android",
+    domain: "slrclub.com",
+    bug: "1743751",
+    config: {
+      matches: ["*://*.slrclub.com/*"],
+      uaTransformer: () => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1743754 - Add UA override for slrclub.com
+     * Webcompat issue #86839 - https://github.com/webcompat/web-bugs/issues/86839
+     *
+     * On Firefox Android, the browser is failing a UA parsing on Firefox UA.
+     */
+    id: "bug1743754",
+    platform: "android",
+    domain: "workflow.base.vn",
+    bug: "1743754",
+    config: {
+      matches: ["*://workflow.base.vn/*"],
+      uaTransformer: () => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1743429 - Add UA override for sites broken with the Version 100 User Agent
+     *
+     * Some sites have issues with a UA string with Firefox version 100 or higher,
+     * so present as version 99 for now.
+     */
+    id: "bug1743429",
+    platform: "all",
+    domain: "Sites with known Version 100 User Agent breakage",
+    bug: "1743429",
+    config: {
+      matches: [
+        "*://*.commerzbank.de/*", // Bug 1767630
+        "*://*.edf.com/*", // Bug 1764786
+        "*://*.wordpress.org/*", // Bug 1743431
+        "*://as.eservice.asus.com/*", // #104113
+        "*://bethesda.net/*", // #94607,
+        "*://cdn-vzn.yottaa.net/*", // Bug 1764795
+        "*://dsae.co.za/*", // Bug 1765925
+        "*://fpt.dfp.microsoft.com/*", // #104237
+        "*://moje.pzu.pl/*", // #99772
+        "*://mon.allianzbanque.fr/*", // #101074
+        "*://online.citi.com/*", // #101268
+        "*://simperium.com/*", // #98934
+        "*://ubank.com.au/*", // #104099
+        "*://wifi.sncf/*", // #100194
+        "*://www.accringtonobserver.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.bathchronicle.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.bedfordshirelive.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.belfastlive.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.birminghamlive.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.birminghammail.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.birminghampost.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.bristol.live/*", // Bug 1762928 (Reach Plc)
+        "*://www.bristolpost.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.buckinghamshirelive.com/*", // Bug 1762928 (Reach Plc)
+        "*://www.burtonmail.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.business-live.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.cambridge-news.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.cambridgeshirelive.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.cheshire-live.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.chesterchronicle.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.chroniclelive.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.corkbeo.ie/*", // Bug 1762928 (Reach Plc)
+        "*://www.cornwalllive.com/*", // Bug 1762928 (Reach Plc)
+        "*://www.coventrytelegraph.net/*", // Bug 1762928 (Reach Plc)
+        "*://www.crewechronicle.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.croydonadvertiser.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.dailypost.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.dailyrecord.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.dailystar.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.derbytelegraph.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.devonlive.com/*", // Bug 1762928 (Reach Plc)
+        "*://www.discoveryplus.in/*", // #100389
+        "*://www.dublinlive.ie/*", // Bug 1762928 (Reach Plc)
+        "*://www.edinburghlive.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.essexlive.news/*", // Bug 1762928 (Reach Plc)
+        "*://www.eurosportplayer.com/*", // #91087
+        "*://www.examiner.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.examinerlive.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.express.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.football.london/*", // Bug 1762928 (Reach Plc)
+        "*://www.footballscotland.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.gazettelive.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.getbucks.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.gethampshire.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.getreading.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.getsurrey.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.getwestlondon.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.gismeteo.ru/*", // #101326
+        "*://www.glasgowlive.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.gloucestershirelive.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.grimsbytelegraph.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.hampshirelive.news/*", // Bug 1762928 (Reach Plc)
+        "*://www.hannaandersson.com/*", // #95003
+        "*://www.hertfordshiremercury.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.hinckleytimes.net/*", // Bug 1762928 (Reach Plc)
+        "*://www.hulldailymail.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.imb.com.au/*", // Bug 1762209
+        "*://www.insider.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.irishmirror.ie/*", // Bug 1762928 (Reach Plc)
+        "*://www.kentlive.news/*", // Bug 1762928 (Reach Plc)
+        "*://www.lancs.live/*", // Bug 1762928 (Reach Plc)
+        "*://www.learningants.com/*", // #104080
+        "*://www.leeds-live.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.leicestermercury.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.lincolnshirelive.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.liverpool.com/*", // Bug 1762928 (Reach Plc)
+        "*://www.liverpoolecho.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.loughboroughecho.net/*", // Bug 1762928 (Reach Plc)
+        "*://www.macclesfield-express.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.macclesfield-live.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.manchestereveningnews.co.uk/*", // #100923
+        "*://www.mylondon.news/*", // Bug 1762928 (Reach Plc)
+        "*://www.northantslive.news/*", // Bug 1762928 (Reach Plc)
+        "*://www.nottinghampost.com/*", // Bug 1762928 (Reach Plc)
+        "*://www.ok.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.plymouthherald.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.rossendalefreepress.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.rsvplive.ie/*", // Bug 1762928 (Reach Plc)
+        "*://www.scotlandnow.dailyrecord.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.screwfix.com/*", // #96959
+        "*://www.scunthorpetelegraph.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.services.gov.on.ca/*", // #100926
+        "*://www.smsv.com.ar/*", // #90666
+        "*://www.somersetlive.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.southportvisiter.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.staffordshire-live.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.stokesentinel.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://survey.sogosurvey.com/*", // Bug 1765925
+        "*://www.sussexlive.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.tm-awx.com/*", // Bug 1762928 (Reach Plc)
+        "*://www.walesonline.co.uk/*", // Bug 1762928 (Reach Plc)
+        "*://www.wharf.co.uk/*", // Bug 1762928 (Reach Plc)
+      ],
+      uaTransformer: originalUA => {
+        return UAHelpers.capVersionTo99(originalUA);
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1754180 - UA override for nordjyske.dk
+     * Webcompat issue #94661 - https://webcompat.com/issues/94661
+     *
+     * The site doesn't provide a mobile layout to Firefox for Android
+     * without a Chrome UA string for a high-end device.
+     */
+    id: "bug1754180",
+    platform: "android",
+    domain: "nordjyske.dk",
+    bug: "1754180",
+    config: {
+      matches: ["*://nordjyske.dk/*"],
+      uaTransformer: originalUA => {
+        return UAHelpers.getDeviceAppropriateChromeUA("97.0.4692.9", "Pixel 4");
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1753461 - UA override for serieson.naver.com
+     * Webcompat issue #99993 - https://webcompat.com/issues/97298
+     *
+     * The site locks out Firefox users unless a Chrome UA is given,
+     * and locks out Linux users as well (so we use Windows+Chrome).
+     */
+    id: "bug1753461",
+    platform: "desktop",
+    domain: "serieson.naver.com",
+    bug: "1753461",
+    config: {
+      matches: ["*://serieson.naver.com/*"],
+      uaTransformer: originalUA => {
+        return "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/97.0.4692.99 Safari/537.36";
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1756872 - UA override for www.dolcegabbana.com
+     * Webcompat issue #99993 - https://webcompat.com/issues/99993
+     *
+     * The site's layout is broken on Firefox for Android
+     * without a full Chrome user-agent string.
+     */
+    id: "bug1756872",
+    platform: "android",
+    domain: "www.dolcegabbana.com",
+    bug: "1756872",
+    config: {
+      matches: ["*://www.dolcegabbana.com/*"],
+      uaTransformer: originalUA => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1751604 - UA override for /www.otsuka.co.jp/fib/
+     *
+     * The site's content is not loaded unless a Chrome UA is used.
+     */
+    id: "bug1751604",
+    platform: "desktop",
+    domain: "www.otsuka.co.jp",
+    bug: "1751604",
+    config: {
+      matches: ["*://www.otsuka.co.jp/fib/*"],
+      uaTransformer: originalUA => {
+        return UAHelpers.getDeviceAppropriateChromeUA("97.0.4692.9");
+      },
+    },
+  },
+  {
+    /*
+     * Bug 1771200 - UA override for animalplanet.com
+     * Webcompat issue #99993 - https://webcompat.com/issues/103727
+     *
+     * The videos are not playing and an error message is displayed
+     * in Firefox for Android, but work with Chrome UA
+     */
+    id: "bug1771200",
+    platform: "android",
+    domain: "animalplanet.com",
+    bug: "1771200",
+    config: {
+      matches: ["*://*.animalplanet.com/video/*"],
+      uaTransformer: originalUA => {
+        return UAHelpers.getDeviceAppropriateChromeUA();
       },
     },
   },
 ];
-
-const UAHelpers = {
-  getDeviceAppropriateChromeUA() {
-    if (!UAHelpers._deviceAppropriateChromeUA) {
-      const userAgent =
-        typeof navigator !== "undefined" ? navigator.userAgent : "";
-      const RunningFirefoxVersion = (userAgent.match(/Firefox\/([0-9.]+)/) || [
-        "",
-        "58.0",
-      ])[1];
-      const RunningAndroidVersion =
-        userAgent.match(/Android\/[0-9.]+/) || "Android 6.0";
-      const ChromeVersionToMimic = "76.0.3809.111";
-      const ChromePhoneUA = `Mozilla/5.0 (Linux; ${RunningAndroidVersion}; Nexus 5 Build/MRA58N) FxQuantum/${RunningFirefoxVersion} AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${ChromeVersionToMimic} Mobile Safari/537.36`;
-      const ChromeTabletUA = `Mozilla/5.0 (Linux; ${RunningAndroidVersion}; Nexus 7 Build/JSS15Q) FxQuantum/${RunningFirefoxVersion} AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${ChromeVersionToMimic} Safari/537.36`;
-      const IsPhone = userAgent.includes("Mobile");
-      UAHelpers._deviceAppropriateChromeUA = IsPhone
-        ? ChromePhoneUA
-        : ChromeTabletUA;
-    }
-    return UAHelpers._deviceAppropriateChromeUA;
-  },
-  getPrefix(originalUA) {
-    return originalUA.substr(0, originalUA.indexOf(")") + 1);
-  },
-};
 
 module.exports = AVAILABLE_UA_OVERRIDES;

@@ -49,11 +49,6 @@ const whitelist = [
   },
 
   {
-    file: "chrome://global/skin/icons/resizer.svg",
-    platforms: ["win"],
-  },
-
-  {
     file: "chrome://browser/skin/window-controls/maximize.svg",
     platforms: ["win"],
     // This is to prevent perma-fails in case Windows machines

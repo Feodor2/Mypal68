@@ -51,6 +51,10 @@ static OperatingSystem OSXVersionToOperatingSystem(uint32_t aOSXVersion) {
         return OperatingSystem::OSX10_12;
       case 13:
         return OperatingSystem::OSX10_13;
+      case 14:
+        return OperatingSystem::OSX10_14;
+      case 15:
+        return OperatingSystem::OSX10_15;
     }
   }
 

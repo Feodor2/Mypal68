@@ -27,6 +27,7 @@
 
 #include "nsIAppStartup.h"
 #include "nsIObserverService.h"
+#include "mozilla/Components.h"
 #include "mozilla/Preferences.h"
 #include "nsIResProtocolHandler.h"
 #include "nsIScriptError.h"
@@ -630,7 +631,7 @@ void nsChromeRegistryChrome::ManifestResource(ManifestProcessingContext& cx,
   EnsureLowerCase(package);
   nsDependentCString host(package);
 
-  nsCOMPtr<nsIIOService> io = mozilla::services::GetIOService();
+  nsCOMPtr<nsIIOService> io = mozilla::components::IO::Service();
   if (!io) {
     NS_WARNING("No IO service trying to process chrome manifests");
     return;

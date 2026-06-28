@@ -52,10 +52,10 @@ native nsReadSegmentFun(nsReadSegmentFun);
 [scriptable, uuid(0d0acd2a-61b4-11d4-9877-00c04fa0cf4a)]
 interface nsIOutputStream : nsISupports
 {
-    /** 
+    /**
      * Close the stream. Forces the output stream to flush any buffered data.
      *
-     * @throws NS_BASE_STREAM_WOULD_BLOCK if unable to flush without blocking 
+     * @throws NS_BASE_STREAM_WOULD_BLOCK if unable to flush without blocking
      *   the calling thread (non-blocking mode only)
      */
     void close();

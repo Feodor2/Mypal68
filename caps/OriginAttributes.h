@@ -70,6 +70,9 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
   // returns an empty string.
   void CreateSuffix(nsACString& aStr) const;
 
+  // Like CreateSuffix, but returns an atom instead of producing a string.
+  already_AddRefed<nsAtom> CreateSuffixAtom() const;
+
   // Don't use this method for anything else than debugging!
   void CreateAnonymizedSuffix(nsACString& aStr) const;
 
@@ -87,6 +90,13 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
   // check if "privacy.firstparty.isolate" is enabled.
   static inline bool IsFirstPartyEnabled() {
     return StaticPrefs::privacy_firstparty_isolate();
+  }
+
+  static inline bool UseSiteForFirstPartyDomain() {
+    if (IsFirstPartyEnabled()) {
+      return StaticPrefs::privacy_firstparty_isolate_use_site();
+    }
+    return StaticPrefs::privacy_dynamic_firstparty_use_site();
   }
 
   // check if the access of window.opener across different FPDs is restricted.

@@ -1106,6 +1106,7 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
     if (!this.styleElements.has(document)) {
       const style = document.createElementNS(XHTML_NS, "style");
       style.setAttribute("type", "text/css");
+      style.setDevtoolsAsTriggeringPrincipal();
       document.documentElement.appendChild(style);
       this.styleElements.set(document, style);
     }
@@ -1771,7 +1772,7 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
 
     if (this.type === ELEMENT_STYLE) {
       // For element style rules, set the node's style attribute.
-      this.rawNode.setAttribute("style", newText);
+      this.rawNode.setAttributeDevtools("style", newText);
     } else {
       // For stylesheet rules, set the text in the stylesheet.
       const parentStyleSheet = this.pageStyle._sheetRef(this._parentSheet);

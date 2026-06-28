@@ -10,6 +10,9 @@
 #include "nsWeakReference.h"
 #include "nsWrapperCache.h"
 #include "nsWeakReference.h"
+#include "nsIScriptError.h"
+#include "nsContentUtils.h"
+#include "nsPIDOMWindow.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/BindingDeclarations.h"
@@ -19,6 +22,49 @@
 
 namespace mozilla {
 namespace intl {
+
+// The state where the application contains incomplete localization resources
+// is much more common than for other types of core resources.
+//
+// In result, our localization is designed to handle missing resources
+// gracefully, and we need a more fine-tuned way to communicate those problems
+// to developers.
+//
+// In particular, we want developers and early adopters to be able to reason
+// about missing translations, without bothering end user in production, where
+// the user cannot react to that.
+//
+// We currently differentiate between nightly/dev-edition builds or automation
+// where we report the errors, and beta/release, where we silence them.
+[[maybe_unused]] static bool MaybeReportErrorsToGecko(
+    const nsTArray<nsCString>& aErrors, ErrorResult& aRv,
+    nsIGlobalObject* aGlobal) {
+  if (!aErrors.IsEmpty()) {
+    if (xpc::IsInAutomation()) {
+      aRv.ThrowInvalidStateError(aErrors.ElementAt(0));
+      return true;
+    }
+
+#if defined(NIGHTLY_BUILD) || defined(MOZ_DEV_EDITION) || defined(DEBUG)
+    dom::Document* doc = nullptr;
+    if (aGlobal) {
+      nsPIDOMWindowInner* innerWindow = aGlobal->AsInnerWindow();
+      if (innerWindow) {
+        doc = innerWindow->GetExtantDoc();
+      }
+    }
+
+    for (const auto& error : aErrors) {
+      nsContentUtils::ReportToConsoleNonLocalized(NS_ConvertUTF8toUTF16(error),
+                                                  nsIScriptError::warningFlag,
+                                                  "l10n"_ns, doc);
+      printf_stderr("%s\n", error.get());
+    }
+#endif
+  }
+
+  return false;
+}
 
 class Localization : public nsIObserver,
                      public nsWrapperCache,
@@ -34,12 +80,14 @@ class Localization : public nsIObserver,
 
   static already_AddRefed<Localization> Constructor(
       const dom::GlobalObject& aGlobal,
-      const dom::Sequence<nsCString>& aResourceIds, bool aIsSync,
-      const dom::Optional<dom::NonNull<L10nRegistry>>& aRegistry,
+      const dom::Sequence<dom::OwningUTF8StringOrResourceId>& aResourceIds,
+      bool aIsSync, const dom::Optional<dom::NonNull<L10nRegistry>>& aRegistry,
       const dom::Optional<dom::Sequence<nsCString>>& aLocales,
       ErrorResult& aRv);
   static already_AddRefed<Localization> Create(
       const nsTArray<nsCString>& aResourceIds, bool aIsSync);
+  static already_AddRefed<Localization> Create(
+      const nsTArray<ffi::GeckoResourceId>& aResourceIds, bool aIsSync);
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
@@ -69,16 +117,24 @@ class Localization : public nsIObserver,
       const dom::Sequence<dom::OwningUTF8StringOrL10nIdArgs>& aKeys,
       nsTArray<dom::Nullable<dom::L10nMessage>>& aRetVal, ErrorResult& aRv);
 
-  void AddResourceId(const nsACString& aResourceId);
-  uint32_t RemoveResourceId(const nsACString& aResourceId);
-  void AddResourceIds(const nsTArray<nsCString>& aResourceIds);
-  uint32_t RemoveResourceIds(const nsTArray<nsCString>& aResourceIds);
+  void AddResourceId(const ffi::GeckoResourceId& aResourceId);
+  void AddResourceId(const nsCString& aResourceId);
+  void AddResourceId(const dom::OwningUTF8StringOrResourceId& aResourceId);
+  uint32_t RemoveResourceId(const ffi::GeckoResourceId& aResourceId);
+  uint32_t RemoveResourceId(const nsCString& aResourceId);
+  uint32_t RemoveResourceId(
+      const dom::OwningUTF8StringOrResourceId& aResourceId);
+  void AddResourceIds(
+      const nsTArray<dom::OwningUTF8StringOrResourceId>& aResourceIds);
+  uint32_t RemoveResourceIds(
+      const nsTArray<dom::OwningUTF8StringOrResourceId>& aResourceIds);
 
   void SetAsync();
   bool IsSync();
 
  protected:
   Localization(const nsTArray<nsCString>& aResIds, bool aIsSync);
+  Localization(const nsTArray<ffi::GeckoResourceId>& aResIds, bool aIsSync);
   Localization(nsIGlobalObject* aGlobal, bool aIsSync);
 
   Localization(nsIGlobalObject* aGlobal, const nsTArray<nsCString>& aResIds,

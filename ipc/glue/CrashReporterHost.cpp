@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CrashReporterHost.h"
-#include "CrashReporterMetadataShmem.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/SyncRunnable.h"
@@ -52,10 +51,8 @@ namespace mozilla {
 namespace ipc {
 
 CrashReporterHost::CrashReporterHost(GeckoProcessType aProcessType,
-                                     const Shmem& aShmem,
                                      CrashReporter::ThreadId aThreadId)
     : mProcessType(aProcessType),
-      mShmem(aShmem),
       mThreadId(aThreadId),
       mStartTime(::time(nullptr)),
       mFinalized(false) {}
@@ -106,46 +103,44 @@ bool CrashReporterHost::FinalizeCrashReport() {
   MOZ_ASSERT(!mFinalized);
   MOZ_ASSERT(HasMinidump());
 
-  CrashReporter::AnnotationTable annotations;
-
-  annotations[CrashReporter::Annotation::ProcessType] =
+  mExtraAnnotations[CrashReporter::Annotation::ProcessType] =
       XRE_ChildProcessTypeToAnnotation(mProcessType);
 
   char startTime[32];
   SprintfLiteral(startTime, "%lld", static_cast<long long>(mStartTime));
-  annotations[CrashReporter::Annotation::StartupTime] =
+  mExtraAnnotations[CrashReporter::Annotation::StartupTime] =
       nsDependentCString(startTime);
 
-  // We might not have shmem (for example, when running crashreporter tests).
-  if (mShmem.IsReadable()) {
-    CrashReporterMetadataShmem::ReadAppNotes(mShmem, annotations);
-  }
-
-  MergeCrashAnnotations(mExtraAnnotations, annotations);
   CrashReporter::WriteExtraFile(mDumpID, mExtraAnnotations);
 
-  int32_t crashType = GetCrashType();
-  NotifyCrashService(mProcessType, crashType, mDumpID);
+  RecordCrash(mProcessType, GetCrashType(), mDumpID);
 
   mFinalized = true;
   return true;
 }
 
 /* static */
-void CrashReporterHost::NotifyCrashService(GeckoProcessType aProcessType,
-                                           int32_t aCrashType,
-                                           const nsString& aChildDumpID) {
+void CrashReporterHost::RecordCrash(GeckoProcessType aProcessType,
+                                    int32_t aCrashType,
+                                    const nsString& aChildDumpID) {
   if (!NS_IsMainThread()) {
     RefPtr<Runnable> runnable = NS_NewRunnableFunction(
-        "ipc::CrashReporterHost::NotifyCrashService", [&]() -> void {
-          CrashReporterHost::NotifyCrashService(aProcessType, aCrashType,
-                                                aChildDumpID);
+        "ipc::CrashReporterHost::RecordCrash", [&]() -> void {
+          CrashReporterHost::RecordCrash(aProcessType, aCrashType,
+                                         aChildDumpID);
         });
     RefPtr<nsIThread> mainThread = do_GetMainThread();
     SyncRunnable::DispatchToThread(mainThread, runnable);
     return;
   }
 
+  NotifyCrashService(aProcessType, aCrashType, aChildDumpID);
+}
+
+/* static */
+void CrashReporterHost::NotifyCrashService(GeckoProcessType aProcessType,
+                                           int32_t aCrashType,
+                                           const nsString& aChildDumpID) {
   MOZ_ASSERT(!aChildDumpID.IsEmpty());
 
   nsCOMPtr<nsICrashService> crashService =
@@ -164,22 +159,6 @@ void CrashReporterHost::NotifyCrashService(GeckoProcessType aProcessType,
     default:
       processType = (int)aProcessType;
       break;
-  }
-
-  if (!(aProcessType == GeckoProcessType_Plugin &&
-      aCrashType == nsICrashService::CRASH_TYPE_HANG)) {
-    switch (aProcessType) {
-#define GECKO_PROCESS_TYPE(enum_name, string_name, xre_name, bin_type) \
-  case GeckoProcessType_##enum_name:                                   \
-    break;
-#include "mozilla/GeckoProcessTypes.h"
-#undef GECKO_PROCESS_TYPE
-      // We can't really hit this, thanks to the above switch, but having it
-      // here will placate the compiler.
-      default:
-        NS_ERROR("unknown process type");
-        return;
-    }
   }
 
   RefPtr<Promise> promise;
@@ -207,7 +186,7 @@ void CrashReporterHost::AddAnnotation(CrashReporter::Annotation aKey,
 }
 
 void CrashReporterHost::AddAnnotation(CrashReporter::Annotation aKey,
-                                      const nsCString& aValue) {
+                                      const nsACString& aValue) {
   mExtraAnnotations[aKey] = aValue;
 }
 

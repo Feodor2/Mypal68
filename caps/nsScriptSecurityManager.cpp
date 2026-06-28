@@ -18,6 +18,7 @@
 #include "nspr.h"
 #include "nsJSPrincipals.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/ContentPrincipal.h"
 #include "ExpandedPrincipal.h"
 #include "SystemPrincipal.h"
 #include "DomainPolicy.h"
@@ -105,7 +106,7 @@ class BundleHelper {
   nsIStringBundle* GetOrCreateInternal() {
     if (!mBundle) {
       nsCOMPtr<nsIStringBundleService> bundleService =
-          mozilla::services::GetStringBundleService();
+          mozilla::components::StringBundle::Service();
       if (NS_WARN_IF(!bundleService)) {
         return nullptr;
       }
@@ -1224,10 +1225,10 @@ nsScriptSecurityManager::PrincipalWithOA(
     if (!aOriginAttributes.isObject() || !attrs.Init(aCx, aOriginAttributes)) {
       return NS_ERROR_INVALID_ARG;
     }
-    RefPtr<ContentPrincipal> copy = new ContentPrincipal();
     auto* contentPrincipal = static_cast<ContentPrincipal*>(aPrincipal);
-    nsresult rv = copy->Init(contentPrincipal, attrs);
-    NS_ENSURE_SUCCESS(rv, rv);
+    RefPtr<ContentPrincipal> copy =
+        new ContentPrincipal(contentPrincipal, attrs);
+    NS_ENSURE_TRUE(copy, NS_ERROR_FAILURE);
     copy.forget(aReturnPrincipal);
   } else {
     // We do this for null principals, system principals (both fine)

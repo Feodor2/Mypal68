@@ -30,4 +30,3 @@ pref("app.update.badgeWaitTime", 0);
 pref("devtools.selfxss.count", 5);
 
 pref("general.useragent.override.aliexpress.com", "Mozilla/5.0 (Windows NT 10; rv:91.0) Gecko/20100101 Firefox/91.0");
-pref("general.useragent.override.google.com", "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/110.0");

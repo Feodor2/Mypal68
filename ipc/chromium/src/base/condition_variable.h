@@ -81,8 +81,8 @@ enum class CVStatus2 { NoTimeout, Timeout };
 class ConditionVariable {
  public:
   // Construct a cv for use with ONLY one user lock.
-  explicit ConditionVariable(Lock& user_lock);
-  explicit ConditionVariable(Lock& user_lock, const char* aName);
+  explicit ConditionVariable(Lock2& user_lock);
+  explicit ConditionVariable(Lock2& user_lock, const char* aName);
 
   ~ConditionVariable();
 
@@ -159,10 +159,10 @@ class ConditionVariable {
   RunState run_state_;
 
   // Private critical section for access to member data.
-  Lock internal_lock_;
+  Lock2 internal_lock_;
 
   // Lock that is acquired before calling Wait().
-  Lock& user_lock_;
+  Lock2& user_lock_;
 
   // Events that threads are blocked on.
   Event waiting_list_;

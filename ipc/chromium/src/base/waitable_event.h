@@ -138,7 +138,7 @@ class WaitableEvent {
 
     bool Dequeue(Waiter* waiter, void* tag);
 
-    Lock lock_;
+    Lock2 lock_;
     const bool manual_reset_;
     bool signaled_;
     std::list<Waiter*> waiters_;

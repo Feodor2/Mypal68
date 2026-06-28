@@ -367,10 +367,10 @@ function waitForNewEngine(mm, basename, numImages) {
   }
   let eventPromises = expectedSearchEvents.map(e => waitForTestMsg(mm, e));
 
-  // Wait for addEngine().
+  // Wait for addOpenSearchEngine().
   let url = getRootDirectory(gTestPath) + basename;
   return Promise.all(
-    [Services.search.addEngine(url, "", false)].concat(eventPromises)
+    [Services.search.addOpenSearchEngine(url, "", false)].concat(eventPromises)
   );
 }
 

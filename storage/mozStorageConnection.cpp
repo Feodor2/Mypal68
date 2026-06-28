@@ -8,6 +8,7 @@
 #include "nsThreadUtils.h"
 #include "nsIFile.h"
 #include "nsIFileURL.h"
+#include "nsIThread.h" //MY
 #include "nsIXPConnect.h"
 #include "mozilla/Telemetry.h"
 #include "base/lock.h"
@@ -17,6 +18,7 @@
 #include "mozilla/Unused.h"
 #include "mozilla/dom/quota/QuotaObject.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_storage.h"
 
 #include "mozIStorageCompletionCallback.h"
@@ -256,7 +258,7 @@ class UnlockNotification {
   }
 
  private:
-  Lock mMutex;
+  Lock2 mMutex;
   ConditionVariable mCondVar;
   bool mSignaled;
 };

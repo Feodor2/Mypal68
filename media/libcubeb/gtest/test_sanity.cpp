@@ -215,7 +215,7 @@ TEST(cubeb, configure_stream)
 
   params.format = STREAM_FORMAT;
   params.rate = STREAM_RATE;
-  params.channels = 2; // panning
+  params.channels = 2;
   params.layout = CUBEB_LAYOUT_STEREO;
   params.prefs = CUBEB_STREAM_PREF_NONE;
 
@@ -225,9 +225,6 @@ TEST(cubeb, configure_stream)
   ASSERT_NE(stream, nullptr);
 
   r = cubeb_stream_set_volume(stream, 1.0f);
-  ASSERT_TRUE(r == 0 || r == CUBEB_ERROR_NOT_SUPPORTED);
-
-  r = cubeb_stream_set_panning(stream, 0.0f);
   ASSERT_TRUE(r == 0 || r == CUBEB_ERROR_NOT_SUPPORTED);
 
   cubeb_stream_destroy(stream);
@@ -247,7 +244,7 @@ TEST(cubeb, configure_stream_undefined_layout)
 
   params.format = STREAM_FORMAT;
   params.rate = STREAM_RATE;
-  params.channels = 2; // panning
+  params.channels = 2;
   params.layout = CUBEB_LAYOUT_UNDEFINED;
   params.prefs = CUBEB_STREAM_PREF_NONE;
 
@@ -640,6 +637,65 @@ TEST(cubeb, drain)
 
   got_drain = 0;
   do_drain = 0;
+}
+
+TEST(cubeb, device_reset)
+{
+  int r;
+  cubeb * ctx;
+  cubeb_stream * stream;
+  cubeb_stream_params params;
+  uint64_t position;
+
+  r = common_init(&ctx, "test_sanity");
+  ASSERT_EQ(r, CUBEB_OK);
+  ASSERT_NE(ctx, nullptr);
+
+  if (strcmp(cubeb_get_backend_id(ctx), "wasapi")) {
+    // cubeb_stream_reset_default_device is only useful and implemented in the
+    // WASAPI backend.
+    return;
+  }
+
+  params.format = STREAM_FORMAT;
+  params.rate = STREAM_RATE;
+  params.channels = STREAM_CHANNELS;
+  params.layout = STREAM_LAYOUT;
+  params.prefs = CUBEB_STREAM_PREF_NONE;
+
+  r = cubeb_stream_init(ctx, &stream, "test", NULL, NULL, NULL, &params, STREAM_LATENCY,
+                        test_data_callback, test_state_callback, &dummy);
+  ASSERT_EQ(r, CUBEB_OK);
+  ASSERT_NE(stream, nullptr);
+
+  r = cubeb_stream_start(stream);
+  ASSERT_EQ(r, CUBEB_OK);
+
+  uint32_t iterations = 5;
+  uint64_t previous_position = 0;
+  while (iterations--) {
+    r = cubeb_stream_get_position(stream, &position);
+    ASSERT_EQ(r, CUBEB_OK);
+    ASSERT_GE(position, previous_position);
+    previous_position = position;
+    delay(100);
+  }
+
+  r = cubeb_stream_reset_default_device(stream);
+  ASSERT_EQ(r, CUBEB_OK);
+
+  iterations = 5;
+  while (iterations--) {
+    r = cubeb_stream_get_position(stream, &position);
+    ASSERT_EQ(r, CUBEB_OK);
+    ASSERT_GE(position, previous_position);
+    previous_position = position;
+    delay(100);
+  }
+
+  cubeb_stream_stop(stream);
+  cubeb_stream_destroy(stream);
+  cubeb_destroy(ctx);
 }
 
 TEST(cubeb, DISABLED_eos_during_prefill)

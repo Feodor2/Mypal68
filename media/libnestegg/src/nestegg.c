@@ -3074,55 +3074,6 @@ nestegg_packet_additional_data(nestegg_packet * pkt, unsigned int id,
 }
 
 int
-nestegg_packet_encryption(nestegg_packet * pkt)
-{
-  struct frame * f = pkt->frame;
-  unsigned char encrypted_bit;
-  unsigned char partitioned_bit;
-
-  if (!f->frame_encryption)
-    return NESTEGG_PACKET_HAS_SIGNAL_BYTE_FALSE;
-
-  /* Should never have parsed blocks with both encryption and lacing */
-  assert(f->next == NULL);
-
-  encrypted_bit = f->frame_encryption->signal_byte & ENCRYPTED_BIT_MASK;
-  partitioned_bit = f->frame_encryption->signal_byte & PARTITIONED_BIT_MASK;
-
-  if (encrypted_bit != PACKET_ENCRYPTED)
-    return NESTEGG_PACKET_HAS_SIGNAL_BYTE_UNENCRYPTED;
-
-  if (partitioned_bit == PACKET_PARTITIONED)
-    return NESTEGG_PACKET_HAS_SIGNAL_BYTE_PARTITIONED;
-
-  return NESTEGG_PACKET_HAS_SIGNAL_BYTE_ENCRYPTED;
-}
-
-int
-nestegg_packet_iv(nestegg_packet * pkt, unsigned char const ** iv, size_t * length)
-{
-  struct frame * f = pkt->frame;
-  unsigned char encrypted_bit;
-
-  *iv = NULL;
-  *length = 0;
-  if (!f->frame_encryption)
-    return -1;
-
-  /* Should never have parsed blocks with both encryption and lacing */
-  assert(f->next == NULL);
-
-  encrypted_bit = f->frame_encryption->signal_byte & ENCRYPTED_BIT_MASK;
-
-  if (encrypted_bit != PACKET_ENCRYPTED)
-    return 0;
-
-  *iv = f->frame_encryption->iv;
-  *length = f->frame_encryption->length;
-  return 0;
-}
-
-int
 nestegg_packet_offsets(nestegg_packet * pkt,
                        uint32_t const ** partition_offsets,
                        uint8_t * num_partitions)

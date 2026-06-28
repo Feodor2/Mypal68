@@ -77,7 +77,6 @@ if CONFIG["OS_TARGET"] == "Android":
 
 if CONFIG["OS_TARGET"] == "Darwin":
 
-    DEFINES["CR_XCODE_VERSION"] = "0920"
     DEFINES["NO_TCMALLOC"] = True
     DEFINES["WEBRTC_CODEC_ISAC"] = True
     DEFINES["WEBRTC_MAC"] = True
@@ -191,6 +190,18 @@ if CONFIG["CPU_ARCH"] == "arm":
         "/media/webrtc/trunk/webrtc/modules/audio_coding/codecs/isac/fix/include/"
     ]
 
+if CONFIG["CPU_ARCH"] == "mips64":
+
+    DEFINES["WEBRTC_CODEC_ISAC"] = True
+
+    LOCAL_INCLUDES += [
+        "/media/webrtc/trunk/webrtc/modules/audio_coding/codecs/isac/main/include/"
+    ]
+
+    OS_LIBS += [
+        "m"
+    ]
+
 if CONFIG["CPU_ARCH"] == "ppc64":
 
     DEFINES["WEBRTC_CODEC_ISAC"] = True
@@ -254,6 +265,14 @@ if CONFIG["CPU_ARCH"] == "x86_64" and CONFIG["OS_TARGET"] == "Android":
     LOCAL_INCLUDES += [
         "/media/webrtc/trunk/webrtc/modules/audio_coding/codecs/isac/main/include/"
     ]
+
+if CONFIG["CPU_ARCH"] == "aarch64" and CONFIG["OS_TARGET"] == "Darwin":
+
+    DEFINES["CR_XCODE_VERSION"] = "0120"
+
+if CONFIG["CPU_ARCH"] == "x86_64" and CONFIG["OS_TARGET"] == "Darwin":
+
+    DEFINES["CR_XCODE_VERSION"] = "0920"
 
 if CONFIG["CPU_ARCH"] == "aarch64" and CONFIG["OS_TARGET"] == "FreeBSD":
 

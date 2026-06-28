@@ -419,31 +419,6 @@ int nestegg_packet_additional_data(nestegg_packet * packet, unsigned int id,
 int nestegg_packet_discard_padding(nestegg_packet * packet,
                                    int64_t * discard_padding);
 
-/** Query if a packet is encrypted.
-    @param packet Packet initialized by #nestegg_read_packet.
-    @retval  #NESTEGG_PACKET_HAS_SIGNAL_BYTE_FALSE No signal byte, encryption
-             information not read from packet.
-    @retval  #NESTEGG_PACKET_HAS_SIGNAL_BYTE_UNENCRYPTED Encrypted bit not
-             set, encryption information not read from packet.
-    @retval  #NESTEGG_PACKET_HAS_SIGNAL_BYTE_ENCRYPTED Encrypted bit set,
-             encryption infomation read from packet.
-    @retval  #NESTEGG_PACKET_HAS_SIGNAL_BYTE_PARTITIONED Partitioned bit set,
-             encryption and parition information read from packet.
-    @retval -1 Error.*/
-int nestegg_packet_encryption(nestegg_packet * packet);
-
-/** Query the IV for an encrypted packet. Expects a packet from an encrypted
-    track, and will return error if given a packet that has no signal btye.
-    @param packet Packet initialized by #nestegg_read_packet.
-    @param iv     Storage for queried iv.
-    @param length Length of returned iv, may be 0.
-                  The data is owned by the #nestegg_packet packet.
-    @retval  0 Success.
-    @retval -1 Error.
-  */
-int nestegg_packet_iv(nestegg_packet * packet, unsigned char const ** iv,
-                      size_t * length);
-
 /** Query the packet for offsets.
 @param packet            Packet initialized by #nestegg_read_packet.
 @param partition_offsets Storage for queried offsets.

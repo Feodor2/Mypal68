@@ -58,7 +58,6 @@ if CONFIG["OS_TARGET"] == "Android":
 
 if CONFIG["OS_TARGET"] == "Darwin":
 
-    DEFINES["CR_XCODE_VERSION"] = "0920"
     DEFINES["NO_TCMALLOC"] = True
     DEFINES["WEBRTC_MAC"] = True
     DEFINES["WEBRTC_POSIX"] = True
@@ -156,6 +155,15 @@ if CONFIG["CPU_ARCH"] == "arm":
     DEFINES["WEBRTC_USE_BUILTIN_ISAC_FIX"] = "1"
     DEFINES["WEBRTC_USE_BUILTIN_ISAC_FLOAT"] = "0"
 
+if CONFIG["CPU_ARCH"] == "mips64":
+
+    DEFINES["WEBRTC_USE_BUILTIN_ISAC_FIX"] = "0"
+    DEFINES["WEBRTC_USE_BUILTIN_ISAC_FLOAT"] = "1"
+
+    OS_LIBS += [
+        "m"
+    ]
+
 if CONFIG["CPU_ARCH"] == "ppc64":
 
     DEFINES["WEBRTC_USE_BUILTIN_ISAC_FIX"] = "0"
@@ -203,6 +211,14 @@ if CONFIG["CPU_ARCH"] == "x86_64" and CONFIG["OS_TARGET"] == "Android":
 
     DEFINES["WEBRTC_USE_BUILTIN_ISAC_FIX"] = "0"
     DEFINES["WEBRTC_USE_BUILTIN_ISAC_FLOAT"] = "1"
+
+if CONFIG["CPU_ARCH"] == "aarch64" and CONFIG["OS_TARGET"] == "Darwin":
+
+    DEFINES["CR_XCODE_VERSION"] = "0120"
+
+if CONFIG["CPU_ARCH"] == "x86_64" and CONFIG["OS_TARGET"] == "Darwin":
+
+    DEFINES["CR_XCODE_VERSION"] = "0920"
 
 if CONFIG["CPU_ARCH"] == "aarch64" and CONFIG["OS_TARGET"] == "FreeBSD":
 

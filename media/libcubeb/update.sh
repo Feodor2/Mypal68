@@ -10,14 +10,12 @@ cp $1/AUTHORS .
 cp $1/LICENSE .
 cp $1/README.md .
 cp $1/include/cubeb/cubeb.h include
-cp $1/src/android/audiotrack_definitions.h src/android
 cp $1/src/android/sles_definitions.h src/android
 cp $1/src/cubeb-internal.h src
 cp $1/src/cubeb-speex-resampler.h src
 cp $1/src/cubeb.c src
 cp $1/src/cubeb_alsa.c src
 cp $1/src/cubeb_array_queue.h src
-cp $1/src/cubeb_audiotrack.c src
 cp $1/src/cubeb_audiounit.cpp src
 cp $1/src/cubeb_jack.cpp src
 cp $1/src/cubeb_log.cpp src
@@ -41,6 +39,7 @@ cp $1/src/cubeb_ringbuffer.h src
 cp $1/src/cubeb_sndio.c src
 cp $1/src/cubeb_strings.c src
 cp $1/src/cubeb_strings.h src
+cp $1/src/cubeb_sun.c src
 cp $1/src/cubeb_utils.h src
 cp $1/src/cubeb_utils.cpp src
 cp $1/src/cubeb_utils_unix.h src
@@ -87,6 +86,3 @@ if [ -n "$rev" ]; then
 else
   echo "Remember to update moz.yaml with the version details."
 fi
-
-echo "Applying disable-assert.patch on top of $rev"
-patch -p3 < disable-assert.patch

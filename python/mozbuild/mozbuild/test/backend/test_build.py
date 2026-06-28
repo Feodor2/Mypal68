@@ -26,6 +26,7 @@ from tempfile import mkdtemp
 
 BASE_SUBSTS = [
     ('PYTHON', mozpath.normsep(sys.executable)),
+    ('PYTHON3', mozpath.normsep(sys.executable)),
     ('MOZ_UI_LOCALE', 'en-US'),
 ]
 
@@ -151,11 +152,8 @@ class TestBuild(unittest.TestCase):
         test_path = os.sep.join(('$SRCDIR', 'python', 'mozbuild', 'mozbuild',
                                  'test', 'backend', 'data', 'build')) + os.sep
 
-        # We want unicode instances out of the files, because having plain str
-        # makes assertEqual diff output in case of error extra verbose because
-        # of the difference in type.
         result = {
-            p: f.open().read().decode('utf-8')
+            p: f.open(mode='r').read()
             for p, f in FileFinder(mozpath.join(config.topobjdir, 'dist'))
         }
         self.assertTrue(len(result))

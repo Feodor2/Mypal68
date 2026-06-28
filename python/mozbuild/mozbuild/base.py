@@ -4,6 +4,7 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+import io
 import json
 import logging
 import mozpack.path as mozpath
@@ -13,13 +14,9 @@ import six
 import subprocess
 import sys
 import errno
-try:
-    from shutil import which
-except ImportError:
-    # shutil.which is not available in Python 2.7
-    import which
 
 from mach.mixin.process import ProcessExecutionMixin
+from mozfile import which
 from mozversioncontrol import (
     get_repository_from_build_config,
     get_repository_object,
@@ -28,7 +25,10 @@ from mozversioncontrol import (
     InvalidRepoPath,
 )
 
-from .backend.configenvironment import ConfigEnvironment
+from .backend.configenvironment import (
+    ConfigEnvironment,
+    ConfigStatusFailure,
+)
 from .configure import ConfigureSandbox
 from .controller.clobber import Clobberer
 from .mozconfig import (
@@ -55,7 +55,10 @@ def ancestors(path):
 
 
 def samepath(path1, path2):
-    if hasattr(os.path, 'samefile'):
+    # Under Python 3 (but NOT Python 2), MozillaBuild exposes the
+    # os.path.samefile function despite it not working, so only use it if we're
+    # not running under Windows.
+    if hasattr(os.path, 'samefile') and os.name != 'nt':
         return os.path.samefile(path1, path2)
     return os.path.normcase(os.path.realpath(path1)) == \
         os.path.normcase(os.path.realpath(path2))
@@ -65,7 +68,7 @@ class BadEnvironmentException(Exception):
     """Base class for errors raised when the build environment is not sane."""
 
 
-class BuildEnvironmentNotFoundException(BadEnvironmentException):
+class BuildEnvironmentNotFoundException(BadEnvironmentException, AttributeError):
     """Raised when we could not find a build environment."""
 
 
@@ -110,7 +113,7 @@ class MozbuildObject(ProcessExecutionMixin):
         self._virtualenv_manager = None
 
     @classmethod
-    def from_environment(cls, cwd=None, detect_virtualenv_mozinfo=True):
+    def from_environment(cls, cwd=None, detect_virtualenv_mozinfo=True, **kwargs):
         """Create a MozbuildObject by detecting the proper one from the env.
 
         This examines environment state like the current working directory and
@@ -143,7 +146,7 @@ class MozbuildObject(ProcessExecutionMixin):
         mozconfig = MozconfigLoader.AUTODETECT
 
         def load_mozinfo(path):
-            info = json.load(open(path, 'rt'))
+            info = json.load(io.open(path, 'rt', encoding='utf-8'))
             topsrcdir = info.get('topsrcdir')
             topobjdir = os.path.dirname(path)
             mozconfig = info.get('mozconfig')
@@ -187,7 +190,7 @@ class MozbuildObject(ProcessExecutionMixin):
         # If we can't resolve topobjdir, oh well. We'll figure out when we need
         # one.
         return cls(topsrcdir, None, None, topobjdir=topobjdir,
-                   mozconfig=mozconfig)
+                   mozconfig=mozconfig, **kwargs)
 
     def resolve_mozconfig_topobjdir(self, default=None):
         topobjdir = self.mozconfig['topobjdir'] or default
@@ -212,7 +215,7 @@ class MozbuildObject(ProcessExecutionMixin):
             return True
 
         deps = []
-        with open(dep_file, 'r') as fh:
+        with io.open(dep_file, 'r', encoding='utf-8', newline='\n') as fh:
             deps = fh.read().splitlines()
 
         mtime = os.path.getmtime(output)
@@ -237,7 +240,7 @@ class MozbuildObject(ProcessExecutionMixin):
         # we last built the backend, re-generate the backend if
         # so.
         outputs = []
-        with open(backend_file, 'r') as fh:
+        with io.open(backend_file, 'r', encoding='utf-8', newline='\n') as fh:
             outputs = fh.read().splitlines()
         for output in outputs:
             if not os.path.isfile(mozpath.join(self.topobjdir, output)):
@@ -257,10 +260,13 @@ class MozbuildObject(ProcessExecutionMixin):
     @property
     def virtualenv_manager(self):
         if self._virtualenv_manager is None:
+            name = "init"
+            if six.PY3:
+                name += "_py3"
             self._virtualenv_manager = VirtualenvManager(
                 self.topsrcdir,
                 self.topobjdir,
-                os.path.join(self.topobjdir, '_virtualenvs', 'init'),
+                os.path.join(self.topobjdir, '_virtualenvs', name),
                 sys.stdout,
                 os.path.join(self.topsrcdir, 'build', 'virtualenv_packages.txt')
                 )
@@ -340,8 +346,12 @@ class MozbuildObject(ProcessExecutionMixin):
         if not os.path.exists(config_status) or not os.path.getsize(config_status):
             raise BuildEnvironmentNotFoundException('config.status not available. Run configure.')
 
-        self._config_environment = \
-            ConfigEnvironment.from_config_status(config_status)
+        try:
+            self._config_environment = \
+                ConfigEnvironment.from_config_status(config_status)
+        except ConfigStatusFailure as e:
+            six.raise_from(BuildEnvironmentNotFoundException(
+                'config.status is outdated or broken. Run configure.'), e)
 
         return self._config_environment
 
@@ -560,17 +570,16 @@ class MozbuildObject(ProcessExecutionMixin):
 
         try:
             if sys.platform.startswith('darwin'):
-                try:
-                    notifier = which.which('terminal-notifier')
-                except which.WhichError:
+                notifier = which('terminal-notifier')
+                if not notifier:
                     raise Exception('Install terminal-notifier to get '
                                     'a notification when the build finishes.')
                 self.run_process([notifier, '-title',
                                   'Mozilla Build System', '-group', 'mozbuild',
                                   '-message', msg], ensure_exit_code=False)
             elif sys.platform.startswith('win'):
-                from ctypes import Structure, windll, POINTER, sizeof
-                from ctypes.wintypes import DWORD, HANDLE, WINFUNCTYPE, BOOL, UINT
+                from ctypes import Structure, windll, POINTER, sizeof, WINFUNCTYPE
+                from ctypes.wintypes import DWORD, HANDLE, BOOL, UINT
 
                 class FLASHWINDOW(Structure):
                     _fields_ = [("cbSize", UINT),
@@ -595,9 +604,8 @@ class MozbuildObject(ProcessExecutionMixin):
                                      FLASHW_CAPTION | FLASHW_TRAY | FLASHW_TIMERNOFG, 3, 0)
                 FlashWindowEx(params)
             else:
-                try:
-                    notifier = which.which('notify-send')
-                except which.WhichError:
+                notifier = which('notify-send')
+                if not notifier:
                     raise Exception('Install notify-send (usually part of '
                                     'the libnotify package) to get a notification when '
                                     'the build finishes.')
@@ -605,7 +613,7 @@ class MozbuildObject(ProcessExecutionMixin):
                                   'Mozilla Build System', msg], ensure_exit_code=False)
         except Exception as e:
             self.log(logging.WARNING, 'notifier-failed',
-                     {'error': e.message}, 'Notification center failed: {error}')
+                     {'error': str(e)}, 'Notification center failed: {error}')
 
     def _ensure_objdir_exists(self):
         if os.path.isdir(self.statedir):
@@ -712,7 +720,7 @@ class MozbuildObject(ProcessExecutionMixin):
             fn = self._run_command_in_srcdir
 
         append_env = dict(append_env or ())
-        append_env[b'MACH'] = '1'
+        append_env['MACH'] = '1'
 
         params = {
             'args': args,
@@ -764,9 +772,8 @@ class MozbuildObject(ProcessExecutionMixin):
             if os.path.isabs(test):
                 make = test
             else:
-                try:
-                    make = which.which(test)
-                except which.WhichError:
+                make = which(test)
+                if not make:
                     continue
             result, xcode_lisense_error_tmp = validate_make(make)
             if result:
@@ -876,16 +883,7 @@ class MachCommandBase(MozbuildObject):
             sys.exit(1)
 
         except MozconfigLoadException as e:
-            print('Error loading mozconfig: ' + e.path)
-            print('')
-            print(e.message)
-            if e.output:
-                print('')
-                print('mozconfig output:')
-                print('')
-                for line in e.output:
-                    print(line)
-
+            print(e)
             sys.exit(1)
 
         MozbuildObject.__init__(self, topsrcdir, context.settings,
@@ -900,20 +898,11 @@ class MachCommandBase(MozbuildObject):
             self.mozconfig
 
         except MozconfigFindException as e:
-            print(e.message)
+            print(e)
             sys.exit(1)
 
         except MozconfigLoadException as e:
-            print('Error loading mozconfig: ' + e.path)
-            print('')
-            print(e.message)
-            if e.output:
-                print('')
-                print('mozconfig output:')
-                print('')
-                for line in e.output:
-                    print(line)
-
+            print(e)
             sys.exit(1)
 
         # Always keep a log of the last command, but don't do that for mach
@@ -924,10 +913,10 @@ class MachCommandBase(MozbuildObject):
             self._ensure_state_subdir_exists('.')
             logfile = self._get_state_filename('last_log.json')
             try:
-                fd = open(logfile, "wb")
+                fd = open(logfile, 'wt')
                 self.log_manager.add_json_handler(fd)
             except Exception as e:
-                self.log(logging.WARNING, 'mach', {'error': e},
+                self.log(logging.WARNING, 'mach', {'error': str(e)},
                          'Log will not be kept for this command: {error}.')
 
 
@@ -967,6 +956,12 @@ class MachCommandConditions(object):
     def is_firefox_or_android(cls):
         """Must have a Firefox or Android build."""
         return MachCommandConditions.is_firefox(cls) or MachCommandConditions.is_android(cls)
+
+    @staticmethod
+    def has_build(cls):
+        """Must have a build."""
+        return (MachCommandConditions.is_firefox_or_android(cls) or
+                MachCommandConditions.is_thunderbird(cls))
 
     @staticmethod
     def is_hg(cls):

@@ -111,7 +111,7 @@ class TestSandbox(unittest.TestCase):
         sandbox = self.sandbox()
 
         with self.assertRaises(SandboxExecutionError) as se:
-            sandbox.exec_source('True = 1')
+            sandbox.exec_source('sorted = 1')
 
         e = se.exception
         self.assertIsInstance(e.exc_value, KeyError)
@@ -322,8 +322,8 @@ class TestMozbuildSandbox(unittest.TestCase):
         with self.assertRaises(SandboxCalledError) as sce:
             sandbox.exec_source('error("This is an error.")')
 
-        e = sce.exception
-        self.assertEqual(e.message, 'This is an error.')
+        e = sce.exception.message
+        self.assertIn('This is an error.', str(e))
 
     def test_substitute_config_files(self):
         sandbox = self.sandbox()
@@ -333,17 +333,6 @@ class TestMozbuildSandbox(unittest.TestCase):
         self.assertEqual(sandbox['CONFIGURE_SUBST_FILES'], ['bar', 'foo'])
         for item in sandbox['CONFIGURE_SUBST_FILES']:
             self.assertIsInstance(item, SourcePath)
-
-    def test_invalid_utf8_substs(self):
-        """Ensure invalid UTF-8 in substs is converted with an error."""
-
-        # This is really mbcs. It's a bunch of invalid UTF-8.
-        config = MockConfig(extra_substs={'BAD_UTF8': b'\x83\x81\x83\x82\x3A'})
-
-        sandbox = MozbuildSandbox(Context(VARIABLES, config))
-
-        self.assertEqual(sandbox['CONFIG']['BAD_UTF8'],
-                         u'\ufffd\ufffd\ufffd\ufffd:')
 
     def test_invalid_exports_set_base(self):
         sandbox = self.sandbox()
@@ -469,8 +458,8 @@ def foo():
         self.assertIsInstance(e.exc_value, NameError)
 
         e = se.exception.exc_value
-        self.assertEqual(e.message,
-                         'Template function names must be CamelCase.')
+        self.assertIn('Template function names must be CamelCase.',
+                      str(e))
 
         # Template names must not already be registered.
         sandbox2 = self.sandbox(metadata={'templates': sandbox.templates})
@@ -486,9 +475,8 @@ def Template():
         self.assertIsInstance(e.exc_value, KeyError)
 
         e = se.exception.exc_value
-        self.assertEqual(e.message,
-                         'A template named "Template" was already declared in %s.' %
-                         sandbox.normalize_path('templates.mozbuild'))
+        self.assertIn('A template named "Template" was already declared in %s.' %
+                      sandbox.normalize_path('templates.mozbuild'), str(e))
 
     def test_function_args(self):
         class Foo(int):

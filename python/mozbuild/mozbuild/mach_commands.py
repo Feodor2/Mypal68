@@ -33,6 +33,8 @@ from mozbuild.base import (
     MozbuildObject,
 )
 
+here = os.path.abspath(os.path.dirname(__file__))
+
 EXCESSIVE_SWAP_MESSAGE = '''
 ===================
 PERFORMANCE WARNING
@@ -335,7 +337,7 @@ class Warnings(MachCommandBase):
             dirpath = None
 
         type_counts = database.type_counts(dirpath)
-        sorted_counts = sorted(type_counts.iteritems(),
+        sorted_counts = sorted(type_counts.items(),
                                key=operator.itemgetter(1))
 
         total = 0
@@ -415,27 +417,37 @@ class GTestCommands(MachCommandBase):
                      help='Output test results in a format that can be parsed by TBPL.')
     @CommandArgument('--shuffle', '-s', action='store_true',
                      help='Randomize the execution order of tests.')
+    @CommandArgument('--enable-webrender', action='store_true',
+                     default=False, dest='enable_webrender',
+                     help='Enable the WebRender compositor in Gecko.')
+    @CommandArgumentGroup('Android')
     @CommandArgument('--package',
                      default='org.mozilla.geckoview.test',
-                     help='(Android only) Package name of test app.')
+                     group='Android',
+                     help='Package name of test app.')
     @CommandArgument('--adbpath',
                      dest='adb_path',
-                     help='(Android only) Path to adb binary.')
+                     group='Android',
+                     help='Path to adb binary.')
     @CommandArgument('--deviceSerial',
                      dest='device_serial',
-                     help="(Android only) adb serial number of remote device. "
+                     group='Android',
+                     help="adb serial number of remote device. "
                      "Required when more than one device is connected to the host. "
                      "Use 'adb devices' to see connected devices.")
     @CommandArgument('--remoteTestRoot',
                      dest='remote_test_root',
-                     help='(Android only) Remote directory to use as test root '
+                     group='Android',
+                     help='Remote directory to use as test root '
                      '(eg. /mnt/sdcard/tests or /data/local/tests).')
     @CommandArgument('--libxul',
                      dest='libxul_path',
-                     help='(Android only) Path to gtest libxul.so.')
-    @CommandArgument('--enable-webrender', action='store_true',
-                     default=False, dest='enable_webrender',
-                     help='Enable the WebRender compositor in Gecko.')
+                     group='Android',
+                     help='Path to gtest libxul.so.')
+    @CommandArgument('--no-install', action='store_true',
+                     default=False,
+                     group='Android',
+                     help='Skip the installation of the APK.')
     @CommandArgumentGroup('debugging')
     @CommandArgument('--debug', action='store_true', group='debugging',
                      help='Enable the debugger. Not specifying a --debugger option will result in '
@@ -446,9 +458,9 @@ class GTestCommands(MachCommandBase):
                      group='debugging',
                      help='Command-line arguments to pass to the debugger itself; '
                      'split as the Bourne shell would.')
-    def gtest(self, shuffle, jobs, gtest_filter, tbpl_parser,
-              package, adb_path, device_serial, remote_test_root, libxul_path,
-              enable_webrender, debug, debugger, debugger_args):
+    def gtest(self, shuffle, jobs, gtest_filter, tbpl_parser, enable_webrender,
+              package, adb_path, device_serial, remote_test_root, libxul_path, no_install,
+              debug, debugger, debugger_args):
 
         # We lazy build gtest because it's slow to link
         try:
@@ -486,9 +498,9 @@ class GTestCommands(MachCommandBase):
             return self.android_gtest(cwd, shuffle, gtest_filter,
                                       package, adb_path, device_serial,
                                       remote_test_root, libxul_path,
-                                      enable_webrender)
+                                      enable_webrender, not no_install)
 
-        if package or adb_path or device_serial or remote_test_root or libxul_path:
+        if package or adb_path or device_serial or remote_test_root or libxul_path or no_install:
             print("One or more Android-only options will be ignored")
 
         app_path = self.get_binary_path('app')
@@ -572,7 +584,7 @@ class GTestCommands(MachCommandBase):
 
     def android_gtest(self, test_dir, shuffle, gtest_filter,
                       package, adb_path, device_serial, remote_test_root, libxul_path,
-                      enable_webrender):
+                      enable_webrender, install):
         # setup logging for mozrunner
         from mozlog.commandline import setup_logging
         format_args = {'level': self._mach_context.settings['test']['level']}
@@ -581,7 +593,7 @@ class GTestCommands(MachCommandBase):
 
         # ensure that a device is available and test app is installed
         from mozrunner.devices.android_device import (verify_android_device, get_adb_path)
-        verify_android_device(self, install=True, app=package, device_serial=device_serial)
+        verify_android_device(self, install=install, app=package, device_serial=device_serial)
 
         if not adb_path:
             adb_path = get_adb_path(self)
@@ -661,13 +673,16 @@ class Package(MachCommandBase):
 class Install(MachCommandBase):
     """Install a package."""
 
-    @Command('install-desktop', category='post-build',
-             conditional_name='install',
-             conditions=[conditions.is_not_android],
-             description='Install the package on the machine.')
+    @Command('install', category='post-build',
+             conditions=[conditions.has_build],
+             description='Install the package on the machine (or device in the case of Android).')
     @CommandArgument('--verbose', '-v', action='store_true',
-                     help='Print verbose output when installing to an Android emulator.')
+                     help='Print verbose output when installing.')
     def install(self, verbose=False):
+        if conditions.is_android(self):
+            from mozrunner.devices.android_device import verify_android_device
+            verify_android_device(self, verbose=verbose)
+
         ret = self._run_make(directory=".", target='install', ensure_exit_code=False)
         if ret == 0:
             self.notify('Install complete')
@@ -685,68 +700,190 @@ single quoted to force them to be strings.
     ]
 
 
+def _get_android_run_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--app', default='org.mozilla.geckoview_example',
+                        help='Android package to run '
+                             '(default: org.mozilla.geckoview_example)')
+    parser.add_argument('--intent', default='android.intent.action.VIEW',
+                        help='Android intent action to launch with '
+                             '(default: android.intent.action.VIEW)')
+    parser.add_argument('--setenv', dest='env', action='append', default=[],
+                        help='Set target environment variable, like FOO=BAR')
+    parser.add_argument('--profile', '-P', default=None,
+                        help='Path to Gecko profile, like /path/to/host/profile '
+                             'or /path/to/target/profile')
+    parser.add_argument('--url', default=None,
+                        help='URL to open')
+    parser.add_argument('--no-install', action='store_true', default=False,
+                        help='Do not try to install application on device before running '
+                             '(default: False)')
+    parser.add_argument('--no-wait', action='store_true', default=False,
+                        help='Do not wait for application to start before returning '
+                             '(default: False)')
+    parser.add_argument('--fail-if-running', action='store_true', default=False,
+                        help='Fail if application is already running (default: False)')
+    parser.add_argument('--restart', action='store_true', default=False,
+                        help='Stop the application if it is already running (default: False)')
+    return parser
+
+
+def _get_desktop_run_parser():
+    parser = argparse.ArgumentParser()
+    group = parser.add_argument_group('the compiled program')
+    group.add_argument('params', nargs='...', default=[],
+                       help='Command-line arguments to be passed through to the program. Not '
+                       'specifying a --profile or -P option will result in a temporary profile '
+                       'being used.')
+    group.add_argument('--remote', '-r', action='store_true',
+                       help='Do not pass the --no-remote argument by default.')
+    group.add_argument('--background', '-b', action='store_true',
+                       help='Do not pass the --foreground argument by default on Mac.')
+    group.add_argument('--noprofile', '-n', action='store_true',
+                       help='Do not pass the --profile argument by default.')
+    group.add_argument('--disable-e10s', action='store_true',
+                       help='Run the program with electrolysis disabled.')
+    group.add_argument('--enable-crash-reporter', action='store_true',
+                       help='Run the program with the crash reporter enabled.')
+    group.add_argument('--setpref', action='append', default=[],
+                       help='Set the specified pref before starting the program. Can be set '
+                       'multiple times. Prefs can also be set in ~/.mozbuild/machrc in the '
+                       '[runprefs] section - see `./mach settings` for more information.')
+    group.add_argument('--temp-profile', action='store_true',
+                       help='Run the program using a new temporary profile created inside '
+                       'the objdir.')
+    group.add_argument('--macos-open', action='store_true',
+                       help="On macOS, run the program using the open(1) command. Per open(1), "
+                       "the browser is launched \"just as if you had double-clicked the file's "
+                       "icon\". The browser can not be launched under a debugger with this "
+                       "option.")
+
+    group = parser.add_argument_group('debugging')
+    group.add_argument('--debug', action='store_true',
+                       help='Enable the debugger. Not specifying a --debugger option will result '
+                       'in the default debugger being used.')
+    group.add_argument('--debugger', default=None, type=str,
+                       help='Name of debugger to use.')
+    group.add_argument('--debugger-args', default=None, metavar='params', type=str,
+                       help='Command-line arguments to pass to the debugger itself; '
+                       'split as the Bourne shell would.')
+    group.add_argument('--debugparams', action=StoreDebugParamsAndWarnAction,
+                       default=None, type=str, dest='debugger_args',
+                       help=argparse.SUPPRESS)
+
+    group = parser.add_argument_group('DMD')
+    group.add_argument('--dmd', action='store_true',
+                       help='Enable DMD. The following arguments have no effect without this.')
+    group.add_argument('--mode', choices=['live', 'dark-matter', 'cumulative', 'scan'],
+                       help='Profiling mode. The default is \'dark-matter\'.')
+    group.add_argument('--stacks', choices=['partial', 'full'],
+                       help='Allocation stack trace coverage. The default is \'partial\'.')
+    group.add_argument('--show-dump-stats', action='store_true',
+                       help='Show stats when doing dumps.')
+
+    return parser
+
+
+def setup_run_parser():
+    build = MozbuildObject.from_environment(cwd=here)
+    if conditions.is_android(build):
+        return _get_android_run_parser()
+    return _get_desktop_run_parser()
+
+
 @CommandProvider
 class RunProgram(MachCommandBase):
     """Run the compiled program."""
 
-    prog_group = 'the compiled program'
-
-    @Command('run-desktop', category='post-build',
-             conditional_name='run',
-             conditions=[conditions.is_not_android],
+    @Command('run', category='post-build',
+             conditions=[conditions.has_build],
+             parser=setup_run_parser,
              description='Run the compiled program, possibly under a debugger or DMD.')
-    @CommandArgument('params', nargs='...', group=prog_group,
-                     help='Command-line arguments to be passed through to the program. Not '
-                     'specifying a --profile or -P option will result in a temporary profile '
-                     'being used.')
-    @CommandArgumentGroup(prog_group)
-    @CommandArgument('--remote', '-r', action='store_true', group=prog_group,
-                     help='Do not pass the --no-remote argument by default.')
-    @CommandArgument('--background', '-b', action='store_true', group=prog_group,
-                     help='Do not pass the --foreground argument by default on Mac.')
-    @CommandArgument('--noprofile', '-n', action='store_true', group=prog_group,
-                     help='Do not pass the --profile argument by default.')
-    @CommandArgument('--disable-e10s', action='store_true', group=prog_group,
-                     help='Run the program with electrolysis disabled.')
-    @CommandArgument('--enable-crash-reporter', action='store_true', group=prog_group,
-                     help='Run the program with the crash reporter enabled.')
-    @CommandArgument('--setpref', action='append', default=[], group=prog_group,
-                     help='Set the specified pref before starting the program. Can be set '
-                     'multiple times. Prefs can also be set in ~/.mozbuild/machrc in the '
-                     '[runprefs] section - see `./mach settings` for more information.')
-    @CommandArgument('--temp-profile', action='store_true', group=prog_group,
-                     help='Run the program using a new temporary profile created inside '
-                     'the objdir.')
-    @CommandArgument('--macos-open', action='store_true', group=prog_group,
-                     help="On macOS, run the program using the open(1) command. Per open(1), "
-                     "the browser is launched \"just as if you had double-clicked the file's "
-                     "icon\". The browser can not be launched under a debugger with this option.")
-    @CommandArgumentGroup('debugging')
-    @CommandArgument('--debug', action='store_true', group='debugging',
-                     help='Enable the debugger. Not specifying a --debugger option will result '
-                     'in the default debugger being used.')
-    @CommandArgument('--debugger', default=None, type=str, group='debugging',
-                     help='Name of debugger to use.')
-    @CommandArgument('--debugger-args', default=None, metavar='params', type=str,
-                     group='debugging',
-                     help='Command-line arguments to pass to the debugger itself; '
-                     'split as the Bourne shell would.')
-    @CommandArgument('--debugparams', action=StoreDebugParamsAndWarnAction,
-                     default=None, type=str, dest='debugger_args', group='debugging',
-                     help=argparse.SUPPRESS)
-    @CommandArgumentGroup('DMD')
-    @CommandArgument('--dmd', action='store_true', group='DMD',
-                     help='Enable DMD. The following arguments have no effect without this.')
-    @CommandArgument('--mode', choices=['live', 'dark-matter', 'cumulative', 'scan'], group='DMD',
-                     help='Profiling mode. The default is \'dark-matter\'.')
-    @CommandArgument('--stacks', choices=['partial', 'full'], group='DMD',
-                     help='Allocation stack trace coverage. The default is \'partial\'.')
-    @CommandArgument('--show-dump-stats', action='store_true', group='DMD',
-                     help='Show stats when doing dumps.')
-    def run(self, params, remote, background, noprofile, disable_e10s,
-            enable_crash_reporter, setpref, temp_profile, macos_open, debug,
-            debugger, debugger_args, dmd, mode, stacks, show_dump_stats):
+    def run(self, **kwargs):
+        if conditions.is_android(self):
+            return self._run_android(**kwargs)
+        return self._run_desktop(**kwargs)
 
+    def _run_android(self, app='org.mozilla.geckoview_example', intent=None, env=[], profile=None,
+                     url=None, no_install=None, no_wait=None, fail_if_running=None, restart=None):
+        from mozrunner.devices.android_device import verify_android_device, _get_device
+        from six.moves import shlex_quote
+
+        if app == 'org.mozilla.geckoview_example':
+            activity_name = 'org.mozilla.geckoview_example.GeckoViewActivity'
+        elif app == 'org.mozilla.geckoview.test':
+            activity_name = 'org.mozilla.geckoview.test.TestRunnerActivity'
+        elif 'fennec' in app or 'firefox' in app:
+            activity_name = 'org.mozilla.gecko.BrowserApp'
+        else:
+            raise RuntimeError('Application not recognized: {}'.format(app))
+
+        # `verify_android_device` respects `DEVICE_SERIAL` if it is set and sets it otherwise.
+        verify_android_device(self, app=app, install=not no_install)
+        device_serial = os.environ.get('DEVICE_SERIAL')
+        if not device_serial:
+            print('No ADB devices connected.')
+            return 1
+
+        device = _get_device(self.substs, device_serial=device_serial)
+
+        args = []
+        if profile:
+            if os.path.isdir(profile):
+                host_profile = profile
+                # Always /data/local/tmp, rather than `device.test_root`, because GeckoView only
+                # takes its configuration file from /data/local/tmp, and we want to follow suit.
+                target_profile = '/data/local/tmp/{}-profile'.format(app)
+                device.rm(target_profile, recursive=True, force=True)
+                device.push(host_profile, target_profile)
+                self.log(logging.INFO, "run",
+                         {'host_profile': host_profile, 'target_profile': target_profile},
+                         'Pushed profile from host "{host_profile}" to target "{target_profile}"')
+            else:
+                target_profile = profile
+                self.log(logging.INFO, "run",
+                         {'target_profile': target_profile},
+                         'Using profile from target "{target_profile}"')
+
+            args = ['--profile', shlex_quote(target_profile)]
+
+        extras = {}
+        for i, e in enumerate(env):
+            extras['env{}'.format(i)] = e
+        if args:
+            extras['args'] = " ".join(args)
+        extras['use_multiprocess'] = True  # Only GVE and TRA process this extra.
+
+        if env or args:
+            restart = True
+
+        if restart:
+            fail_if_running = False
+            self.log(logging.INFO, "run",
+                     {'app': app},
+                     'Stopping {app} to ensure clean restart.')
+            device.stop_application(app)
+
+        # We'd prefer to log the actual `am start ...` command, but it's not trivial to wire the
+        # device's logger to mach's logger.
+        self.log(logging.INFO, "run",
+                 {'app': app, 'activity_name': activity_name},
+                 'Starting {app}/{activity_name}.')
+
+        device.launch_application(
+            app_name=app,
+            activity_name=activity_name,
+            intent=intent,
+            extras=extras,
+            url=url,
+            wait=not no_wait,
+            fail_if_running=fail_if_running)
+
+        return 0
+
+    def _run_desktop(self, params, remote, background, noprofile, disable_e10s,
+                     enable_crash_reporter, setpref, temp_profile, macos_open, debug, debugger,
+                     debugger_args, dmd, mode, stacks, show_dump_stats):
         from mozprofile import Profile, Preferences
 
         try:
@@ -963,7 +1100,7 @@ class MachDebug(MachCommandBase):
     @Command('environment', category='build-dev',
              description='Show info about the mach and build environment.')
     @CommandArgument('--format', default='pretty',
-                     choices=['pretty', 'configure', 'json'],
+                     choices=['pretty', 'json'],
                      help='Print data in the given format.')
     @CommandArgument('--output', '-o', type=str,
                      help='Output to the given file.')
@@ -1134,56 +1271,6 @@ class Vendor(MachCommandBase):
 
 
 @CommandProvider
-class WebRTCGTestCommands(GTestCommands):
-    @Command('webrtc-gtest', category='testing',
-             description='Run WebRTC.org GTest unit tests.')
-    @CommandArgument('gtest_filter', default=b"*", nargs='?', metavar='gtest_filter',
-                     help="test_filter is a ':'-separated list of wildcard patterns "
-                     "(called the positive patterns), optionally followed by a '-' and "
-                     "another ':'-separated pattern list (called the negative patterns).")
-    @CommandArgumentGroup('debugging')
-    @CommandArgument('--debug', action='store_true', group='debugging',
-                     help='Enable the debugger. Not specifying a --debugger option will '
-                     'result in the default debugger being used.')
-    @CommandArgument('--debugger', default=None, type=str, group='debugging',
-                     help='Name of debugger to use.')
-    @CommandArgument('--debugger-args', default=None, metavar='params', type=str,
-                     group='debugging',
-                     help='Command-line arguments to pass to the debugger itself; '
-                     'split as the Bourne shell would.')
-    def gtest(self, gtest_filter, debug, debugger,
-              debugger_args):
-        app_path = self.get_binary_path('webrtc-gtest')
-        args = [app_path]
-
-        if debug or debugger or debugger_args:
-            args = self.prepend_debugger_args(args, debugger, debugger_args)
-
-        # Used to locate resources used by tests
-        cwd = os.path.join(self.topsrcdir, 'media', 'webrtc', 'trunk')
-
-        if not os.path.isdir(cwd):
-            print('Unable to find working directory for tests: %s' % cwd)
-            return 1
-
-        gtest_env = {
-            # These tests are not run under ASAN upstream, so we need to
-            # disable some checks.
-            b'ASAN_OPTIONS': 'alloc_dealloc_mismatch=0',
-            # Use GTest environment variable to control test execution
-            # For details see:
-            # https://code.google.com/p/googletest/wiki/AdvancedGuide#Running_Test_Programs:_Advanced_Options
-            b'GTEST_FILTER': gtest_filter
-        }
-
-        return self.run_process(args=args,
-                                append_env=gtest_env,
-                                cwd=cwd,
-                                ensure_exit_code=False,
-                                pass_thru=True)
-
-
-@CommandProvider
 class Repackage(MachCommandBase):
     '''Repackages artifacts into different formats.
 
@@ -1327,7 +1414,7 @@ class Analyze(MachCommandBase):
             g.close()
         else:
             res = 'Please make sure you have a local tup db *or* specify the location with --path.'
-            print ('Could not find a valid tup db in ' + path, res, sep='\n')
+            print('Could not find a valid tup db in ' + path, res, sep='\n')
             return 1
 
     @SubCommand('analyze', 'all',
@@ -1348,7 +1435,7 @@ class Analyze(MachCommandBase):
         try:
             self.virtualenv_manager.install_pip_package('tablib==0.12.1')
         except Exception:
-            print ('Could not install tablib via pip.')
+            print('Could not install tablib via pip.')
             return 1
         if path is None:
             # go find tup db and make a cost_dict
@@ -1361,7 +1448,7 @@ class Analyze(MachCommandBase):
                 r.generate_output(format, limit, self.topobjdir)
             else:
                 res = 'Please specify the location of cost_dict.gz with --path.'
-                print ('Could not find %s to make a cost dictionary.' % db_path, res, sep='\n')
+                print('Could not find %s to make a cost dictionary.' % db_path, res, sep='\n')
                 return 1
         else:
             # path to cost_dict.gz was specified
@@ -1370,7 +1457,7 @@ class Analyze(MachCommandBase):
                 r.generate_output(format, limit, self.topobjdir)
             else:
                 res = 'Please specify the location of cost_dict.gz with --path.'
-                print ('Could not find cost_dict.gz at %s' % path, res, sep='\n')
+                print('Could not find cost_dict.gz at %s' % path, res, sep='\n')
                 return 1
 
 

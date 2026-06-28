@@ -6,8 +6,8 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import logging
 import os
-
-from StringIO import StringIO
+import six
+from six import StringIO
 
 from mozunit import main
 
@@ -127,9 +127,11 @@ GCC_6 = GCC('6.4.0') + DEFAULT_C11
 GXX_6 = GXX('6.4.0') + DEFAULT_CXX_14 + SUPPORTS_GNUXX17 + SUPPORTS_DRAFT_CXX17_201500_VERSION
 GCC_7 = GCC('7.3.0') + DEFAULT_C11
 GXX_7 = GXX('7.3.0') + DEFAULT_CXX_14 + SUPPORTS_GNUXX17 + SUPPORTS_CXX17
+GCC_8 = GCC('8.3.0') + DEFAULT_C11
+GXX_8 = GXX('8.3.0') + DEFAULT_CXX_14 + SUPPORTS_GNUXX17 + SUPPORTS_CXX17
 
-DEFAULT_GCC = GCC_6
-DEFAULT_GXX = GXX_6
+DEFAULT_GCC = GCC_7
+DEFAULT_GXX = GXX_7
 
 GCC_PLATFORM_LITTLE_ENDIAN = {
     '__ORDER_LITTLE_ENDIAN__': 1234,
@@ -220,18 +222,18 @@ def CLANGXX(version):
 CLANG_3_3 = CLANG('3.3.0') + DEFAULT_C99
 CLANGXX_3_3 = CLANGXX('3.3.0')
 CLANG_4_0 = CLANG('4.0.2') + DEFAULT_C11 + {
-    '__has_attribute(diagnose_if)': '1',
+    '__has_attribute(diagnose_if)': 1,
 }
 CLANGXX_4_0 = CLANGXX('4.0.2') + SUPPORTS_GNUXX1Z + {
-    '__has_attribute(diagnose_if)': '1',
+    '__has_attribute(diagnose_if)': 1,
 }
 CLANG_5_0 = CLANG('5.0.1') + DEFAULT_C11 + {
-    '__has_attribute(diagnose_if)': '1',
-    '__has_warning("-Wunguarded-availability")': '1',
+    '__has_attribute(diagnose_if)': 1,
+    '__has_warning("-Wunguarded-availability")': 1,
 }
 CLANGXX_5_0 = CLANGXX('5.0.1') + SUPPORTS_GNUXX17 + {
-    '__has_attribute(diagnose_if)': '1',
-    '__has_warning("-Wunguarded-availability")': '1',
+    '__has_attribute(diagnose_if)': 1,
+    '__has_warning("-Wunguarded-availability")': 1,
 }
 DEFAULT_CLANG = CLANG_5_0
 DEFAULT_CLANGXX = CLANGXX_5_0
@@ -413,6 +415,7 @@ class BaseToolchainTest(BaseConfigureTest):
                 result = {}
             try:
                 self.out.truncate(0)
+                self.out.seek(0)
                 compiler = sandbox._value_for(sandbox[var])
                 # Add var on both ends to make it clear which of the
                 # variables is failing the test when that happens.
@@ -462,7 +465,7 @@ class BaseToolchainTest(BaseConfigureTest):
 
 
 def old_gcc_message(old_ver):
-    return 'Only GCC 6.1 or newer is supported (found version {}).'.format(old_ver)
+    return 'Only GCC 7.1 or newer is supported (found version {}).'.format(old_ver)
 
 
 class LinuxToolchainTest(BaseToolchainTest):
@@ -477,6 +480,8 @@ class LinuxToolchainTest(BaseToolchainTest):
         '/usr/bin/g++-6': GXX_6 + GCC_PLATFORM_X86_64_LINUX,
         '/usr/bin/gcc-7': GCC_7 + GCC_PLATFORM_X86_64_LINUX,
         '/usr/bin/g++-7': GXX_7 + GCC_PLATFORM_X86_64_LINUX,
+        '/usr/bin/gcc-8': GCC_8 + GCC_PLATFORM_X86_64_LINUX,
+        '/usr/bin/g++-8': GXX_8 + GCC_PLATFORM_X86_64_LINUX,
         '/usr/bin/clang': DEFAULT_CLANG + CLANG_PLATFORM_X86_64_LINUX,
         '/usr/bin/clang++': DEFAULT_CLANGXX + CLANG_PLATFORM_X86_64_LINUX,
         '/usr/bin/clang-5.0': CLANG_5_0 + CLANG_PLATFORM_X86_64_LINUX,
@@ -493,20 +498,8 @@ class LinuxToolchainTest(BaseToolchainTest):
     GXX_4_9_RESULT = GCC_4_9_RESULT
     GCC_5_RESULT = old_gcc_message('5.2.1')
     GXX_5_RESULT = GCC_5_RESULT
-    GCC_6_RESULT = CompilerResult(
-        flags=['-std=gnu99'],
-        version='6.4.0',
-        type='gcc',
-        compiler='/usr/bin/gcc-6',
-        language='C',
-    )
-    GXX_6_RESULT = CompilerResult(
-        flags=[],
-        version='6.4.0',
-        type='gcc',
-        compiler='/usr/bin/g++-6',
-        language='C++',
-    )
+    GCC_6_RESULT = old_gcc_message('6.4.0')
+    GXX_6_RESULT = GCC_6_RESULT
     GCC_7_RESULT = CompilerResult(
         flags=['-std=gnu99'],
         version='7.3.0',
@@ -521,8 +514,22 @@ class LinuxToolchainTest(BaseToolchainTest):
         compiler='/usr/bin/g++-7',
         language='C++',
     )
-    DEFAULT_GCC_RESULT = GCC_6_RESULT + {'compiler': '/usr/bin/gcc'}
-    DEFAULT_GXX_RESULT = GXX_6_RESULT + {'compiler': '/usr/bin/g++'}
+    GCC_8_RESULT = CompilerResult(
+        flags=['-std=gnu99'],
+        version='8.3.0',
+        type='gcc',
+        compiler='/usr/bin/gcc-8',
+        language='C',
+    )
+    GXX_8_RESULT = CompilerResult(
+        flags=[],
+        version='8.3.0',
+        type='gcc',
+        compiler='/usr/bin/g++-8',
+        language='C++',
+    )
+    DEFAULT_GCC_RESULT = GCC_7_RESULT + {'compiler': '/usr/bin/gcc'}
+    DEFAULT_GXX_RESULT = GXX_7_RESULT + {'compiler': '/usr/bin/g++'}
 
     CLANG_3_3_RESULT = 'Only clang/llvm 5.0 or newer is supported.'
     CLANGXX_3_3_RESULT = 'Only clang/llvm 5.0 or newer is supported.'
@@ -600,12 +607,12 @@ class LinuxToolchainTest(BaseToolchainTest):
         self.do_toolchain_test(self.PATHS, {
             'c_compiler': self.DEFAULT_GCC_RESULT,
             'cxx_compiler': (
-                'The target C compiler is version 6.4.0, while the target '
-                'C++ compiler is version 7.3.0. Need to use the same compiler '
+                'The target C compiler is version 7.3.0, while the target '
+                'C++ compiler is version 8.3.0. Need to use the same compiler '
                 'version.'),
         }, environ={
             'CC': 'gcc',
-            'CXX': 'g++-7',
+            'CXX': 'g++-8',
         })
 
         self.do_toolchain_test(self.PATHS, {
@@ -613,12 +620,12 @@ class LinuxToolchainTest(BaseToolchainTest):
             'cxx_compiler': self.DEFAULT_GXX_RESULT,
             'host_c_compiler': self.DEFAULT_GCC_RESULT,
             'host_cxx_compiler': (
-                'The host C compiler is version 6.4.0, while the host '
-                'C++ compiler is version 7.3.0. Need to use the same compiler '
+                'The host C compiler is version 7.3.0, while the host '
+                'C++ compiler is version 8.3.0. Need to use the same compiler '
                 'version.'),
         }, environ={
             'CC': 'gcc',
-            'HOST_CXX': 'g++-7',
+            'HOST_CXX': 'g++-8',
         })
 
     def test_mismatched_compiler(self):
@@ -661,7 +668,7 @@ class LinuxToolchainTest(BaseToolchainTest):
         # We'll try gcc and clang, but since there is no gcc (gcc-x.y doesn't
         # count), find clang.
         paths = {
-            k: v for k, v in self.PATHS.iteritems()
+            k: v for k, v in six.iteritems(self.PATHS)
             if os.path.basename(k) not in ('gcc', 'g++')
         }
         self.do_toolchain_test(paths, {
@@ -698,7 +705,7 @@ class LinuxToolchainTest(BaseToolchainTest):
         # Even if there are gcc-x.y or clang-x.y compilers available, we
         # don't try them. This could be considered something to improve.
         paths = {
-            k: v for k, v in self.PATHS.iteritems()
+            k: v for k, v in six.iteritems(self.PATHS)
             if os.path.basename(k) not in ('gcc', 'g++', 'clang', 'clang++')
         }
         self.do_toolchain_test(paths, {
@@ -903,7 +910,7 @@ class OSXToolchainTest(BaseToolchainTest):
     def test_not_gcc(self):
         # We won't pick GCC if it's the only thing available.
         paths = {
-            k: v for k, v in self.PATHS.iteritems()
+            k: v for k, v in six.iteritems(self.PATHS)
             if os.path.basename(k) not in ('clang', 'clang++')
         }
         self.do_toolchain_test(paths, {
@@ -963,6 +970,8 @@ class WindowsToolchainTest(BaseToolchainTest):
         '/usr/bin/g++-5': GXX_5 + GCC_PLATFORM_X86_WIN,
         '/usr/bin/gcc-6': GCC_6 + GCC_PLATFORM_X86_WIN,
         '/usr/bin/g++-6': GXX_6 + GCC_PLATFORM_X86_WIN,
+        '/usr/bin/gcc-7': GCC_7 + GCC_PLATFORM_X86_WIN,
+        '/usr/bin/g++-7': GXX_7 + GCC_PLATFORM_X86_WIN,
         '/usr/bin/clang': DEFAULT_CLANG + CLANG_PLATFORM_X86_WIN,
         '/usr/bin/clang++': DEFAULT_CLANGXX + CLANG_PLATFORM_X86_WIN,
         '/usr/bin/clang-5.0': CLANG_5_0 + CLANG_PLATFORM_X86_WIN,
@@ -1001,6 +1010,8 @@ class WindowsToolchainTest(BaseToolchainTest):
     GXX_5_RESULT = LinuxToolchainTest.GXX_5_RESULT
     GCC_6_RESULT = LinuxToolchainTest.GCC_6_RESULT
     GXX_6_RESULT = LinuxToolchainTest.GXX_6_RESULT
+    GCC_7_RESULT = LinuxToolchainTest.GCC_7_RESULT
+    GXX_7_RESULT = LinuxToolchainTest.GXX_7_RESULT
     DEFAULT_GCC_RESULT = LinuxToolchainTest.DEFAULT_GCC_RESULT
     DEFAULT_GXX_RESULT = LinuxToolchainTest.DEFAULT_GXX_RESULT
 
@@ -1027,7 +1038,7 @@ class WindowsToolchainTest(BaseToolchainTest):
     def test_gcc(self):
         # We'll pick GCC if msvc and clang-cl can't be found.
         paths = {
-            k: v for k, v in self.PATHS.iteritems()
+            k: v for k, v in six.iteritems(self.PATHS)
             if os.path.basename(k) not in ('cl', 'clang-cl')
         }
         self.do_toolchain_test(paths, {
@@ -1046,7 +1057,7 @@ class WindowsToolchainTest(BaseToolchainTest):
     def test_clang(self):
         # We'll pick clang if nothing else is found.
         paths = {
-            k: v for k, v in self.PATHS.iteritems()
+            k: v for k, v in six.iteritems(self.PATHS)
             if os.path.basename(k) not in ('cl', 'clang-cl', 'gcc')
         }
         self.do_toolchain_test(paths, {

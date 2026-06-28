@@ -18,8 +18,13 @@ from mozbuild.util import (
     FileAvoidWrite,
     memoized_property,
     ReadOnlyDict,
+    system_encoding,
 )
 from mozbuild.shellutil import quote as shell_quote
+
+
+class ConfigStatusFailure(Exception):
+    """Error loading config.status"""
 
 
 class BuildConfig(object):
@@ -62,7 +67,10 @@ class BuildConfig(object):
             '__file__': path,
         }
         l = {}
-        exec(code_cache[path][1], g, l)
+        try:
+            exec(code_cache[path][1], g, l)
+        except Exception:
+            raise ConfigStatusFailure()
 
         config = BuildConfig()
 
@@ -178,31 +186,6 @@ class ConfigEnvironment(object):
                 external = mozpath.join(self.topsrcdir, external)
             self.external_source_dir = mozpath.normpath(external)
 
-        # Populate a Unicode version of substs. This is an optimization to make
-        # moz.build reading faster, since each sandbox needs a Unicode version
-        # of these variables and doing it over a thousand times is a hotspot
-        # during sandbox execution!
-        # Bug 844509 tracks moving everything to Unicode.
-        self.substs_unicode = {}
-
-        def decode(v):
-            if not isinstance(v, six.text_type):
-                try:
-                    return v.decode('utf-8')
-                except UnicodeDecodeError:
-                    return v.decode('utf-8', 'replace')
-
-        for k, v in self.substs.items():
-            if not isinstance(v, six.string_types):
-                if isinstance(v, Iterable):
-                    type(v)(decode(i) for i in v)
-            elif not isinstance(v, six.text_type):
-                v = decode(v)
-
-            self.substs_unicode[k] = v
-
-        self.substs_unicode = ReadOnlyDict(self.substs_unicode)
-
     @property
     def is_artifact_build(self):
         return self.substs.get('MOZ_ARTIFACT_BUILDS', False)
@@ -246,10 +229,10 @@ class PartialConfigDict(object):
         return existing_files
 
     def _write_file(self, key, value):
-        encoding = 'mbcs' if sys.platform == 'win32' else 'utf-8'
         filename = mozpath.join(self._datadir, key)
         with FileAvoidWrite(filename) as fh:
-            json.dump(value, fh, indent=4, encoding=encoding)
+            to_write = json.dumps(value, indent=4)
+            fh.write(to_write.encode(system_encoding))
         return filename
 
     def _fill_group(self, values):
@@ -263,7 +246,7 @@ class PartialConfigDict(object):
         existing_files = self._load_config_track()
 
         new_files = set()
-        for k, v in values.iteritems():
+        for k, v in six.iteritems(values):
             new_files.add(self._write_file(k, v))
 
         for filename in existing_files - new_files:

@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import, print_function, unicode_literals
 
 import ctypes
 import os
@@ -100,6 +100,11 @@ class MozillaBuildBootstrapper(BaseBootstrapper):
         node_artifact = node.WIN32 if is_aarch64_host() else node.WIN64
         self.install_toolchain_artifact(
             state_dir, checkout_root, node_artifact)
+
+    def ensure_fix_stacks_packages(self, state_dir, checkout_root):
+        from mozboot import fix_stacks
+
+        self.install_toolchain_artifact(state_dir, checkout_root, fix_stacks.WINDOWS_FIX_STACKS)
 
     def _update_package_manager(self):
         pass

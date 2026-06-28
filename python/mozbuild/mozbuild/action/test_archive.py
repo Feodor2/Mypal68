@@ -40,7 +40,6 @@ TEST_HARNESS_BINS = [
     'SmokeDMD',
     'certutil',
     'crashinject',
-    'fileid',
     'geckodriver',
     'minidumpwriter',
     'pk12util',
@@ -50,7 +49,6 @@ TEST_HARNESS_BINS = [
     'xpcshell',
 ]
 
-# The fileid utility depends on mozglue. See bug 1069556.
 TEST_HARNESS_DLLS = [
     'crashinjectdll',
     'mozglue'
@@ -103,6 +101,7 @@ ARCHIVE_FILES = {
             'pattern': '**',
             'ignore': [
                 'cppunittest/**',
+                'condprof/**',
                 'gtest/**',
                 'mochitest/**',
                 'reftest/**',
@@ -125,21 +124,18 @@ ARCHIVE_FILES = {
             'patterns': [
                 'client/**',
                 'harness/**',
-                'puppeteer/**',
                 'mach_test_package_commands.py',
             ],
             'dest': 'marionette',
             'ignore': [
                 'client/docs',
                 'harness/marionette_harness/tests',
-                'puppeteer/firefox/docs',
             ],
         },
         {
             'source': buildconfig.topsrcdir,
             'base': '',
             'manifests': [
-                'dom/media/test/marionette/manifest.ini',
                 'testing/marionette/harness/marionette_harness/tests/unit-tests.ini',
                 'gfx/tests/marionette/manifest.ini'
             ],
@@ -291,6 +287,7 @@ ARCHIVE_FILES = {
             'base': 'dist/bin',
             'patterns': [
                 'dmd.py',
+                'fix_stacks.py',
                 'fix_linux_stack.py',
                 'fix_macosx_stack.py',
                 'fix_stack_using_bpsyms.py',
@@ -312,14 +309,6 @@ ARCHIVE_FILES = {
             'base': 'build/pgo/certs',
             'pattern': '**',
             'dest': 'certs',
-        },
-        {
-            'source': buildconfig.topobjdir,
-            'base': 'build/unix/elfhack',
-            'patterns': [
-                'elfhack%s' % buildconfig.substs['BIN_SUFFIX'],
-            ],
-            'dest': 'bin',
         },
     ],
     'cppunittest': [
@@ -493,6 +482,37 @@ ARCHIVE_FILES = {
             'base': 'third_party/webkit/PerformanceTests',
             'pattern': '**',
             'dest': 'talos/talos/tests/webkit/PerformanceTests/',
+        },
+    ],
+    'condprof': [
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'testing',
+            'pattern': 'condprofile/**',
+        },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'testing/mozbase/mozfile',
+            'pattern': '**',
+            'dest': 'condprofile/mozfile',
+        },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'testing/mozbase/mozprofile',
+            'pattern': '**',
+            'dest': 'condprofile/mozprofile',
+        },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'testing/mozbase/mozdevice',
+            'pattern': '**',
+            'dest': 'condprofile/mozdevice',
+        },
+        {
+            'source': buildconfig.topsrcdir,
+            'base': 'third_party/python/virtualenv',
+            'pattern': '**',
+            'dest': 'condprofile/virtualenv',
         },
     ],
     'raptor': [

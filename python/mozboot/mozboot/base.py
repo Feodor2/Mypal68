@@ -9,10 +9,19 @@ import os
 import re
 import subprocess
 import sys
-import urllib2
 
 from distutils.version import LooseVersion
 from mozboot import rust
+
+# NOTE: This script is intended to be run with a vanilla Python install.  We
+# have to rely on the standard library instead of Python 2+3 helpers like
+# the six module.
+if sys.version_info < (3,):
+    from urllib2 import urlopen
+    input = raw_input  # noqa
+else:
+    from urllib.request import urlopen
+
 
 NO_MERCURIAL = '''
 Could not find Mercurial (hg) in the current shell's path. Try starting a new
@@ -149,7 +158,7 @@ MODERN_MERCURIAL_VERSION = LooseVersion('4.8')
 MODERN_PYTHON_VERSION = LooseVersion('2.7.3')
 
 # Upgrade rust older than this.
-MODERN_RUST_VERSION = LooseVersion('1.39.0')
+MODERN_RUST_VERSION = LooseVersion('1.41.1')
 
 # Upgrade nasm older than this.
 MODERN_NASM_VERSION = LooseVersion('2.14')
@@ -284,12 +293,30 @@ class BaseBootstrapper(object):
         '''
         pass
 
+    def ensure_lucetc_packages(self, state_dir, checkout_root):
+        '''
+        Install lucetc.
+        '''
+        pass
+
+    def ensure_wasi_sysroot_packages(self, state_dir, checkout_root):
+        '''
+        Install the wasi sysroot.
+        '''
+        pass
+
     def ensure_node_packages(self, state_dir, checkout_root):
         '''
         Install any necessary packages needed to supply NodeJS'''
         raise NotImplementedError(
             '%s does not yet implement ensure_node_packages()'
             % __name__)
+
+    def ensure_fix_stacks_packages(self, state_dir, checkout_root):
+        '''
+        Install fix-stacks.
+        '''
+        pass
 
     def install_toolchain_static_analysis(self, state_dir, checkout_root, toolchain_job):
         clang_tools_path = os.path.join(state_dir, 'clang-tools')
@@ -403,30 +430,18 @@ class BaseBootstrapper(object):
 
     def check_output(self, *args, **kwargs):
         """Run subprocess.check_output even if Python doesn't provide it."""
-        fn = getattr(subprocess, 'check_output', BaseBootstrapper._check_output)
-
-        return fn(*args, **kwargs)
-
-    @staticmethod
-    def _check_output(*args, **kwargs):
-        """Python 2.6 compatible implementation of subprocess.check_output."""
-        proc = subprocess.Popen(stdout=subprocess.PIPE, *args, **kwargs)
-        output, unused_err = proc.communicate()
-        retcode = proc.poll()
-        if retcode:
-            cmd = kwargs.get('args', args[0])
-            e = subprocess.CalledProcessError(retcode, cmd)
-            e.output = output
-            raise e
-
-        return output
+        # TODO Legacy Python 2.6 code, can be removed.
+        # We had a custom check_output() function for Python 2.6 backward
+        # compatibility.  Since py2.6 support was dropped we can remove this
+        # method.
+        return subprocess.check_output(*args, **kwargs)
 
     def prompt_int(self, prompt, low, high, limit=5):
         ''' Prompts the user with prompt and requires an integer between low and high. '''
         valid = False
         while not valid and limit > 0:
             try:
-                choice = int(raw_input(prompt))
+                choice = int(input(prompt))
                 if not low <= choice <= high:
                     print("ERROR! Please enter a valid option!")
                     limit -= 1
@@ -445,7 +460,7 @@ class BaseBootstrapper(object):
         ''' Prompts the user with prompt and requires a yes/no answer.'''
         valid = False
         while not valid:
-            choice = raw_input(prompt + ' (Yn): ').strip().lower()[:1]
+            choice = input(prompt + ' (Yn): ').strip().lower()[:1]
             if choice == '':
                 choice = 'y'
             if choice not in ('y', 'n'):
@@ -490,7 +505,8 @@ class BaseBootstrapper(object):
 
         info = self.check_output([path, version_param],
                                  env=env,
-                                 stderr=subprocess.STDOUT)
+                                 stderr=subprocess.STDOUT,
+                                 universal_newlines=True)
         match = re.search(name + ' ([a-z0-9\.]+)', info)
         if not match:
             print('ERROR! Unable to identify %s version.' % name)
@@ -515,9 +531,9 @@ class BaseBootstrapper(object):
         string forces that no user or system hgrc file is used.
         """
         env = os.environ.copy()
-        env[b'HGPLAIN'] = b'1'
+        env['HGPLAIN'] = '1'
         if not load_hgrc:
-            env[b'HGRCPATH'] = b''
+            env['HGRCPATH'] = ''
 
         return env
 
@@ -703,7 +719,9 @@ class BaseBootstrapper(object):
 
     def ensure_rust_targets(self, rustup, rust_version):
         """Make sure appropriate cross target libraries are installed."""
-        target_list = subprocess.check_output([rustup, 'target', 'list'])
+        target_list = subprocess.check_output(
+            [rustup, 'target', 'list'], universal_newlines=True
+        )
         targets = [line.split()[0] for line in target_list.splitlines()
                    if 'installed' in line or 'default' in line]
         print('Rust supports %s targets.' % ', '.join(targets))
@@ -733,6 +751,10 @@ class BaseBootstrapper(object):
 
         Invoke rustup from the given path to update the rust install."""
         subprocess.check_call([rustup, 'update'])
+        # This installs rustfmt when not already installed, or nothing
+        # otherwise, while the update above would have taken care of upgrading
+        # it.
+        subprocess.check_call([rustup, 'component', 'add', 'rustfmt'])
 
     def install_rust(self):
         """Download and run the rustup installer."""
@@ -756,7 +778,8 @@ class BaseBootstrapper(object):
             print('Running rustup-init...')
             subprocess.check_call([rustup_init, '-y',
                                    '--default-toolchain', 'stable',
-                                   '--default-host', platform, ])
+                                   '--default-host', platform,
+                                   '--component', 'rustfmt'])
             cargo_home, cargo_bin = self.cargo_home()
             self.print_rust_path_advice(RUST_INSTALL_COMPLETE,
                                         cargo_home, cargo_bin)
@@ -772,7 +795,7 @@ class BaseBootstrapper(object):
         that will be used to validate the downloaded file using the given
         digest algorithm.  The value of digest can be any value accepted by
         hashlib.new.  The default digest used is 'sha256'."""
-        f = urllib2.urlopen(url)
+        f = urlopen(url)
         h = hashlib.new(digest)
         with open(dest, 'wb') as out:
             while True:
@@ -812,7 +835,8 @@ class BaseBootstrapper(object):
             output = subprocess.check_output([java,
                                               '-XshowSettings:properties',
                                               '-version'],
-                                             stderr=subprocess.STDOUT).rstrip()
+                                             stderr=subprocess.STDOUT,
+                                             universal_newlines=True).rstrip()
 
             # -version strings are pretty free-form, like: 'java version
             # "1.8.0_192"' or 'openjdk version "11.0.1" 2018-10-16', but the

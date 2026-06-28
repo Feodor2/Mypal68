@@ -1,9 +1,11 @@
+from __future__ import absolute_import
 import argparse
 import hashlib
 import json
 import logging
 import os
 import shutil
+import six
 
 from collections import OrderedDict
 
@@ -176,7 +178,7 @@ class PackageFrontend(MachCommandBase):
     def artifact_toolchain(self, verbose=False, cache_dir=None,
                            skip_cache=False, from_build=(),
                            tooltool_manifest=None, authentication_file=None,
-                           no_unpack=False, retry=None,
+                           no_unpack=False, retry=0,
                            artifact_manifest=None, files=()):
         '''Download, cache and install pre-built toolchains.
         '''
@@ -278,11 +280,11 @@ class PackageFrontend(MachCommandBase):
                          'Do not use --from-build in automation; all dependencies '
                          'should be determined in the decision task.')
                 return 1
-            from taskgraph.optimize import IndexSearch
+            from taskgraph.optimize.strategies import IndexSearch
             from taskgraph.parameters import Parameters
             from taskgraph.generator import load_tasks_for_kind
             params = Parameters(
-                level=os.environ.get('MOZ_SCM_LEVEL', '3'),
+                level=six.ensure_text(os.environ.get('MOZ_SCM_LEVEL', '3')),
                 strict=False,
             )
 
@@ -334,9 +336,9 @@ class PackageFrontend(MachCommandBase):
             record = ArtifactRecord(task_id, name)
             records[record.filename] = record
 
-        for record in records.itervalues():
+        for record in six.itervalues(records):
             self.log(logging.INFO, 'artifact', {'name': record.basename},
-                     'Downloading {name}')
+                     'Setting up artifact {name}')
             valid = False
             # sleeptime is 60 per retry.py, used by tooltool_wrapper.sh
             for attempt, _ in enumerate(redo.retrier(attempts=retry+1,

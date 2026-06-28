@@ -44,11 +44,12 @@ import pickle
 import re
 import requests
 import shutil
+import six
 import stat
 import subprocess
 import tarfile
 import tempfile
-import urlparse
+import six.moves.urllib_parse as urlparse
 import zipfile
 
 import pylru
@@ -120,7 +121,6 @@ class ArtifactJob(object):
         ('bin/OCSPStaplingServer', ('bin', 'bin')),
         ('bin/SanctionsTestServer', ('bin', 'bin')),
         ('bin/certutil', ('bin', 'bin')),
-        ('bin/fileid', ('bin', 'bin')),
         ('bin/geckodriver', ('bin', 'bin')),
         ('bin/pk12util', ('bin', 'bin')),
         ('bin/screentopng', ('bin', 'bin')),
@@ -221,7 +221,7 @@ class ArtifactJob(object):
 
         with JarWriter(file=processed_filename, compress_level=5) as writer:
             reader = JarReader(filename)
-            for filename, entry in reader.entries.iteritems():
+            for filename, entry in six.iteritems(reader.entries):
                 for pattern, (src_prefix, dest_prefix) in self.test_artifact_patterns:
                     if not mozpath.match(filename, pattern):
                         continue
@@ -445,6 +445,7 @@ class MacArtifactJob(ArtifactJob):
         'libmozavutil.dylib',
         'libmozavcodec.dylib',
         'libsoftokn3.dylib',
+        'minidump-analyzer',
         'pingsender',
         'plugin-container.app/Contents/MacOS/plugin-container',
         'updater.app/Contents/MacOS/org.mozilla.updater',
@@ -489,9 +490,6 @@ class MacArtifactJob(ArtifactJob):
 
             # These get copied into dist/bin with the path, so "root/a/b/c" -> "dist/bin/a/b/c".
             paths_keep_path = [
-                ('Contents/MacOS', [
-                    'crashreporter.app/Contents/MacOS/minidump-analyzer',
-                ]),
                 ('Contents/Resources', [
                     'browser/components/libbrowsercomps.dylib',
                     'dependentlibs.list',
@@ -558,7 +556,6 @@ class WinArtifactJob(ArtifactJob):
         ('bin/OCSPStaplingServer.exe', ('bin', 'bin')),
         ('bin/SanctionsTestServer.exe', ('bin', 'bin')),
         ('bin/certutil.exe', ('bin', 'bin')),
-        ('bin/fileid.exe', ('bin', 'bin')),
         ('bin/geckodriver.exe', ('bin', 'bin')),
         ('bin/minidumpwriter.exe', ('bin', 'bin')),
         ('bin/pk12util.exe', ('bin', 'bin')),
@@ -924,7 +921,7 @@ class Artifacts(object):
 
             candidate_pushheads = collections.defaultdict(list)
 
-            for tree, pushid in found_pushids.iteritems():
+            for tree, pushid in six.iteritems(found_pushids):
                 end = pushid
                 start = pushid - NUM_PUSHHEADS_TO_QUERY_PER_PARENT
 
@@ -993,7 +990,7 @@ see https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Source_Code
             rev, node = line.split(':', 1)
             return (int(rev), node)
 
-        pairs = map(to_pair, last_revs)
+        pairs = [to_pair(r) for r in last_revs]
 
         # Python's tuple sort orders by first component: here, the (local)
         # revision number.
@@ -1228,7 +1225,7 @@ see https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Source_Code
         """
         if source and os.path.isfile(source):
             return self.install_from_file(source, distdir)
-        elif source and urlparse.urlparse(source).scheme:
+        elif source and urlparse(source).scheme:
             return self.install_from_url(source, distdir)
         else:
             if source is None and 'MOZ_ARTIFACT_REVISION' in os.environ:

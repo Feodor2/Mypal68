@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import, print_function, unicode_literals
 
 r'''This module contains code for managing clobbering of the tree.'''
 
@@ -108,7 +108,7 @@ class Clobberer(object):
         try:
             for p in os.listdir(root):
                 if p not in exclude:
-                    paths.append(os.path.join(root, p).encode('utf-8'))
+                    paths.append(os.path.join(root, p))
         except OSError as e:
             if e.errno != errno.ENOENT:
                 raise
@@ -167,20 +167,6 @@ class Clobberer(object):
             paths = self.collect_subdirs(cargo_path, {'incremental', })
             self.delete_dirs(cargo_path, paths)
 
-    def ensure_objdir_state(self):
-        """Ensure the CLOBBER file in the objdir exists.
-
-        This is called as part of the build to ensure the clobber information
-        is configured properly for the objdir.
-        """
-        if not os.path.exists(self.topobjdir):
-            os.makedirs(self.topobjdir)
-
-        if not os.path.exists(self.obj_clobber):
-            # Simply touch the file.
-            with open(self.obj_clobber, 'a'):
-                pass
-
     def maybe_do_clobber(self, cwd, allow_auto=False, fh=sys.stderr):
         """Perform a clobber if it is required. Maybe.
 
@@ -200,7 +186,6 @@ class Clobberer(object):
 
         if not self.clobber_needed():
             print('Clobber not needed.', file=fh)
-            self.ensure_objdir_state()
             return False, False, None
 
         # So a clobber is needed. We only perform a clobber if we are
@@ -224,7 +209,6 @@ class Clobberer(object):
         print('Automatically clobbering %s' % objdir, file=fh)
         try:
             self.remove_objdir(False)
-            self.ensure_objdir_state()
             print('Successfully completed auto clobber.', file=fh)
             return True, True, None
         except (IOError) as error:

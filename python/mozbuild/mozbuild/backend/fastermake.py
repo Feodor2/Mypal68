@@ -4,6 +4,9 @@
 
 from __future__ import absolute_import, unicode_literals, print_function
 
+from operator import itemgetter
+import six
+
 from mozbuild.backend.base import PartialBackend
 from mozbuild.backend.make import MakeBackend
 from mozbuild.frontend.context import ObjDirPath
@@ -169,6 +172,7 @@ class FasterMakeBackend(MakeBackend, PartialBackend):
         # Add a few necessary variables inherited from configure
         for var in (
             'PYTHON',
+            'PYTHON3',
             'ACDEFINES',
             'MOZ_BUILD_APP',
             'MOZ_WIDGET_TOOLKIT',
@@ -182,7 +186,7 @@ class FasterMakeBackend(MakeBackend, PartialBackend):
         # Add information for chrome manifest generation
         manifest_targets = []
 
-        for target, entries in self._manifest_entries.iteritems():
+        for target, entries in six.iteritems(self._manifest_entries):
             manifest_targets.append(target)
             install_target = mozpath.basedir(target, install_manifests_bases)
             self._install_manifests[install_target].add_content(
@@ -191,12 +195,12 @@ class FasterMakeBackend(MakeBackend, PartialBackend):
 
         # Add information for install manifests.
         mk.add_statement('INSTALL_MANIFESTS = %s'
-                         % ' '.join(self._install_manifests.keys()))
+                         % ' '.join(sorted(self._install_manifests.keys())))
 
         # Add dependencies we inferred:
-        for target, deps in self._dependencies.iteritems():
+        for target, deps in sorted(six.iteritems(self._dependencies)):
             mk.create_rule([target]).add_dependencies(
-                '$(TOPOBJDIR)/%s' % d for d in deps)
+                '$(TOPOBJDIR)/%s' % d for d in sorted(deps))
 
         # This is not great, but it's better to have some dependencies on these Python files.
         python_deps = [
@@ -205,9 +209,9 @@ class FasterMakeBackend(MakeBackend, PartialBackend):
             '$(TOPSRCDIR)/third_party/python/compare-locales/compare_locales/paths.py',
         ]
         # Add l10n dependencies we inferred:
-        for target, deps in self._l10n_dependencies.iteritems():
+        for target, deps in sorted(six.iteritems(self._l10n_dependencies)):
             mk.create_rule([target]).add_dependencies(
-                '%s' % d[0] for d in deps)
+                '%s' % d[0] for d in sorted(deps, key=itemgetter(0)))
             for (merge, ref_file, l10n_file) in deps:
                 rule = mk.create_rule([merge]).add_dependencies(
                     [ref_file, l10n_file] + python_deps)
@@ -224,7 +228,7 @@ class FasterMakeBackend(MakeBackend, PartialBackend):
 
         mk.add_statement('include $(TOPSRCDIR)/config/faster/rules.mk')
 
-        for base, install_manifest in self._install_manifests.iteritems():
+        for base, install_manifest in six.iteritems(self._install_manifests):
             with self._write_file(
                     mozpath.join(self.environment.topobjdir, 'faster',
                                  'install_%s' % base.replace('/', '_'))) as fh:
@@ -234,7 +238,7 @@ class FasterMakeBackend(MakeBackend, PartialBackend):
         # for consumption by |mach watch|.
         if self.environment.is_artifact_build:
             unified_manifest = InstallManifest()
-            for base, install_manifest in self._install_manifests.iteritems():
+            for base, install_manifest in six.iteritems(self._install_manifests):
                 # Expect 'dist/bin/**', which includes 'dist/bin' with no trailing slash.
                 assert base.startswith('dist/bin')
                 base = base[len('dist/bin'):]

@@ -6,9 +6,9 @@ from __future__ import absolute_import, print_function
 
 import unittest
 
-from StringIO import StringIO
 import os
 import shutil
+from six import StringIO
 
 from tempfile import mkdtemp
 
@@ -242,10 +242,18 @@ class TestPreprocessor(unittest.TestCase):
         self.do_include_compare([
             '#filter slashslash',
             'PASS//FAIL  // FAIL',
+            '  //FAIL',
+            '//FAIL',
+            'PASS  //',
+            '//',
             '#unfilter slashslash',
             'PASS // PASS',
         ], [
             'PASS',
+            '  ',
+            '',
+            'PASS  ',
+            '',
             'PASS // PASS',
         ])
 

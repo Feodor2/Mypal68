@@ -2,36 +2,48 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function, unicode_literals
 
 import platform
 
 from mozboot.base import BaseBootstrapper
 from mozboot.linux_common import (
     ClangStaticAnalysisInstall,
+    FixStacksInstall,
+    LucetcInstall,
     NasmInstall,
     NodeInstall,
     SccacheInstall,
     StyloInstall,
+    WasiSysrootInstall,
 )
 
 
-class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
-                               SccacheInstall, ClangStaticAnalysisInstall,
-                               BaseBootstrapper):
+class CentOSFedoraBootstrapper(
+        ClangStaticAnalysisInstall,
+        FixStacksInstall,
+        LucetcInstall,
+        NasmInstall,
+        NodeInstall,
+        SccacheInstall,
+        StyloInstall,
+        WasiSysrootInstall,
+        BaseBootstrapper):
+
     def __init__(self, distro, version, dist_id, **kwargs):
         BaseBootstrapper.__init__(self, **kwargs)
 
         self.distro = distro
-        self.version = version
+        self.version = int(version.split('.')[0])
         self.dist_id = dist_id
 
         self.group_packages = []
 
+        # For CentOS 7, later versions of nodejs come from nodesource
+        # and include the npm package.
         self.packages = [
             'autoconf213',
             'nodejs',
-            'npm',
             'which',
         ]
 
@@ -42,7 +54,6 @@ class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
         self.browser_packages = [
             'alsa-lib-devel',
             'dbus-glib-devel',
-            'GConf2-devel',
             'glibc-static',
             'gtk2-devel',  # It is optional in Fedora 20's GNOME Software
                            # Development group.
@@ -52,6 +63,7 @@ class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
             'pulseaudio-libs-devel',
             'wireless-tools-devel',
             'yasm',
+            'gcc-c++',
         ]
 
         self.mobile_android_packages = [
@@ -60,11 +72,9 @@ class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
             'wget',
         ]
 
-        if self.distro in ('CentOS', 'CentOS Linux'):
+        if self.distro in ('centos'):
             self.group_packages += [
                 'Development Tools',
-                'Development Libraries',
-                'GNOME Software Development',
             ]
 
             self.packages += [
@@ -75,18 +85,42 @@ class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
                 'gtk3-devel',
             ]
 
-        elif self.distro == 'Fedora':
+            if self.version == 6:
+                self.group_packages += [
+                    'Development Libraries',
+                    'GNOME Software Development',
+                ]
+
+                self.packages += [
+                    'npm',
+                ]
+
+            else:
+                self.packages += [
+                    'python2-devel',
+                    'redhat-rpm-config',
+                ]
+
+                self.browser_group_packages = [
+                    'Development Tools',
+                ]
+
+                self.browser_packages += [
+                    'python-dbus',
+                ]
+
+        elif self.distro == 'fedora':
             self.group_packages += [
                 'C Development Tools and Libraries',
             ]
 
             self.packages += [
+                'npm',
                 'python2-devel',
                 'redhat-rpm-config',
             ]
 
             self.browser_packages += [
-                'gcc-c++',
                 'python-dbus',
             ]
 
@@ -115,7 +149,7 @@ class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
         self.dnf_groupinstall(*self.browser_group_packages)
         self.dnf_install(*self.browser_packages)
 
-        if self.distro in ('CentOS', 'CentOS Linux'):
+        if self.distro in ('centos') and self.version == 6:
             yasm = ('http://dl.fedoraproject.org/pub/epel/6/i386/'
                     'Packages/y/yasm-1.2.0-1.el6.i686.rpm')
             if platform.architecture()[0] == '64bit':
@@ -141,4 +175,7 @@ class CentOSFedoraBootstrapper(NasmInstall, NodeInstall, StyloInstall,
         self.suggest_mobile_android_mozconfig(artifact_mode=True)
 
     def upgrade_mercurial(self, current):
-        self.dnf_update('mercurial')
+        if current is None:
+            self.dnf_install('mercurial')
+        else:
+            self.dnf_update('mercurial')

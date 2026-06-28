@@ -15,7 +15,7 @@ import requests
 import re
 import sys
 import tarfile
-from urlparse import urlparse
+from urllib.parse import urlparse
 
 
 class VendorAOM(MozbuildObject):
@@ -199,10 +199,9 @@ Please commit or stash these changes before vendoring, or re-run with `--ignore-
         self.log(logging.INFO, 'update_readme', {},
                  '''Updating README_MOZILLA.''')
         self.update_readme(commit, timestamp, glue_dir)
-        self.repository.add_remove_files(vendor_dir)
         self.log(logging.INFO, 'add_remove_files', {},
                  '''Registering changes with version control.''')
-        self.repository.add_remove_files(vendor_dir)
+        self.repository.add_remove_files(vendor_dir, glue_dir)
         self.repository.add_remove_files(glue_dir)
         self.log(logging.INFO, 'done', {'revision': revision},
                  '''Update to aom version '{revision}' ready to commit.''')

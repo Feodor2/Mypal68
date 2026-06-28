@@ -6,6 +6,7 @@ from __future__ import absolute_import, print_function, unicode_literals
 
 import re
 import os
+import six
 
 import mozpack.path as mozpath
 from mozpack.chrome.flags import Flags
@@ -17,6 +18,7 @@ class ManifestEntry(object):
     '''
     Base class for all manifest entry types.
     Subclasses may define the following class or member variables:
+
         - localized: indicates whether the manifest entry is used for localized
           data.
         - type: the manifest entry type (e.g. 'content' in
@@ -352,6 +354,7 @@ def parse_manifest(root, path, fileobj=None):
         fileobj = open(path)
     linenum = 0
     for line in fileobj:
+        line = six.ensure_text(line)
         linenum += 1
         with errors.context(path, linenum):
             e = parse_manifest_line(base, line)

@@ -22,8 +22,8 @@ from mozpack.executables import (
 )
 
 
-STDCXX_MAX_VERSION = Version('3.4.17')
-GLIBC_MAX_VERSION = Version('2.12')
+STDCXX_MAX_VERSION = Version('3.4.19')
+GLIBC_MAX_VERSION = Version('2.17')
 LIBGCC_MAX_VERSION = Version('4.8')
 
 HOST = {
@@ -56,7 +56,7 @@ get_type = memoize(get_type)
 def get_output(*cmd):
     env = dict(os.environ)
     env[b'LC_ALL'] = b'C'
-    return subprocess.check_output(cmd, env=env).splitlines()
+    return subprocess.check_output(cmd, env=env, universal_newlines=True).splitlines()
 
 
 class Skip(RuntimeError):
@@ -86,7 +86,7 @@ def iter_symbols(binary):
     # platforms for static libraries, but its format is different for
     # Windows .obj files, so the following won't work for them, but
     # it currently doesn't matter.
-    if ty == UNKNOWN and open(binary).read(8) == '!<arch>\n':
+    if ty == UNKNOWN and open(binary, 'rb').read(8) == b'!<arch>\n':
         ty = ELF
     if ty in (ELF, MACHO):
         for line in get_output(buildconfig.substs['LLVM_OBJDUMP'], '-t',
@@ -96,8 +96,11 @@ def iter_symbols(binary):
                 continue
             addr = int(m.group(0), 16)
             # The second "column" is 7 one-character items that can be
-            # whitespaces. We don't have use for their value, so just skip
-            # those.
+            # whitespaces.
+            flags = line[m.end():][:7]
+            # We're only interested whether the symbol might be weak.
+            weak = 'w' in flags
+
             rest = line[m.end() + 9:].split()
             # The number of remaining colums will vary between ELF and MACHO.
             # On ELF, we have:
@@ -116,6 +119,7 @@ def iter_symbols(binary):
                 'size': int(rest[1], 16) if ty == ELF else 0,
                 'name': name,
                 'version': ver or None,
+                'weak': weak,
             }
     else:
         export_table = False
@@ -143,6 +147,7 @@ def iter_symbols(binary):
                 'size': 0,
                 'name': name,
                 'version': None,
+                'weak': None,
             }
 
 
@@ -160,8 +165,20 @@ def check_dep_versions(target, binary, lib, prefix, max_version):
     prefix = prefix + '_'
     try:
         for sym in at_least_one(iter_symbols(binary)):
-            if sym['addr'] == 0 and sym['version'] and \
-                    sym['version'].startswith(prefix):
+            # Only check versions on undefined symbols
+            if sym['addr'] != 0:
+                continue
+
+            # Versions for weak symbols don't matter, since the code must
+            # handle the case where they're not defined.
+            if sym['weak']:
+                continue
+
+            # No version to check
+            if not sym['version']:
+                continue
+
+            if sym['version'].startswith(prefix):
                 version = Version(sym['version'][len(prefix):])
                 if version > max_version:
                     unwanted.append(sym)
@@ -315,7 +332,7 @@ def checks(target, binary):
             pass
         except RuntimeError as e:
             print('TEST-UNEXPECTED-FAIL | {} | {} | {}'
-                  .format(name, basename, e.message),
+                  .format(name, basename, str(e)),
                   file=sys.stderr)
             retcode = 1
     return retcode

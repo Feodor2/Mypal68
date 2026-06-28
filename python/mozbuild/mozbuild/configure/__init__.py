@@ -4,6 +4,7 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+import codecs
 import inspect
 import logging
 import os
@@ -18,6 +19,7 @@ from functools import wraps
 from mozbuild.configure.options import (
     CommandLineHelper,
     ConflictingOptionError,
+    HELP_OPTIONS_CATEGORY,
     InvalidOptionError,
     Option,
     OptionValue,
@@ -29,12 +31,13 @@ from mozbuild.configure.util import (
     LineIO,
 )
 from mozbuild.util import (
-    encode,
+    ensure_subprocess_env,
     exec_,
     memoize,
     memoized_property,
     ReadOnlyDict,
     ReadOnlyNamespace,
+    system_encoding,
 )
 
 import mozpack.path as mozpath
@@ -95,10 +98,6 @@ class SandboxDependsFunction(object):
 
     def __ge__(self, other):
         raise ConfigureError('Cannot compare @depends functions.')
-
-    def __nonzero__(self):
-        raise ConfigureError('Cannot use @depends functions in '
-                             'e.g. conditionals.')
 
     def __getattr__(self, key):
         return self._getattr(key).sandboxed
@@ -345,6 +344,9 @@ class ConfigureSandbox(dict):
         assert isinstance(config, dict)
         self._config = config
 
+        # Tracks how many templates "deep" we are in the stack.
+        self._template_depth = 0
+
         logging.addLevelName(TRACE, 'TRACE')
         if logger is None:
             logger = moz_logger = logging.getLogger('moz.configure')
@@ -371,13 +373,11 @@ class ConfigureSandbox(dict):
 
         def wrapped_log_method(logger, key):
             method = getattr(logger, key)
-            if not encoding:
-                return method
 
             def wrapped(*args, **kwargs):
                 out_args = [
-                    arg.decode(encoding) if isinstance(arg, six.binary_type) else arg
-                    for arg in args
+                    six.ensure_text(arg, encoding=encoding or 'utf-8')
+                    if isinstance(arg, six.binary_type) else arg for arg in args
                 ]
                 return method(*out_args, **kwargs)
             return wrapped
@@ -390,8 +390,8 @@ class ConfigureSandbox(dict):
         self.log_impl = ReadOnlyNamespace(**log_namespace)
 
         self._help = None
-        self._help_option = self.option_impl('--help',
-                                             help='print this message')
+        self._help_option = self.option_impl(
+            '--help', help='print this message', category=HELP_OPTIONS_CATEGORY)
         self._seen.add(self._help_option)
 
         self._always = DependsFunction(self, lambda: True, [])
@@ -401,7 +401,8 @@ class ConfigureSandbox(dict):
             self._help = HelpFormatter(argv[0])
             self._help.add(self._help_option)
         elif moz_logger:
-            handler = logging.FileHandler('config.log', mode='w', delay=True)
+            handler = logging.FileHandler('config.log', mode='w', delay=True,
+                                          encoding='utf-8')
             handler.setFormatter(formatter)
             logger.addHandler(handler)
 
@@ -469,6 +470,9 @@ class ConfigureSandbox(dict):
                            implied_option.caller[2]))
                 # If the option is known, check that the implied value doesn't
                 # conflict with what value was attributed to the option.
+                if (implied_option.when and
+                        not self._value_for(implied_option.when)):
+                    continue
                 option_value = self._value_for_option(option)
                 if value != option_value:
                     reason = implied_option.reason
@@ -676,6 +680,12 @@ class ConfigureSandbox(dict):
         args = [self._resolve(arg) for arg in args]
         kwargs = {k: self._resolve(v) for k, v in six.iteritems(kwargs)
                   if k != 'when'}
+        # The Option constructor needs to look up the stack to infer a category
+        # for the Option, since the category is based on the filename where the
+        # Option is defined. However, if the Option is defined in a template, we
+        # want the category to reference the caller of the template rather than
+        # the caller of the option() function.
+        kwargs['define_depth'] = self._template_depth * 3
         option = Option(*args, **kwargs)
         if when:
             self._conditions[option] = when
@@ -798,7 +808,9 @@ class ConfigureSandbox(dict):
                 args = [maybe_prepare_function(arg) for arg in args]
                 kwargs = {k: maybe_prepare_function(v)
                           for k, v in kwargs.items()}
+                self._template_depth += 1
                 ret = template(*args, **kwargs)
+                self._template_depth -= 1
                 if isfunction(ret):
                     # We can't expect the sandboxed code to think about all the
                     # details of implementing decorators, so do some of the
@@ -880,7 +892,12 @@ class ConfigureSandbox(dict):
         def wrap(function):
             def wrapper(*args, **kwargs):
                 if 'env' not in kwargs:
-                    kwargs['env'] = encode(self._environ)
+                    kwargs['env'] = dict(self._environ)
+                # Subprocess on older Pythons can't handle unicode keys or
+                # values in environment dicts while subprocess on newer Pythons
+                # needs text in the env. Normalize automagically so callers
+                # don't have to deal with this.
+                kwargs['env'] = ensure_subprocess_env(kwargs['env'], encoding=system_encoding)
                 return function(*args, **kwargs)
             return wrapper
 
@@ -896,9 +913,24 @@ class ConfigureSandbox(dict):
             return self
         # Special case for the open() builtin, because otherwise, using it
         # fails with "IOError: file() constructor not accessible in
-        # restricted mode"
-        if what == '__builtin__.open':
-            return lambda *args, **kwargs: open(*args, **kwargs)
+        # restricted mode". We also make open() look more like python 3's,
+        # decoding to unicode strings unless the mode says otherwise.
+        if what == '__builtin__.open' or what == 'builtins.open':
+            if six.PY3:
+                return open
+
+            def wrapped_open(name, mode=None, buffering=None):
+                args = (name,)
+                kwargs = {}
+                if buffering is not None:
+                    kwargs['buffering'] = buffering
+                if mode is not None:
+                    args += (mode,)
+                    if 'b' in mode:
+                        return open(*args, **kwargs)
+                kwargs['encoding'] = system_encoding
+                return codecs.open(*args, **kwargs)
+            return wrapped_open
         # Special case os and os.environ so that os.environ is our copy of
         # the environment.
         if what == 'os.environ':
@@ -919,6 +951,8 @@ class ConfigureSandbox(dict):
             if _from == '__builtin__' or _from.startswith('__builtin__.'):
                 _from = _from.replace('__builtin__', 'six.moves.builtins')
             import_line += 'from %s ' % _from
+        if what == '__builtin__':
+            what = 'six.moves.builtins'
         import_line += 'import %s as imported' % what
         glob = {}
         exec_(import_line, {}, glob)

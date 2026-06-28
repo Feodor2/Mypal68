@@ -8,18 +8,19 @@ processing jar.mn files.
 See the documentation for jar.mn on MDC for further details on the format.
 '''
 
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import, print_function, unicode_literals
 
-import sys
-import os
 import errno
+import io
+import logging
+import os
 import re
 import six
-import logging
+from six import BytesIO
+import sys
 from time import localtime
-from MozZipFile import ZipFile
-from cStringIO import StringIO
 
+from MozZipFile import ZipFile
 from mozbuild.preprocessor import Preprocessor
 from mozbuild.action.buildlist import addEntriesToListFile
 from mozbuild.util import ensure_bytes
@@ -43,12 +44,12 @@ class ZipEntry(object):
     def __init__(self, name, zipfile):
         self._zipfile = zipfile
         self._name = name
-        self._inner = StringIO()
+        self._inner = BytesIO()
 
     def write(self, content):
         '''Append the given content to this zip entry'''
 
-        self._inner.write(content)
+        self._inner.write(ensure_bytes(content))
         return
 
     def close(self):
@@ -59,7 +60,7 @@ class ZipEntry(object):
 
 def getModTime(aPath):
     if not os.path.isfile(aPath):
-        return 0
+        return localtime(0)
     mtime = os.stat(aPath).st_mtime
     return localtime(mtime)
 
@@ -325,7 +326,7 @@ class JarMaker(object):
         elif self.relativesrcdir:
             self.localedirs = \
                 self.generateLocaleDirs(self.relativesrcdir)
-        if isinstance(infile, basestring):
+        if isinstance(infile, six.text_type):
             logging.info('processing ' + infile)
             self.sourcedirs.append(_normpath(os.path.dirname(infile)))
         pp = self.pp.clone()
@@ -467,8 +468,8 @@ class JarMaker(object):
         self._seen_output.add(out)
 
         if e.preprocess:
-            outf = outHelper.getOutput(out)
-            inf = open(realsrc)
+            outf = outHelper.getOutput(out, mode='w')
+            inf = io.open(realsrc, encoding='utf-8')
             pp = self.pp.clone()
             if src[-4:] == '.css':
                 pp.setMarker('%')
@@ -505,9 +506,9 @@ class JarMaker(object):
                 info = self.jarfile.getinfo(aPath)
                 return info.date_time
             except Exception:
-                return 0
+                return localtime(0)
 
-        def getOutput(self, name):
+        def getOutput(self, name, mode='wb'):
             return ZipEntry(name, self.jarfile)
 
     class OutputHelper_flat(object):
@@ -522,7 +523,7 @@ class JarMaker(object):
         def getDestModTime(self, aPath):
             return getModTime(os.path.join(self.basepath, aPath))
 
-        def getOutput(self, name):
+        def getOutput(self, name, mode='wb'):
             out = self.ensureDirFor(name)
 
             # remove previous link or file
@@ -531,7 +532,10 @@ class JarMaker(object):
             except OSError as e:
                 if e.errno != errno.ENOENT:
                     raise
-            return open(out, 'wb')
+            if 'b' in mode:
+                return io.open(out, mode)
+            else:
+                return io.open(out, mode, encoding='utf-8', newline='\n')
 
         def ensureDirFor(self, name):
             out = os.path.join(self.basepath, name)
@@ -608,4 +612,5 @@ def main(args=None):
         infile = sys.stdin
     else:
         (infile, ) = args
+        infile = six.ensure_text(infile)
     jm.makeJar(infile, options.d)

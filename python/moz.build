@@ -25,7 +25,7 @@ with Files('mozbuild/**'):
     BUG_COMPONENT = ('Firefox Build System', 'General')
 
 with Files('mozlint/**'):
-    BUG_COMPONENT = ('Testing', 'Lint')
+    BUG_COMPONENT = ('Firefox Build System', 'Linting and Formatting')
 
 with Files('mozversioncontrol/**'):
     BUG_COMPONENT = ('Firefox Build System', 'General')
@@ -34,7 +34,7 @@ with Files('l10n/**'):
     BUG_COMPONENT = ('Firefox Build System', 'General')
 
 with Files('mozrelease/**'):
-    BUG_COMPONENT = ('Release Engineering', 'Release Automation')
+    BUG_COMPONENT = ('Release Engineering', 'General')
 
 with Files('mach_commands.py'):
     BUG_COMPONENT = ('Testing', 'Python Test')
@@ -60,16 +60,11 @@ PYTHON_UNITTEST_MANIFESTS += [
     'mach/mach/test/python.ini',
     'mozboot/mozboot/test/python.ini',
     'mozbuild/dumbmake/test/python.ini',
+    'mozbuild/mozbuild/test/python.ini',
+    'mozbuild/mozbuild/test/python2.ini',
+    'mozbuild/mozpack/test/python.ini',
     'mozlint/test/python.ini',
     'mozrelease/test/python.ini',
     'mozterm/test/python.ini',
     'mozversioncontrol/test/python.ini',
 ]
-
-if CONFIG['MOZ_BUILD_APP']:
-    PYTHON_UNITTEST_MANIFESTS += [
-        'mozbuild/mozbuild/test/python.ini',
-        'mozbuild/mozbuild/test/python2.ini',
-        'mozbuild/mozpack/test/python.ini',
-        'mozbuild/mozpack/test/python2.ini',
-    ]

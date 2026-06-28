@@ -4,22 +4,23 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-from distutils.version import LooseVersion
+import errno
 import hashlib
 import logging
-from mozbuild.base import (
-    BuildEnvironmentNotFoundException,
-    MozbuildObject,
-)
-import mozpack.path as mozpath
 import os
 import re
 import subprocess
 import sys
 from collections import OrderedDict
+from distutils.version import LooseVersion
 from itertools import dropwhile
 
 import pytoml
+import mozpack.path as mozpath
+from mozbuild.base import (
+    BuildEnvironmentNotFoundException,
+    MozbuildObject,
+)
 
 
 CARGO_CONFIG_TEMPLATE = '''\
@@ -52,24 +53,34 @@ directory = "@top_srcdir@/@VENDORED_DIRECTORY@"
 '''
 
 
+CARGO_LOCK_NOTICE = '''
+NOTE: `cargo vendor` may have made changes to your Cargo.lock. To restore your
+Cargo.lock to the HEAD version, run `git checkout -- Cargo.lock` or
+`hg revert Cargo.lock`.
+'''
+
+
 class VendorRust(MozbuildObject):
     def get_cargo_path(self):
         try:
             return self.substs['CARGO']
         except (BuildEnvironmentNotFoundException, KeyError):
             # Default if this tree isn't configured.
-            import which
-            return which.which('cargo')
+            from mozfile import which
+            cargo = which('cargo')
+            if not cargo:
+                raise OSError(errno.ENOENT, "Could not find 'cargo' on your $PATH.")
+            return cargo
 
     def check_cargo_version(self, cargo):
         '''
         Ensure that cargo is new enough. cargo 1.37 added support
         for the vendor command.
         '''
-        out = subprocess.check_output([cargo, '--version']).splitlines()[0]
+        out = subprocess.check_output([cargo, '--version']).splitlines()[0].decode('UTF-8')
         if not out.startswith('cargo'):
             return False
-        return LooseVersion(out.split()[1]) >= b'1.37'
+        return LooseVersion(out.split()[1]) >= '1.37'
 
     def check_modified_files(self):
         '''
@@ -271,7 +282,7 @@ Please commit or stash these changes before vendoring, or re-run with `--ignore-
             # with [target.'cfg(...)'.dependencies sections, so we resort
             # to scanning individual lines.
             with open(toml_file, 'r') as f:
-                license_lines = [l for l in f if l.strip().startswith(b'license')]
+                license_lines = [l for l in f if l.strip().startswith('license')]
                 license_matches = list(
                     filter(lambda x: x, [LICENSE_LINE_RE.match(l) for l in license_lines]))
                 license_file_matches = list(
@@ -313,7 +324,7 @@ to the whitelist of packages whose licenses are suitable.
                     approved_hash = self.RUNTIME_LICENSE_FILE_PACKAGE_WHITELIST[package]
                     license_contents = open(os.path.join(
                         vendor_dir, package, license_file), 'r').read()
-                    current_hash = hashlib.sha256(license_contents).hexdigest()
+                    current_hash = hashlib.sha256(license_contents.encode('UTF-8')).hexdigest()
                     if current_hash != approved_hash:
                         self.log(logging.ERROR, 'package_license_file_mismatch', {},
                                  '''Package {} has changed its license file: {} (hash {}).
@@ -353,7 +364,7 @@ license file's hash.
 
         output = subprocess.check_output([cargo, 'vendor', vendor_dir],
                                          stderr=subprocess.STDOUT,
-                                         cwd=self.topsrcdir)
+                                         cwd=self.topsrcdir).decode('UTF-8')
 
         # Get the snippet of configuration that cargo vendor outputs, and
         # update .cargo/config with it.
@@ -420,7 +431,10 @@ license file's hash.
         if not self._check_licenses(vendor_dir):
             self.log(
                 logging.ERROR, 'license_check_failed', {},
-                '''The changes from `mach vendor rust` will NOT be added to version control.''')
+                '''The changes from `mach vendor rust` will NOT be added to version control.
+
+{notice}'''.format(notice=CARGO_LOCK_NOTICE))
+            self.repository.clean_directory(vendor_dir)
             sys.exit(1)
 
         self.repository.add_remove_files(vendor_dir)
@@ -448,8 +462,11 @@ Please find a way to reduce the sizes of these files or talk to a build
 peer about the particular large files you are adding.
 
 The changes from `mach vendor rust` will NOT be added to version control.
-'''.format(files='\n'.join(sorted(large_files)), size=FILESIZE_LIMIT))
+
+{notice}'''.format(files='\n'.join(sorted(large_files)), size=FILESIZE_LIMIT,
+                   notice=CARGO_LOCK_NOTICE))
             self.repository.forget_add_remove_files(vendor_dir)
+            self.repository.clean_directory(vendor_dir)
             sys.exit(1)
 
         # Only warn for large imports, since we may just have large code

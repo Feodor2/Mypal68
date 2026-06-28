@@ -22,14 +22,16 @@ value :
   | \w+  # string identifier or value;
 """
 
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import, print_function, unicode_literals
 
-import sys
+import errno
+import io
+from optparse import OptionParser
 import os
 import re
 import six
-from optparse import OptionParser
-import errno
+import sys
+
 from mozbuild.makeutil import Makefile
 
 # hack around win32 mangling our line endings
@@ -46,6 +48,15 @@ __all__ = [
   'Preprocessor',
   'preprocess'
 ]
+
+
+def _to_text(a):
+    # We end up converting a lot of different types (text_type, binary_type,
+    # int, etc.) to Unicode in this script. This function handles all of those
+    # possibilities.
+    if isinstance(a, (six.text_type, six.binary_type)):
+        return six.ensure_text(a)
+    return six.text_type(a)
 
 
 def path_starts_with(path, prefix):
@@ -200,8 +211,8 @@ class Expression:
             if tok[1].value == '!=':
                 rv = not rv
             return rv
-        # Helper function to evaluate __get_logical_and and __get_logical_or results
 
+        # Helper function to evaluate __get_logical_and and __get_logical_or results
         def eval_logical_op(tok):
             left = opmap[tok[0].type](tok[0])
             right = opmap[tok[2].type](tok[2])
@@ -324,14 +335,14 @@ class Preprocessor:
         for cmd, level in (
             ('define', 0),
             ('undef', 0),
-            ('if', sys.maxint),
-            ('ifdef', sys.maxint),
-            ('ifndef', sys.maxint),
+            ('if', sys.maxsize),
+            ('ifdef', sys.maxsize),
+            ('ifndef', sys.maxsize),
             ('else', 1),
             ('elif', 1),
             ('elifdef', 1),
             ('elifndef', 1),
-            ('endif', sys.maxint),
+            ('endif', sys.maxsize),
             ('expand', 0),
             ('literal', 0),
             ('filter', 0),
@@ -483,7 +494,7 @@ class Preprocessor:
                 except OSError as error:
                     if error.errno != errno.EEXIST:
                         raise
-            return open(path, 'wb')
+            return io.open(path, 'w', encoding='utf-8', newline='\n')
 
         p = self.getCommandLineParser()
         options, args = p.parse_args(args=args)
@@ -505,11 +516,13 @@ class Preprocessor:
 
         if args:
             for f in args:
-                with open(f, 'rU') as input:
+                with io.open(f, 'rU', encoding='utf-8') as input:
                     self.processFile(input=input, output=out)
             if depfile:
                 mk = Makefile()
-                mk.create_rule([options.output]).add_dependencies(self.includes)
+                mk.create_rule(
+                    [six.ensure_text(options.output)]
+                ).add_dependencies(self.includes)
                 mk.dump(depfile)
                 depfile.close()
 
@@ -609,8 +622,8 @@ class Preprocessor:
             raise Preprocessor.Error(self, 'SYNTAX_DEF', args)
         if args in self.context:
             del self.context[args]
-    # Logic
 
+    # Logic
     def ensure_not_else(self):
         if len(self.ifStates) == 0 or self.ifStates[-1] == 2:
             sys.stderr.write('WARNING: bad nesting of #else in %s\n' % self.context['FILE'])
@@ -626,7 +639,7 @@ class Preprocessor:
         except Exception:
             # XXX do real error reporting
             raise Preprocessor.Error(self, 'SYNTAX_ERR', args)
-        if type(val) == str:
+        if isinstance(val, six.text_type) or isinstance(val, six.binary_type):
             # we're looking for a number value, strings are false
             val = False
         if not val:
@@ -637,7 +650,6 @@ class Preprocessor:
             self.ifStates[-1] = self.disableLevel
         else:
             self.ifStates.append(self.disableLevel)
-        pass
 
     def do_ifdef(self, args, replace=False):
         if self.disableLevel and not replace:
@@ -653,7 +665,6 @@ class Preprocessor:
             self.ifStates[-1] = self.disableLevel
         else:
             self.ifStates.append(self.disableLevel)
-        pass
 
     def do_ifndef(self, args, replace=False):
         if self.disableLevel and not replace:
@@ -669,7 +680,6 @@ class Preprocessor:
             self.ifStates[-1] = self.disableLevel
         else:
             self.ifStates.append(self.disableLevel)
-        pass
 
     def do_else(self, args, ifState=2):
         self.ensure_not_else()
@@ -706,14 +716,14 @@ class Preprocessor:
             self.disableLevel -= 1
         if self.disableLevel == 0:
             self.ifStates.pop()
-    # output processing
 
+    # output processing
     def do_expand(self, args):
         lst = re.split('__(\w+)__', args, re.U)
 
         def vsubst(v):
             if v in self.context:
-                return str(self.context[v])
+                return _to_text(self.context[v])
             return ''
         for i in range(1, len(lst), 2):
             lst[i] = vsubst(lst[i])
@@ -730,9 +740,7 @@ class Preprocessor:
         current = dict(self.filters)
         for f in filters:
             current[f] = getattr(self, 'filter_' + f)
-        filterNames = current.keys()
-        filterNames.sort()
-        self.filters = [(fn, current[fn]) for fn in filterNames]
+        self.filters = [(fn, current[fn]) for fn in sorted(current.keys())]
         return
 
     def do_unfilter(self, args):
@@ -741,22 +749,18 @@ class Preprocessor:
         for f in filters:
             if f in current:
                 del current[f]
-        filterNames = current.keys()
-        filterNames.sort()
-        self.filters = [(fn, current[fn]) for fn in filterNames]
+        self.filters = [(fn, current[fn]) for fn in sorted(current.keys())]
         return
+
     # Filters
     #
-    # emptyLines
-    #   Strips blank lines from the output.
-
+    # emptyLines: Strips blank lines from the output.
     def filter_emptyLines(self, aLine):
         if aLine == '\n':
             return ''
         return aLine
-    # slashslash
-    #   Strips everything after //
 
+    # slashslash: Strips everything after //.
     def filter_slashslash(self, aLine):
         if (aLine.find('//') == -1):
             return aLine
@@ -764,28 +768,28 @@ class Preprocessor:
         if rest:
             aLine += '\n'
         return aLine
-    # spaces
-    #   Collapses sequences of spaces into a single space
 
+    # spaces: Collapses sequences of spaces into a single space.
     def filter_spaces(self, aLine):
         return re.sub(' +', ' ', aLine).strip(' ')
-    # substition
-    #   helper to be used by both substition and attemptSubstitution
 
+    # substitution: variables wrapped in @ are replaced with their value.
     def filter_substitution(self, aLine, fatal=True):
         def repl(matchobj):
             varname = matchobj.group('VAR')
             if varname in self.context:
-                return str(self.context[varname])
+                return _to_text(self.context[varname])
             if fatal:
                 raise Preprocessor.Error(self, 'UNDEFINED_VAR', varname)
             return matchobj.group(0)
         return self.varsubst.sub(repl, aLine)
 
+    # attemptSubstitution: variables wrapped in @ are replaced with their
+    # value, or an empty string if the variable is not defined.
     def filter_attemptSubstitution(self, aLine):
         return self.filter_substitution(aLine, fatal=False)
-    # File ops
 
+    # File ops
     def do_include(self, args, filters=True):
         """
         Preprocess a given file.
@@ -797,16 +801,16 @@ class Preprocessor:
         self.checkLineNumbers = False
         if isName:
             try:
-                args = str(args)
+                args = _to_text(args)
                 if filters:
                     args = self.applyFilters(args)
                 if not os.path.isabs(args):
                     args = os.path.join(self.curdir, args)
-                args = open(args, 'rU')
+                args = io.open(args, 'rU', encoding='utf-8')
             except Preprocessor.Error:
                 raise
             except Exception:
-                raise Preprocessor.Error(self, 'FILE_NOT_FOUND', str(args))
+                raise Preprocessor.Error(self, 'FILE_NOT_FOUND', _to_text(args))
         self.checkLineNumbers = bool(re.search('\.(js|jsm|java|webidl)(?:\.in)?$', args.name))
         oldFile = self.context['FILE']
         oldLine = self.context['LINE']
@@ -822,7 +826,7 @@ class Preprocessor:
         else:
             abspath = os.path.abspath(args.name)
             self.curdir = os.path.dirname(abspath)
-            self.includes.add(abspath)
+            self.includes.add(six.ensure_text(abspath))
             if self.topobjdir and path_starts_with(abspath, self.topobjdir):
                 abspath = '$OBJDIR' + abspath[len(self.topobjdir):]
             elif self.topsrcdir and path_starts_with(abspath, self.topsrcdir):
@@ -848,7 +852,7 @@ class Preprocessor:
         self.do_include(args)
 
     def do_error(self, args):
-        raise Preprocessor.Error(self, 'Error: ', str(args))
+        raise Preprocessor.Error(self, 'Error: ', _to_text(args))
 
 
 def preprocess(includes=[sys.stdin], defines={},
@@ -857,7 +861,7 @@ def preprocess(includes=[sys.stdin], defines={},
     pp = Preprocessor(defines=defines,
                       marker=marker)
     for f in includes:
-        with open(f, 'rU') as input:
+        with io.open(f, 'rU', encoding='utf-8') as input:
             pp.processFile(input=input, output=output)
     return pp.includes
 

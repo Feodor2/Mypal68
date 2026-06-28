@@ -7,7 +7,7 @@
     <title>Build System Resource Usage</title>
 
     <meta charset='utf-8'>
-    <script src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+    <script src="https://d3js.org/d3.v3.min.js" charset="utf-8"></script>
     <style>
 
 svg {
@@ -220,7 +220,7 @@ function updateResourcesGraph() {
 }
 
 function renderKey(key) {
-  d3.json("/resources/" + key, function onResource(error, response) {
+  d3.json(key, function onResource(error, response) {
     if (error) {
       alert("Data not available. Is the server still running?");
       return;
@@ -428,12 +428,26 @@ function renderResources(id, resources, what) {
 }
 
 document.addEventListener("DOMContentLoaded", function() {
-  d3.json("list", function onList(error, response) {
-    if (!response || !("files" in response)) {
+  d3.json("build_resources.json", function onList(error, response) {
+    if (!response) {
       return;
     }
-
-    renderKey(response.files[0]);
+    // If the response contains a list of files, use that list.
+    // Otherwise, we expect it's directly build resources data.
+    if (Object.keys(response).length == 1 && "files" in response) {
+      if (response.files.length > 1) {
+        var list = d3.select("#list");
+        for (file of response.files) {
+          list.append("option").attr("value", file).text(file);
+        }
+        list.on("change", function() {renderKey(this.value);})
+        list.style("display", "inline");
+      }
+      renderKey(response.files[0]);
+    } else {
+      currentResources = new BuildResources(response);
+      updateResourcesGraph();
+    }
   });
 }, false);
 
@@ -458,6 +472,7 @@ document.addEventListener("DOMContentLoaded", function() {
     </select>
     -->
 
+    <select id="list" style="display: none"></select>
     <div id="resource_graph"></div>
     <div id="summary" style="padding-top: 20px">
       <table border="0">

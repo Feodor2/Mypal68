@@ -26,8 +26,9 @@ from mozpack.chrome.manifest import ManifestEntry
 import mozpack.path as mozpath
 from .context import FinalTargetValue
 
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 import itertools
+import six
 
 from ..util import (
     group_unified_files,
@@ -189,7 +190,7 @@ class ComputedFlags(ContextDerived):
             if value:
                 for dest_var in dest_vars:
                     flags[dest_var].extend(value)
-        return flags.items()
+        return sorted(flags.items())
 
 
 class XPIDLModule(ContextDerived):
@@ -219,7 +220,7 @@ class BaseDefines(ContextDerived):
         self.defines = defines
 
     def get_defines(self):
-        for define, value in self.defines.iteritems():
+        for define, value in six.iteritems(self.defines):
             if value is True:
                 yield('-D%s' % define)
             elif value is False:
@@ -414,7 +415,7 @@ class Linkable(ContextDerived):
         self.cxx_link = False
         self.linked_libraries = []
         self.linked_system_libs = []
-        self.lib_defines = Defines(context, {})
+        self.lib_defines = Defines(context, OrderedDict())
         self.sources = defaultdict(list)
 
     def link_library(self, obj):
@@ -1225,10 +1226,12 @@ class GeneratedFile(ContextDerived):
         'required_during_compile',
         'localized',
         'force',
+        'py2',
     )
 
     def __init__(self, context, script, method, outputs, inputs,
-                 flags=(), localized=False, force=False):
+                 flags=(), localized=False, force=False,
+                 py2=False):
         ContextDerived.__init__(self, context)
         self.script = script
         self.method = method
@@ -1237,14 +1240,13 @@ class GeneratedFile(ContextDerived):
         self.flags = flags
         self.localized = localized
         self.force = force
+        self.py2 = py2
 
         suffixes = (
             '.h',
             '.inc',
             '.py',
             '.rs',
-            'node.stub',  # To avoid VPATH issues with installing node files:
-                          # https://bugzilla.mozilla.org/show_bug.cgi?id=1461714#c55
             # We need to compile Java to generate JNI wrappers for native code
             # compilation to consume.
             'android_apks',

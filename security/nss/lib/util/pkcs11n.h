@@ -138,6 +138,7 @@
 /* FAKE PKCS #11 defines */
 #define CKM_FAKE_RANDOM 0x80000efeUL
 #define CKM_INVALID_MECHANISM 0xffffffffUL
+#define CKT_INVALID_TYPE 0xffffffffUL
 
 /*
  * NSS-defined crypto mechanisms
@@ -241,6 +242,11 @@
 #define CKM_NSS_IKE1_APP_B_PRF_DERIVE (CKM_NSS + 37)
 
 #define CKM_NSS_PUB_FROM_PRIV (CKM_NSS + 40)
+
+/* SP800-108 NSS mechanism with support for data object derivation */
+#define CKM_NSS_SP800_108_COUNTER_KDF_DERIVE_DATA (CKM_NSS + 42)
+#define CKM_NSS_SP800_108_FEEDBACK_KDF_DERIVE_DATA (CKM_NSS + 43)
+#define CKM_NSS_SP800_108_DOUBLE_PIPELINE_KDF_DERIVE_DATA (CKM_NSS + 44)
 
 /*
  * HISTORICAL:

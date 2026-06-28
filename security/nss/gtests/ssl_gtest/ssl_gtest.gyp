@@ -15,6 +15,7 @@
         'libssl_internals.c',
         'selfencrypt_unittest.cc',
         'ssl_0rtt_unittest.cc',
+        'ssl_aead_unittest.cc',
         'ssl_agent_unittest.cc',
         'ssl_auth_unittest.cc',
         'ssl_cert_ext_unittest.cc',
@@ -36,8 +37,8 @@
         'ssl_hrr_unittest.cc',
         'ssl_keyupdate_unittest.cc',
         'ssl_loopback_unittest.cc',
+        'ssl_masking_unittest.cc',
         'ssl_misc_unittest.cc',
-        'ssl_primitive_unittest.cc',
         'ssl_record_unittest.cc',
         'ssl_recordsep_unittest.cc',
         'ssl_recordsize_unittest.cc',
@@ -101,6 +102,18 @@
           ],
           'defines': [
             'NSS_ALLOW_SSLKEYLOGFILE',
+          ],
+        }],
+        # ssl_gtest fuzz defines should only be determined by the 'fuzz_tls'
+        # flag (so as to match lib/ssl). If gtest.gypi added the define due
+        # to '--fuzz' only, remove it.
+        ['fuzz_tls==1', {
+          'defines': [
+            'UNSAFE_FUZZER_MODE',
+          ],
+        }, {
+          'defines!': [
+            'UNSAFE_FUZZER_MODE',
           ],
         }],
       ],

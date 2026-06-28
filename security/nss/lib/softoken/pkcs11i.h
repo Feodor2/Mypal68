@@ -71,6 +71,17 @@
                    * before we start freeing them */
 #define MAX_KEY_LEN 256 /* maximum symmetric key length in bytes */
 
+/* From ssl3con.c: Constant-time helper macro that copies the MSB of x to all
+ *  * other bits. */
+#define CT_DUPLICATE_MSB_TO_ALL(x) ((unsigned int)((int)(x) >> (sizeof(int) * 8 - 1)))
+
+/* Constant-time helper macro that selects l or r depending on all-1 or all-0
+ *  * mask m */
+#define CT_SEL(m, l, r) (((m) & (l)) | (~(m) & (r)))
+/* Constant-time helper macro that returns all-1s if x is not 0; and all-0s
+ *  * otherwise. */
+#define CT_NOT_ZERO(x) (CT_DUPLICATE_MSB_TO_ALL(((x) | (0 - x))))
+
 /*
  * LOG2_BUCKETS_PER_SESSION_LOCK must be a prime number.
  * With SESSION_HASH_SIZE=1024, LOG2 can be 9, 5, 1, or 0.
@@ -770,6 +781,8 @@ extern CK_RV sftk_PutPubKey(SFTKObject *publicKey, SFTKObject *privKey, CK_KEY_T
 extern void sftk_FormatDESKey(unsigned char *key, int length);
 extern PRBool sftk_CheckDESKey(unsigned char *key);
 extern PRBool sftk_IsWeakKey(unsigned char *key, CK_KEY_TYPE key_type);
+extern void sftk_EncodeInteger(PRUint64 integer, CK_ULONG num_bits, CK_BBOOL littleEndian,
+                               CK_BYTE_PTR output, CK_ULONG_PTR output_len);
 
 /* ike and xcbc helpers */
 extern CK_RV sftk_ike_prf(CK_SESSION_HANDLE hSession,
@@ -859,6 +872,7 @@ sftk_TLSPRFInit(SFTKSessionContext *context,
 
 /* PKCS#11 MAC implementation. See sftk_MACCtxStr declaration above for
  * calling semantics for these functions. */
+HASH_HashType sftk_HMACMechanismToHash(CK_MECHANISM_TYPE mech);
 CK_RV sftk_MAC_Create(CK_MECHANISM_TYPE mech, SFTKObject *key, sftk_MACCtx **ret_ctx);
 CK_RV sftk_MAC_Init(sftk_MACCtx *ctx, CK_MECHANISM_TYPE mech, SFTKObject *key);
 CK_RV sftk_MAC_InitRaw(sftk_MACCtx *ctx, CK_MECHANISM_TYPE mech, const unsigned char *key, unsigned int key_len, PRBool isFIPS);
@@ -866,6 +880,14 @@ CK_RV sftk_MAC_Update(sftk_MACCtx *ctx, CK_BYTE_PTR data, unsigned int data_len)
 CK_RV sftk_MAC_Finish(sftk_MACCtx *ctx, CK_BYTE_PTR result, unsigned int *result_len, unsigned int max_result_len);
 CK_RV sftk_MAC_Reset(sftk_MACCtx *ctx);
 void sftk_MAC_Destroy(sftk_MACCtx *ctx, PRBool free_it);
+
+/* constant time helpers */
+unsigned int sftk_CKRVToMask(CK_RV rv);
+CK_RV sftk_CheckCBCPadding(CK_BYTE_PTR pBuf, unsigned int bufLen,
+                           unsigned int blockSize, unsigned int *outPadSize);
+
+/* NIST 800-108 (kbkdf.c) implementations */
+extern CK_RV kbkdf_Dispatch(CK_MECHANISM_TYPE mech, CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism, SFTKObject *base_key, SFTKObject *ret_key, CK_ULONG keySize);
 
 SEC_END_PROTOS
 

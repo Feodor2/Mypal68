@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "blapit.h"
 #include "keyhi.h"
 #include "pk11pub.h"
 #include "sechash.h"
@@ -21,38 +22,10 @@ struct SSLAeadContextStr {
     ssl3KeyMaterial keys;
 };
 
-static SECStatus
-tls13_GetHashAndCipher(PRUint16 version, PRUint16 cipherSuite,
-                       SSLHashType *hash, const ssl3BulkCipherDef **cipher)
-{
-    if (version < SSL_LIBRARY_VERSION_TLS_1_3) {
-        PORT_SetError(SEC_ERROR_INVALID_ARGS);
-        return SECFailure;
-    }
-
-    // Lookup and check the suite.
-    SSLVersionRange vrange = { version, version };
-    if (!ssl3_CipherSuiteAllowedForVersionRange(cipherSuite, &vrange)) {
-        PORT_SetError(SEC_ERROR_INVALID_ARGS);
-        return SECFailure;
-    }
-    const ssl3CipherSuiteDef *suiteDef = ssl_LookupCipherSuiteDef(cipherSuite);
-    const ssl3BulkCipherDef *cipherDef = ssl_GetBulkCipherDef(suiteDef);
-    if (cipherDef->type != type_aead) {
-        PORT_SetError(SEC_ERROR_INVALID_ARGS);
-        return SECFailure;
-    }
-    *hash = suiteDef->prf_hash;
-    if (cipher != NULL) {
-        *cipher = cipherDef;
-    }
-    return SECSuccess;
-}
-
 SECStatus
-SSLExp_MakeAead(PRUint16 version, PRUint16 cipherSuite, PK11SymKey *secret,
-                const char *labelPrefix, unsigned int labelPrefixLen,
-                SSLAeadContext **ctx)
+SSLExp_MakeVariantAead(PRUint16 version, PRUint16 cipherSuite, SSLProtocolVariant variant,
+                       PK11SymKey *secret, const char *labelPrefix,
+                       unsigned int labelPrefixLen, SSLAeadContext **ctx)
 {
     SSLAeadContext *out = NULL;
     char label[255]; // Maximum length label.
@@ -87,7 +60,7 @@ SSLExp_MakeAead(PRUint16 version, PRUint16 cipherSuite, PK11SymKey *secret,
     unsigned int ivLen = cipher->iv_size + cipher->explicit_nonce_size;
     rv = tls13_HkdfExpandLabelRaw(secret, hash,
                                   NULL, 0, // Handshake hash.
-                                  label, labelLen,
+                                  label, labelLen, variant,
                                   out->keys.iv, ivLen);
     if (rv != SECSuccess) {
         goto loser;
@@ -97,8 +70,8 @@ SSLExp_MakeAead(PRUint16 version, PRUint16 cipherSuite, PK11SymKey *secret,
     labelLen = labelPrefixLen + strlen(keySuffix);
     rv = tls13_HkdfExpandLabel(secret, hash,
                                NULL, 0, // Handshake hash.
-                               label, labelLen,
-                               out->mech, cipher->key_size, &out->keys.key);
+                               label, labelLen, out->mech, cipher->key_size,
+                               variant, &out->keys.key);
     if (rv != SECSuccess) {
         goto loser;
     }
@@ -109,6 +82,14 @@ SSLExp_MakeAead(PRUint16 version, PRUint16 cipherSuite, PK11SymKey *secret,
 loser:
     SSLExp_DestroyAead(out);
     return SECFailure;
+}
+
+SECStatus
+SSLExp_MakeAead(PRUint16 version, PRUint16 cipherSuite, PK11SymKey *secret,
+                const char *labelPrefix, unsigned int labelPrefixLen, SSLAeadContext **ctx)
+{
+    return SSLExp_MakeVariantAead(version, cipherSuite, ssl_variant_stream, secret,
+                                  labelPrefix, labelPrefixLen, ctx);
 }
 
 SECStatus
@@ -227,8 +208,17 @@ SSLExp_HkdfExtract(PRUint16 version, PRUint16 cipherSuite,
 SECStatus
 SSLExp_HkdfExpandLabel(PRUint16 version, PRUint16 cipherSuite, PK11SymKey *prk,
                        const PRUint8 *hsHash, unsigned int hsHashLen,
-                       const char *label, unsigned int labelLen,
-                       PK11SymKey **keyp)
+                       const char *label, unsigned int labelLen, PK11SymKey **keyp)
+{
+    return SSLExp_HkdfVariantExpandLabel(version, cipherSuite, prk, hsHash, hsHashLen,
+                                         label, labelLen, ssl_variant_stream, keyp);
+}
+
+SECStatus
+SSLExp_HkdfVariantExpandLabel(PRUint16 version, PRUint16 cipherSuite, PK11SymKey *prk,
+                              const PRUint8 *hsHash, unsigned int hsHashLen,
+                              const char *label, unsigned int labelLen,
+                              SSLProtocolVariant variant, PK11SymKey **keyp)
 {
     if (prk == NULL || keyp == NULL ||
         label == NULL || labelLen == 0) {
@@ -244,7 +234,7 @@ SSLExp_HkdfExpandLabel(PRUint16 version, PRUint16 cipherSuite, PK11SymKey *prk,
     }
     return tls13_HkdfExpandLabel(prk, hash, hsHash, hsHashLen, label, labelLen,
                                  tls13_GetHkdfMechanismForHash(hash),
-                                 tls13_GetHashSizeForHash(hash), keyp);
+                                 tls13_GetHashSizeForHash(hash), variant, keyp);
 }
 
 SECStatus
@@ -253,6 +243,18 @@ SSLExp_HkdfExpandLabelWithMech(PRUint16 version, PRUint16 cipherSuite, PK11SymKe
                                const char *label, unsigned int labelLen,
                                CK_MECHANISM_TYPE mech, unsigned int keySize,
                                PK11SymKey **keyp)
+{
+    return SSLExp_HkdfVariantExpandLabelWithMech(version, cipherSuite, prk, hsHash, hsHashLen,
+                                                 label, labelLen, mech, keySize,
+                                                 ssl_variant_stream, keyp);
+}
+
+SECStatus
+SSLExp_HkdfVariantExpandLabelWithMech(PRUint16 version, PRUint16 cipherSuite, PK11SymKey *prk,
+                                      const PRUint8 *hsHash, unsigned int hsHashLen,
+                                      const char *label, unsigned int labelLen,
+                                      CK_MECHANISM_TYPE mech, unsigned int keySize,
+                                      SSLProtocolVariant variant, PK11SymKey **keyp)
 {
     if (prk == NULL || keyp == NULL ||
         label == NULL || labelLen == 0 ||
@@ -268,5 +270,196 @@ SSLExp_HkdfExpandLabelWithMech(PRUint16 version, PRUint16 cipherSuite, PK11SymKe
         return SECFailure; /* Code already set. */
     }
     return tls13_HkdfExpandLabel(prk, hash, hsHash, hsHashLen, label, labelLen,
-                                 mech, keySize, keyp);
+                                 mech, keySize, variant, keyp);
+}
+
+SECStatus
+ssl_CreateMaskingContextInner(PRUint16 version, PRUint16 cipherSuite,
+                              SSLProtocolVariant variant,
+                              PK11SymKey *secret,
+                              const char *label,
+                              unsigned int labelLen,
+                              SSLMaskingContext **ctx)
+{
+    if (!secret || !ctx || (!label && labelLen)) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
+    }
+
+    SSLMaskingContext *out = PORT_ZNew(SSLMaskingContext);
+    if (out == NULL) {
+        goto loser;
+    }
+
+    SSLHashType hash;
+    const ssl3BulkCipherDef *cipher;
+    SECStatus rv = tls13_GetHashAndCipher(version, cipherSuite,
+                                          &hash, &cipher);
+    if (rv != SECSuccess) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        goto loser; /* Code already set. */
+    }
+
+    out->mech = tls13_SequenceNumberEncryptionMechanism(cipher->calg);
+    if (out->mech == CKM_INVALID_MECHANISM) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        goto loser;
+    }
+
+    // Derive the masking key
+    rv = tls13_HkdfExpandLabel(secret, hash,
+                               NULL, 0, // Handshake hash.
+                               label, labelLen,
+                               out->mech,
+                               cipher->key_size, variant,
+                               &out->secret);
+    if (rv != SECSuccess) {
+        goto loser;
+    }
+
+    out->version = version;
+    out->cipherSuite = cipherSuite;
+
+    *ctx = out;
+    return SECSuccess;
+loser:
+    SSLExp_DestroyMaskingContext(out);
+    return SECFailure;
+}
+
+SECStatus
+ssl_CreateMaskInner(SSLMaskingContext *ctx, const PRUint8 *sample,
+                    unsigned int sampleLen, PRUint8 *outMask,
+                    unsigned int maskLen)
+{
+    if (!ctx || !sample || !sampleLen || !outMask || !maskLen) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return SECFailure;
+    }
+
+    if (ctx->secret == NULL) {
+        PORT_SetError(SEC_ERROR_NO_KEY);
+        return SECFailure;
+    }
+
+    SECStatus rv = SECFailure;
+    unsigned int outMaskLen = 0;
+
+    /* Internal output len/buf, for use if the caller allocated and requested
+     * less than one block of output. |oneBlock| should have size equal to the
+     * largest block size supported below. */
+    PRUint8 oneBlock[AES_BLOCK_SIZE];
+    PRUint8 *outMask_ = outMask;
+    unsigned int maskLen_ = maskLen;
+
+    switch (ctx->mech) {
+        case CKM_AES_ECB:
+            if (sampleLen < AES_BLOCK_SIZE) {
+                PORT_SetError(SEC_ERROR_INVALID_ARGS);
+                return SECFailure;
+            }
+            if (maskLen_ < AES_BLOCK_SIZE) {
+                outMask_ = oneBlock;
+                maskLen_ = sizeof(oneBlock);
+            }
+            rv = PK11_Encrypt(ctx->secret,
+                              ctx->mech,
+                              NULL,
+                              outMask_, &outMaskLen, maskLen_,
+                              sample, AES_BLOCK_SIZE);
+            if (rv == SECSuccess &&
+                maskLen < AES_BLOCK_SIZE) {
+                memcpy(outMask, outMask_, maskLen);
+            }
+            break;
+        case CKM_NSS_CHACHA20_CTR:
+            if (sampleLen < 16) {
+                PORT_SetError(SEC_ERROR_INVALID_ARGS);
+                return SECFailure;
+            }
+
+            SECItem param;
+            param.type = siBuffer;
+            param.len = 16;
+            param.data = (PRUint8 *)sample; // const-cast :(
+            unsigned char zeros[128] = { 0 };
+
+            if (maskLen > sizeof(zeros)) {
+                PORT_SetError(SEC_ERROR_OUTPUT_LEN);
+                return SECFailure;
+            }
+
+            rv = PK11_Encrypt(ctx->secret,
+                              ctx->mech,
+                              &param,
+                              outMask, &outMaskLen,
+                              maskLen,
+                              zeros, maskLen);
+            break;
+        default:
+            PORT_SetError(SEC_ERROR_INVALID_ARGS);
+            return SECFailure;
+    }
+
+    if (rv != SECSuccess) {
+        PORT_SetError(SEC_ERROR_PKCS11_FUNCTION_FAILED);
+        return SECFailure;
+    }
+
+    // Ensure we produced at least as much material as requested.
+    if (outMaskLen < maskLen) {
+        PORT_SetError(SEC_ERROR_OUTPUT_LEN);
+        return SECFailure;
+    }
+
+    return SECSuccess;
+}
+
+SECStatus
+ssl_DestroyMaskingContextInner(SSLMaskingContext *ctx)
+{
+    if (!ctx) {
+        return SECSuccess;
+    }
+
+    PK11_FreeSymKey(ctx->secret);
+    PORT_ZFree(ctx, sizeof(*ctx));
+    return SECSuccess;
+}
+
+SECStatus
+SSLExp_CreateMask(SSLMaskingContext *ctx, const PRUint8 *sample,
+                  unsigned int sampleLen, PRUint8 *outMask,
+                  unsigned int maskLen)
+{
+    return ssl_CreateMaskInner(ctx, sample, sampleLen, outMask, maskLen);
+}
+
+SECStatus
+SSLExp_CreateMaskingContext(PRUint16 version, PRUint16 cipherSuite,
+                            PK11SymKey *secret,
+                            const char *label,
+                            unsigned int labelLen,
+                            SSLMaskingContext **ctx)
+{
+    return ssl_CreateMaskingContextInner(version, cipherSuite, ssl_variant_stream, secret,
+                                         label, labelLen, ctx);
+}
+
+SECStatus
+SSLExp_CreateVariantMaskingContext(PRUint16 version, PRUint16 cipherSuite,
+                                   SSLProtocolVariant variant,
+                                   PK11SymKey *secret,
+                                   const char *label,
+                                   unsigned int labelLen,
+                                   SSLMaskingContext **ctx)
+{
+    return ssl_CreateMaskingContextInner(version, cipherSuite, variant, secret,
+                                         label, labelLen, ctx);
+}
+
+SECStatus
+SSLExp_DestroyMaskingContext(SSLMaskingContext *ctx)
+{
+    return ssl_DestroyMaskingContextInner(ctx);
 }

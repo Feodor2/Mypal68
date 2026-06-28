@@ -1113,7 +1113,6 @@ static void RebuildVerifiedCertificateInformation(PRFileDesc* fd,
 
   RefPtr<nsNSSCertificate> nssc(nsNSSCertificate::Create(cert.get()));
   if (rv == Success && evOidPolicy != SEC_OID_UNKNOWN) {
-    infoObject->SetCertificateTransparencyInfo(certificateTransparencyInfo);
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("HandshakeCallback using NEW cert %p (is EV)", nssc.get()));
     infoObject->SetServerCert(nssc, EVStatus::EV);
@@ -1124,8 +1123,13 @@ static void RebuildVerifiedCertificateInformation(PRFileDesc* fd,
   }
 
   if (rv == Success) {
-    infoObject->SetCertificateTransparencyInfo(certificateTransparencyInfo);
-    infoObject->SetSucceededCertChain(std::move(builtChain));
+    uint16_t status =
+        TransportSecurityInfo::ConvertCertificateTransparencyInfoToStatus(
+            certificateTransparencyInfo);
+    infoObject->SetCertificateTransparencyStatus(status);
+    nsTArray<nsTArray<uint8_t>> certBytesArray =
+        TransportSecurityInfo::CreateCertBytesArray(builtChain);
+    infoObject->SetSucceededCertChain(std::move(certBytesArray));
   }
 }
 
@@ -1182,33 +1186,6 @@ static nsresult IsCertificateDistrustImminent(
   return NS_OK;
 }
 
-static bool ConstructCERTCertListFromBytesArray(
-    nsTArray<nsTArray<uint8_t>>& aCertArray,
-    /*out*/ UniqueCERTCertList& aCertList) {
-  aCertList = UniqueCERTCertList(CERT_NewCertList());
-  if (!aCertList) {
-    return false;
-  }
-
-  CERTCertDBHandle* certDB(CERT_GetDefaultCertDB());  // non-owning
-  for (auto& cert : aCertArray) {
-    SECItem certDER = {siBuffer, cert.Elements(),
-                       static_cast<unsigned int>(cert.Length())};
-    UniqueCERTCertificate tmpCert(
-        CERT_NewTempCertificate(certDB, &certDER, nullptr, false, true));
-    if (!tmpCert) {
-      return false;
-    }
-
-    if (CERT_AddCertToListTail(aCertList.get(), tmpCert.get()) != SECSuccess) {
-      return false;
-    }
-    Unused << tmpCert.release();  // tmpCert is now owned by aCertList.
-  }
-
-  return true;
-}
-
 static void RebuildCertificateInfoFromSSLTokenCache(
     nsNSSSocketInfo* aInfoObject) {
   MOZ_ASSERT(aInfoObject);
@@ -1237,22 +1214,12 @@ static void RebuildCertificateInfoFromSSLTokenCache(
     return;
   }
 
-  UniqueCERTCertList builtCertChain;
-  if (info.mSucceededCertChainBytes) {
-    if (!ConstructCERTCertListFromBytesArray(
-            info.mSucceededCertChainBytes.ref(), builtCertChain)) {
-      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-              ("RebuildCertificateInfoFromSSLTokenCache failed to construct "
-               "cert list"));
-      return;
-    }
-  }
-
   aInfoObject->SetServerCert(nssc, info.mEVStatus);
   aInfoObject->SetCertificateTransparencyStatus(
       info.mCertificateTransparencyStatus);
-  if (builtCertChain) {
-    aInfoObject->SetSucceededCertChain(std::move(builtCertChain));
+  if (info.mSucceededCertChainBytes) {
+    aInfoObject->SetSucceededCertChain(
+        std::move(*info.mSucceededCertChainBytes));
   }
 }
 
@@ -1393,7 +1360,7 @@ void HandshakeCallback(PRFileDesc* fd, void* client_data) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("HandshakeCallback KEEPING existing cert\n"));
   } else {
-    if (mozilla::net::SSLTokensCache::IsEnabled()) {
+    if (StaticPrefs::network_ssl_tokens_cache_enabled()) {
       RebuildCertificateInfoFromSSLTokenCache(infoObject);
     } else {
       RebuildVerifiedCertificateInformation(fd, infoObject);

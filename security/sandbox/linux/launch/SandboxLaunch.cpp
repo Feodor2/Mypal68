@@ -28,7 +28,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/SandboxReporter.h"
 #include "mozilla/SandboxSettings.h"
-#include "mozilla/Services.h"
+#include "mozilla/Components.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/Unused.h"
 #include "nsCOMPtr.h"
@@ -119,7 +119,7 @@ static bool IsDisplayLocal() {
 }
 
 bool HasAtiDrivers() {
-  nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
+  nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
   nsAutoString vendorID;
   static const Array<nsresult (nsIGfxInfo::*)(nsAString&), 2> kMethods = {
       &nsIGfxInfo::GetAdapterVendorID,
@@ -226,6 +226,10 @@ static int GetEffectiveSandboxLevel(GeckoProcessType aType) {
       return 0;
     case GeckoProcessType_RDD:
       return PR_GetEnv("MOZ_DISABLE_RDD_SANDBOX") == nullptr ? 1 : 0;
+    case GeckoProcessType_Socket:
+      // GetEffectiveSocketProcessSandboxLevel is main-thread-only due to prefs.
+      MOZ_ASSERT(NS_IsMainThread());
+      return GetEffectiveSocketProcessSandboxLevel();
     default:
       return 0;
   }
@@ -273,6 +277,12 @@ void SandboxLaunchPrepare(GeckoProcessType aType,
   }
 
   switch (aType) {
+    case GeckoProcessType_Socket:
+      if (level >= 1) {
+        canChroot = true;
+        flags |= CLONE_NEWIPC;
+      }
+      break;
     case GeckoProcessType_GMPlugin:
     case GeckoProcessType_RDD:
       if (level >= 1) {

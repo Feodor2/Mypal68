@@ -1015,7 +1015,8 @@ bool SandboxBroker::SetSecurityLevelForPluginProcess(int32_t aSandboxLevel) {
   return true;
 }
 
-bool SandboxBroker::SetSecurityLevelForGMPlugin(SandboxLevel aLevel) {
+bool SandboxBroker::SetSecurityLevelForGMPlugin(SandboxLevel aLevel,
+                                                bool aIsRemoteLaunch) {
   if (!mPolicy) {
     return false;
   }
@@ -1203,6 +1204,19 @@ bool SandboxBroker::SetSecurityLevelForGMPlugin(SandboxLevel aLevel) {
       sandbox::TargetPolicy::SUBSYS_REGISTRY,
       sandbox::TargetPolicy::REG_ALLOW_READONLY,
       L"HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\Srp\\\\GP\\");
+  SANDBOX_ENSURE_SUCCESS(
+      result,
+      "With these static arguments AddRule should never fail, what happened?");
+
+  // The GMP process needs to be able to share memory with the main process for
+  // crash reporting. On arm64 when we are launching remotely via an x86 broker,
+  // we need the rule to be HANDLES_DUP_ANY, because we still need to duplicate
+  // to the main process not the child's broker.
+  result = mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
+                            aIsRemoteLaunch
+                                ? sandbox::TargetPolicy::HANDLES_DUP_ANY
+                                : sandbox::TargetPolicy::HANDLES_DUP_BROKER,
+                            L"Section");
   SANDBOX_ENSURE_SUCCESS(
       result,
       "With these static arguments AddRule should never fail, what happened?");

@@ -134,6 +134,9 @@ static void SubmitToTelemetry(const SandboxReport& aReport) {
     case SandboxReport::ProcType::RDD:
       key.AppendLiteral("rdd");
       break;
+    case SandboxReport::ProcType::SOCKET_PROCESS:
+      key.AppendLiteral("socket");
+      break;
     default:
       MOZ_ASSERT(false);
   }

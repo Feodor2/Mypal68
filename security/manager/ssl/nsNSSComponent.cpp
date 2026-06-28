@@ -15,10 +15,13 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Casting.h"
+#include "mozilla/EndianUtils.h"
+#include "mozilla/net/SocketProcessParent.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PodOperations.h"
 #include "mozilla/PublicSSL.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/Telemetry.h"
@@ -34,6 +37,7 @@
 #include "nsIFile.h"
 #include "nsILocalFileWin.h"
 #include "nsIObserverService.h"
+#include "nsIOService.h"
 #include "nsIPrompt.h"
 #include "nsIProperties.h"
 #include "nsITokenPasswordDialogs.h"
@@ -82,7 +86,10 @@ LazyLogModule gPIPNSSLog("pipnss");
 
 int nsNSSComponent::mInstanceCount = 0;
 
-// This function can be called from chrome or content processes
+// Forward declaration.
+nsresult CommonInit();
+
+// This function can be called from chrome or content or socket processes
 // to ensure that NSS is initialized.
 bool EnsureNSSInitializedChromeOrContent() {
   static Atomic<bool> initialized(false);
@@ -125,6 +132,14 @@ bool EnsureNSSInitializedChromeOrContent() {
 
   if (NSS_NoDB_Init(nullptr) != SECSuccess) {
     return false;
+  }
+
+  if (XRE_IsSocketProcess()) {
+    if (NS_FAILED(CommonInit())) {
+      return false;
+    }
+    initialized = true;
+    return true;
   }
 
   if (NS_FAILED(mozilla::psm::InitializeCipherSuite())) {
@@ -584,6 +599,31 @@ nsNSSComponent::GetEnterpriseIntermediates(
   return CommonGetEnterpriseCerts(enterpriseIntermediates, false);
 }
 
+NS_IMETHODIMP
+nsNSSComponent::AddEnterpriseIntermediate(
+    const nsTArray<uint8_t>& intermediateBytes) {
+  nsresult rv = BlockUntilLoadableRootsLoaded();
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+  EnterpriseCert intermediate;
+  rv = intermediate.Init(intermediateBytes.Elements(),
+                         intermediateBytes.Length(), false);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  {
+    MutexAutoLock nsNSSComponentLock(mMutex);
+    if (!mEnterpriseCerts.append(std::move(intermediate))) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
+  }
+
+  UpdateCertVerifierWithEnterpriseRoots();
+  return NS_OK;
+}
+
 class LoadLoadableRootsTask final : public Runnable {
  public:
   LoadLoadableRootsTask(nsNSSComponent* nssComponent,
@@ -710,8 +750,24 @@ nsresult nsNSSComponent::BlockUntilLoadableRootsLoaded() {
   return mLoadableRootsLoadedResult;
 }
 
+#ifndef MOZ_NO_SMART_CARDS
+static StaticMutex sCheckForSmartCardChangesMutex;
+static TimeStamp sLastCheckedForSmartCardChanges = TimeStamp::Now();
+#endif
+
 nsresult nsNSSComponent::CheckForSmartCardChanges() {
 #ifndef MOZ_NO_SMART_CARDS
+  {
+    StaticMutexAutoLock lock(sCheckForSmartCardChangesMutex);
+    // Do this at most once every 3 seconds.
+    TimeStamp now = TimeStamp::Now();
+    if (now - sLastCheckedForSmartCardChanges <
+        TimeDuration::FromSeconds(3.0)) {
+      return NS_OK;
+    }
+    sLastCheckedForSmartCardChanges = now;
+  }
+
   // SECMOD_UpdateSlotList attempts to acquire the list lock as well,
   // so we have to do this in two steps. The lock protects the list itself, so
   // if we get our own owned references to the modules we're interested in,
@@ -889,7 +945,7 @@ nsresult LoadLoadableRootsTask::LoadLoadableRoots() {
 // Table of pref names and SSL cipher ID
 typedef struct {
   const char* pref;
-  long id;
+  int32_t id;
   bool enabledByDefault;
 } CipherPref;
 
@@ -940,12 +996,13 @@ static const CipherPref sCipherPrefs[] = {
      true},  // deprecated (RSA key exchange)
     {"security.ssl3.rsa_aes_256_sha", TLS_RSA_WITH_AES_256_CBC_SHA,
      true},  // deprecated (RSA key exchange)
-    {"security.ssl3.rsa_des_ede3_sha", TLS_RSA_WITH_3DES_EDE_CBC_SHA,
-     true},  // deprecated (RSA key exchange, 3DES)
+};
 
-    // All the rest are disabled
-
-    {nullptr, 0}  // end marker
+// These ciphersuites can only be enabled if deprecated versions of TLS are
+// also enabled (via the preference "security.tls.version.enable-deprecated").
+static const CipherPref sDeprecatedTLS1CipherPrefs[] = {
+    {"security.ssl3.deprecated.rsa_des_ede3_sha", TLS_RSA_WITH_3DES_EDE_CBC_SHA,
+     true},
 };
 
 // This function will convert from pref values like 1, 2, ...
@@ -1000,6 +1057,165 @@ static void ConfigureTLSSessionIdentifiers() {
   SSL_OptionSetDefault(SSL_NO_CACHE, disableSessionIdentifiers);
 }
 
+nsresult CommonInit() {
+  SSL_OptionSetDefault(SSL_ENABLE_SSL2, false);
+  SSL_OptionSetDefault(SSL_V2_COMPATIBLE_HELLO, false);
+
+  nsresult rv = nsNSSComponent::SetEnabledTLSVersions();
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  ConfigureTLSSessionIdentifiers();
+
+  bool requireSafeNegotiation =
+      Preferences::GetBool("security.ssl.require_safe_negotiation",
+                           REQUIRE_SAFE_NEGOTIATION_DEFAULT);
+  SSL_OptionSetDefault(SSL_REQUIRE_SAFE_NEGOTIATION, requireSafeNegotiation);
+
+  SSL_OptionSetDefault(SSL_ENABLE_RENEGOTIATION, SSL_RENEGOTIATE_REQUIRES_XTN);
+
+  SSL_OptionSetDefault(SSL_ENABLE_EXTENDED_MASTER_SECRET, true);
+
+  bool enableDowngradeCheck = Preferences::GetBool(
+      "security.tls.hello_downgrade_check", HELLO_DOWNGRADE_CHECK_DEFAULT);
+  SSL_OptionSetDefault(SSL_ENABLE_HELLO_DOWNGRADE_CHECK, enableDowngradeCheck);
+
+  SSL_OptionSetDefault(SSL_ENABLE_FALSE_START,
+                       Preferences::GetBool("security.ssl.enable_false_start",
+                                            FALSE_START_ENABLED_DEFAULT));
+
+  // SSL_ENABLE_ALPN also requires calling SSL_SetNextProtoNego in order for
+  // the extensions to be negotiated.
+  // WebRTC does not do that so it will not use ALPN even when this preference
+  // is true.
+  SSL_OptionSetDefault(
+      SSL_ENABLE_ALPN,
+      Preferences::GetBool("security.ssl.enable_alpn", ALPN_ENABLED_DEFAULT));
+
+  SSL_OptionSetDefault(SSL_ENABLE_0RTT_DATA,
+                       Preferences::GetBool("security.tls.enable_0rtt_data",
+                                            ENABLED_0RTT_DATA_DEFAULT));
+
+  SSL_OptionSetDefault(
+      SSL_ENABLE_POST_HANDSHAKE_AUTH,
+      Preferences::GetBool("security.tls.enable_post_handshake_auth",
+                           ENABLED_POST_HANDSHAKE_AUTH_DEFAULT));
+
+  SSL_OptionSetDefault(
+      SSL_ENABLE_DELEGATED_CREDENTIALS,
+      Preferences::GetBool("security.tls.enable_delegated_credentials",
+                           DELEGATED_CREDENTIALS_ENABLED_DEFAULT));
+
+  rv = InitializeCipherSuite();
+  if (NS_FAILED(rv)) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Error,
+            ("Unable to initialize cipher suite settings\n"));
+    return rv;
+  }
+
+  DisableMD5();
+
+  mozilla::pkix::RegisterErrorTable();
+
+  SharedSSLState::GlobalInit();
+  RememberCertErrorsTable::Init();
+
+  SetValidationOptionsCommon();
+
+  return NS_OK;
+}
+
+void NSSShutdownForSocketProcess() {
+  MOZ_ASSERT(XRE_IsSocketProcess());
+  SharedSSLState::GlobalCleanup();
+  RememberCertErrorsTable::Cleanup();
+}
+
+bool HandleTLSPrefChange(const nsCString& prefName) {
+  // Note that the code in this function should be kept in sync with
+  // gCallbackSecurityPrefs in nsIOService.cpp.
+  bool prefFound = true;
+  if (prefName.EqualsLiteral("security.tls.version.min") ||
+      prefName.EqualsLiteral("security.tls.version.max") ||
+      prefName.EqualsLiteral("security.tls.version.enable-deprecated")) {
+    (void)nsNSSComponent::SetEnabledTLSVersions();
+  } else if (prefName.EqualsLiteral("security.tls.hello_downgrade_check")) {
+    bool enableDowngradeCheck = Preferences::GetBool(
+        "security.tls.hello_downgrade_check", HELLO_DOWNGRADE_CHECK_DEFAULT);
+    SSL_OptionSetDefault(SSL_ENABLE_HELLO_DOWNGRADE_CHECK,
+                         enableDowngradeCheck);
+  } else if (prefName.EqualsLiteral("security.ssl.require_safe_negotiation")) {
+    bool requireSafeNegotiation =
+        Preferences::GetBool("security.ssl.require_safe_negotiation",
+                             REQUIRE_SAFE_NEGOTIATION_DEFAULT);
+    SSL_OptionSetDefault(SSL_REQUIRE_SAFE_NEGOTIATION, requireSafeNegotiation);
+  } else if (prefName.EqualsLiteral("security.ssl.enable_false_start")) {
+    SSL_OptionSetDefault(SSL_ENABLE_FALSE_START,
+                         Preferences::GetBool("security.ssl.enable_false_start",
+                                              FALSE_START_ENABLED_DEFAULT));
+  } else if (prefName.EqualsLiteral("security.ssl.enable_alpn")) {
+    SSL_OptionSetDefault(
+        SSL_ENABLE_ALPN,
+        Preferences::GetBool("security.ssl.enable_alpn", ALPN_ENABLED_DEFAULT));
+  } else if (prefName.EqualsLiteral("security.tls.enable_0rtt_data")) {
+    SSL_OptionSetDefault(SSL_ENABLE_0RTT_DATA,
+                         Preferences::GetBool("security.tls.enable_0rtt_data",
+                                              ENABLED_0RTT_DATA_DEFAULT));
+  } else if (prefName.EqualsLiteral(
+                 "security.tls.enable_post_handshake_auth")) {
+    SSL_OptionSetDefault(
+        SSL_ENABLE_POST_HANDSHAKE_AUTH,
+        Preferences::GetBool("security.tls.enable_post_handshake_auth",
+                             ENABLED_POST_HANDSHAKE_AUTH_DEFAULT));
+  } else if (prefName.EqualsLiteral(
+                 "security.tls.enable_delegated_credentials")) {
+    SSL_OptionSetDefault(
+        SSL_ENABLE_DELEGATED_CREDENTIALS,
+        Preferences::GetBool("security.tls.enable_delegated_credentials",
+                             DELEGATED_CREDENTIALS_ENABLED_DEFAULT));
+  } else if (prefName.EqualsLiteral(
+                 "security.ssl.disable_session_identifiers")) {
+    ConfigureTLSSessionIdentifiers();
+  } else {
+    prefFound = false;
+  }
+  return prefFound;
+}
+
+void SetValidationOptionsCommon() {
+  // Note that the code in this function should be kept in sync with
+  // gCallbackSecurityPrefs in nsIOService.cpp.
+  bool ocspStaplingEnabled =
+      Preferences::GetBool("security.ssl.enable_ocsp_stapling", true);
+  PublicSSLState()->SetOCSPStaplingEnabled(ocspStaplingEnabled);
+  PrivateSSLState()->SetOCSPStaplingEnabled(ocspStaplingEnabled);
+
+  bool ocspMustStapleEnabled =
+      Preferences::GetBool("security.ssl.enable_ocsp_must_staple", true);
+  PublicSSLState()->SetOCSPMustStapleEnabled(ocspMustStapleEnabled);
+  PrivateSSLState()->SetOCSPMustStapleEnabled(ocspMustStapleEnabled);
+
+  const CertVerifier::CertificateTransparencyMode defaultCTMode =
+      CertVerifier::CertificateTransparencyMode::TelemetryOnly;
+  CertVerifier::CertificateTransparencyMode ctMode =
+      static_cast<CertVerifier::CertificateTransparencyMode>(
+          Preferences::GetInt("security.pki.certificate_transparency.mode",
+                              static_cast<int32_t>(defaultCTMode)));
+  switch (ctMode) {
+    case CertVerifier::CertificateTransparencyMode::Disabled:
+    case CertVerifier::CertificateTransparencyMode::TelemetryOnly:
+      break;
+    default:
+      ctMode = defaultCTMode;
+      break;
+  }
+  bool sctsEnabled =
+      ctMode != CertVerifier::CertificateTransparencyMode::Disabled;
+  PublicSSLState()->SetSignedCertTimestampsEnabled(sctsEnabled);
+  PrivateSSLState()->SetSignedCertTimestampsEnabled(sctsEnabled);
+}
+
 namespace {
 
 class CipherSuiteChangeObserver : public nsIObserver {
@@ -1046,6 +1262,25 @@ nsresult CipherSuiteChangeObserver::StartObserve() {
   return NS_OK;
 }
 
+// Enables or disabled ciphersuites from deprecated versions of TLS as
+// appropriate. If security.tls.version.enable-deprecated is true, these
+// ciphersuites may be enabled, if the corresponding preference is true.
+// Otherwise, these ciphersuites will be disabled.
+void SetDeprecatedTLS1CipherPrefs() {
+  if (Preferences::GetBool("security.tls.version.enable-deprecated", false)) {
+    for (const auto& deprecatedTLS1CipherPref : sDeprecatedTLS1CipherPrefs) {
+      bool cipherEnabled =
+          Preferences::GetBool(deprecatedTLS1CipherPref.pref,
+                               deprecatedTLS1CipherPref.enabledByDefault);
+      SSL_CipherPrefSetDefault(deprecatedTLS1CipherPref.id, cipherEnabled);
+    }
+  } else {
+    for (const auto& deprecatedTLS1CipherPref : sDeprecatedTLS1CipherPrefs) {
+      SSL_CipherPrefSetDefault(deprecatedTLS1CipherPref.id, false);
+    }
+  }
+}
+
 nsresult CipherSuiteChangeObserver::Observe(nsISupports* /*aSubject*/,
                                             const char* aTopic,
                                             const char16_t* someData) {
@@ -1055,16 +1290,16 @@ nsresult CipherSuiteChangeObserver::Observe(nsISupports* /*aSubject*/,
   if (nsCRT::strcmp(aTopic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID) == 0) {
     NS_ConvertUTF16toUTF8 prefName(someData);
     // Look through the cipher table and set according to pref setting
-    const CipherPref* const cp = sCipherPrefs;
-    for (size_t i = 0; cp[i].pref; ++i) {
-      if (prefName.Equals(cp[i].pref)) {
+    for (const auto& cipherPref : sCipherPrefs) {
+      if (prefName.Equals(cipherPref.pref)) {
         bool cipherEnabled =
-            Preferences::GetBool(cp[i].pref, cp[i].enabledByDefault);
-        SSL_CipherPrefSetDefault(cp[i].id, cipherEnabled);
-        nsNSSComponent::ClearSSLExternalAndInternalSessionCacheNative();
+            Preferences::GetBool(cipherPref.pref, cipherPref.enabledByDefault);
+        SSL_CipherPrefSetDefault(cipherPref.id, cipherEnabled);
         break;
       }
     }
+    SetDeprecatedTLS1CipherPrefs();
+    nsNSSComponent::DoClearSSLExternalAndInternalSessionCache();
   } else if (nsCRT::strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
     Preferences::RemoveObserver(this, "security.");
     MOZ_ASSERT(sObserver.get() == this);
@@ -1086,31 +1321,7 @@ void nsNSSComponent::setValidationOptions(
     return;
   }
 
-  // This preference controls whether we do OCSP fetching and does not affect
-  // OCSP stapling.
-  // 0 = disabled, 1 = enabled
-  int32_t ocspEnabled =
-      Preferences::GetInt("security.OCSP.enabled", OCSP_ENABLED_DEFAULT);
-
-  bool ocspRequired =
-      ocspEnabled && Preferences::GetBool("security.OCSP.require", false);
-
-  // We measure the setting of the pref at startup only to minimize noise by
-  // addons that may muck with the settings, though it probably doesn't matter.
-  if (isInitialSetting) {
-    Telemetry::Accumulate(Telemetry::CERT_OCSP_ENABLED, ocspEnabled);
-    Telemetry::Accumulate(Telemetry::CERT_OCSP_REQUIRED, ocspRequired);
-  }
-
-  bool ocspStaplingEnabled =
-      Preferences::GetBool("security.ssl.enable_ocsp_stapling", true);
-  PublicSSLState()->SetOCSPStaplingEnabled(ocspStaplingEnabled);
-  PrivateSSLState()->SetOCSPStaplingEnabled(ocspStaplingEnabled);
-
-  bool ocspMustStapleEnabled =
-      Preferences::GetBool("security.ssl.enable_ocsp_must_staple", true);
-  PublicSSLState()->SetOCSPMustStapleEnabled(ocspMustStapleEnabled);
-  PrivateSSLState()->SetOCSPMustStapleEnabled(ocspMustStapleEnabled);
+  SetValidationOptionsCommon();
 
   const CertVerifier::CertificateTransparencyMode defaultCTMode =
       CertVerifier::CertificateTransparencyMode::TelemetryOnly;
@@ -1126,10 +1337,22 @@ void nsNSSComponent::setValidationOptions(
       ctMode = defaultCTMode;
       break;
   }
-  bool sctsEnabled =
-      ctMode != CertVerifier::CertificateTransparencyMode::Disabled;
-  PublicSSLState()->SetSignedCertTimestampsEnabled(sctsEnabled);
-  PrivateSSLState()->SetSignedCertTimestampsEnabled(sctsEnabled);
+
+  // This preference controls whether we do OCSP fetching and does not affect
+  // OCSP stapling.
+  // 0 = disabled, 1 = enabled
+  int32_t ocspEnabled =
+      Preferences::GetInt("security.OCSP.enabled", OCSP_ENABLED_DEFAULT);
+
+  bool ocspRequired =
+      ocspEnabled && Preferences::GetBool("security.OCSP.require", false);
+
+  // We measure the setting of the pref at startup only to minimize noise by
+  // addons that may muck with the settings, though it probably doesn't matter.
+  if (isInitialSetting) {
+    Telemetry::Accumulate(Telemetry::CERT_OCSP_ENABLED, ocspEnabled);
+    Telemetry::Accumulate(Telemetry::CERT_OCSP_REQUIRED, ocspRequired);
+  }
 
   CertVerifier::PinningMode pinningMode =
       static_cast<CertVerifier::PinningMode>(
@@ -1237,16 +1460,25 @@ void nsNSSComponent::UpdateCertVerifierWithEnterpriseRoots() {
 
 // Enable the TLS versions given in the prefs, defaulting to TLS 1.0 (min) and
 // TLS 1.2 (max) when the prefs aren't set or set to invalid values.
-nsresult nsNSSComponent::setEnabledTLSVersions() {
+nsresult nsNSSComponent::SetEnabledTLSVersions() {
   // Keep these values in sync with all.js.
   // 1 means TLS 1.0, 2 means TLS 1.1, etc.
-  static const uint32_t PSM_DEFAULT_MIN_TLS_VERSION = 1;
+  static const uint32_t PSM_DEFAULT_MIN_TLS_VERSION = 3;
   static const uint32_t PSM_DEFAULT_MAX_TLS_VERSION = 4;
+  static const uint32_t PSM_DEPRECATED_TLS_VERSION = 1;
 
   uint32_t minFromPrefs = Preferences::GetUint("security.tls.version.min",
                                                PSM_DEFAULT_MIN_TLS_VERSION);
   uint32_t maxFromPrefs = Preferences::GetUint("security.tls.version.max",
                                                PSM_DEFAULT_MAX_TLS_VERSION);
+
+  // This override should be removed some time after
+  // PSM_DEFAULT_MIN_TLS_VERSION is increased to 3.
+  bool enableDeprecated =
+      Preferences::GetBool("security.tls.version.enable-deprecated", false);
+  if (enableDeprecated) {
+    minFromPrefs = std::min(minFromPrefs, PSM_DEPRECATED_TLS_VERSION);
+  }
 
   SSLVersionRange defaults = {
       SSL_LIBRARY_VERSION_3_0 + PSM_DEFAULT_MIN_TLS_VERSION,
@@ -1703,72 +1935,15 @@ nsresult nsNSSComponent::InitializeNSS() {
 
   PK11_SetPasswordFunc(PK11PasswordPrompt);
 
-  SharedSSLState::GlobalInit();
-
   // Register an observer so we can inform NSS when these prefs change
   Preferences::AddStrongObserver(this, "security.");
 
-  SSL_OptionSetDefault(SSL_ENABLE_SSL2, false);
-  SSL_OptionSetDefault(SSL_V2_COMPATIBLE_HELLO, false);
+  rv = CommonInit();
 
-  rv = setEnabledTLSVersions();
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
   if (NS_FAILED(rv)) {
     return NS_ERROR_UNEXPECTED;
   }
-
-  DisableMD5();
-
-  ConfigureTLSSessionIdentifiers();
-
-  bool requireSafeNegotiation =
-      Preferences::GetBool("security.ssl.require_safe_negotiation",
-                           REQUIRE_SAFE_NEGOTIATION_DEFAULT);
-  SSL_OptionSetDefault(SSL_REQUIRE_SAFE_NEGOTIATION, requireSafeNegotiation);
-
-  SSL_OptionSetDefault(SSL_ENABLE_RENEGOTIATION, SSL_RENEGOTIATE_REQUIRES_XTN);
-
-  SSL_OptionSetDefault(SSL_ENABLE_EXTENDED_MASTER_SECRET, true);
-
-  bool enableDowngradeCheck = Preferences::GetBool(
-      "security.tls.hello_downgrade_check", HELLO_DOWNGRADE_CHECK_DEFAULT);
-  SSL_OptionSetDefault(SSL_ENABLE_HELLO_DOWNGRADE_CHECK, enableDowngradeCheck);
-
-  SSL_OptionSetDefault(SSL_ENABLE_FALSE_START,
-                       Preferences::GetBool("security.ssl.enable_false_start",
-                                            FALSE_START_ENABLED_DEFAULT));
-
-  // SSL_ENABLE_ALPN also requires calling SSL_SetNextProtoNego in order for
-  // the extensions to be negotiated.
-  // WebRTC does not do that so it will not use ALPN even when this preference
-  // is true.
-  SSL_OptionSetDefault(
-      SSL_ENABLE_ALPN,
-      Preferences::GetBool("security.ssl.enable_alpn", ALPN_ENABLED_DEFAULT));
-
-  SSL_OptionSetDefault(SSL_ENABLE_0RTT_DATA,
-                       Preferences::GetBool("security.tls.enable_0rtt_data",
-                                            ENABLED_0RTT_DATA_DEFAULT));
-
-  SSL_OptionSetDefault(
-      SSL_ENABLE_POST_HANDSHAKE_AUTH,
-      Preferences::GetBool("security.tls.enable_post_handshake_auth",
-                           ENABLED_POST_HANDSHAKE_AUTH_DEFAULT));
-
-  SSL_OptionSetDefault(
-      SSL_ENABLE_DELEGATED_CREDENTIALS,
-      Preferences::GetBool("security.tls.enable_delegated_credentials",
-                           DELEGATED_CREDENTIALS_ENABLED_DEFAULT));
-
-  rv = InitializeCipherSuite();
-  MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  if (NS_FAILED(rv)) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Error,
-            ("Unable to initialize cipher suite settings\n"));
-    return NS_ERROR_FAILURE;
-  }
-
-  mozilla::pkix::RegisterErrorTable();
 
   nsCOMPtr<nsIClientAuthRemember> cars =
       do_GetService(NS_CLIENTAUTHREMEMBER_CONTRACTID);
@@ -1875,8 +2050,6 @@ nsresult nsNSSComponent::Init() {
     return rv;
   }
 
-  RememberCertErrorsTable::Init();
-
   return RegisterObservers();
 }
 
@@ -1901,49 +2074,8 @@ nsNSSComponent::Observe(nsISupports* aSubject, const char* aTopic,
     bool clearSessionCache = true;
     NS_ConvertUTF16toUTF8 prefName(someData);
 
-    if (prefName.EqualsLiteral("security.tls.version.min") ||
-        prefName.EqualsLiteral("security.tls.version.max")) {
-      (void)setEnabledTLSVersions();
-    } else if (prefName.EqualsLiteral("security.tls.hello_downgrade_check")) {
-      bool enableDowngradeCheck = Preferences::GetBool(
-          "security.tls.hello_downgrade_check", HELLO_DOWNGRADE_CHECK_DEFAULT);
-      SSL_OptionSetDefault(SSL_ENABLE_HELLO_DOWNGRADE_CHECK,
-                           enableDowngradeCheck);
-    } else if (prefName.EqualsLiteral(
-                   "security.ssl.require_safe_negotiation")) {
-      bool requireSafeNegotiation =
-          Preferences::GetBool("security.ssl.require_safe_negotiation",
-                               REQUIRE_SAFE_NEGOTIATION_DEFAULT);
-      SSL_OptionSetDefault(SSL_REQUIRE_SAFE_NEGOTIATION,
-                           requireSafeNegotiation);
-    } else if (prefName.EqualsLiteral("security.ssl.enable_false_start")) {
-      SSL_OptionSetDefault(
-          SSL_ENABLE_FALSE_START,
-          Preferences::GetBool("security.ssl.enable_false_start",
-                               FALSE_START_ENABLED_DEFAULT));
-    } else if (prefName.EqualsLiteral("security.ssl.enable_alpn")) {
-      SSL_OptionSetDefault(SSL_ENABLE_ALPN,
-                           Preferences::GetBool("security.ssl.enable_alpn",
-                                                ALPN_ENABLED_DEFAULT));
-    } else if (prefName.EqualsLiteral("security.tls.enable_0rtt_data")) {
-      SSL_OptionSetDefault(SSL_ENABLE_0RTT_DATA,
-                           Preferences::GetBool("security.tls.enable_0rtt_data",
-                                                ENABLED_0RTT_DATA_DEFAULT));
-    } else if (prefName.EqualsLiteral(
-                   "security.tls.enable_post_handshake_auth")) {
-      SSL_OptionSetDefault(
-          SSL_ENABLE_POST_HANDSHAKE_AUTH,
-          Preferences::GetBool("security.tls.enable_post_handshake_auth",
-                               ENABLED_POST_HANDSHAKE_AUTH_DEFAULT));
-    } else if (prefName.EqualsLiteral(
-                   "security.tls.enable_delegated_credentials")) {
-      SSL_OptionSetDefault(
-          SSL_ENABLE_DELEGATED_CREDENTIALS,
-          Preferences::GetBool("security.tls.enable_delegated_credentials",
-                               DELEGATED_CREDENTIALS_ENABLED_DEFAULT));
-    } else if (prefName.EqualsLiteral(
-                   "security.ssl.disable_session_identifiers")) {
-      ConfigureTLSSessionIdentifiers();
+    if (HandleTLSPrefChange(prefName)) {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("HandleTLSPrefChange done"));
     } else if (prefName.EqualsLiteral("security.OCSP.enabled") ||
                prefName.EqualsLiteral("security.OCSP.require") ||
                prefName.EqualsLiteral(
@@ -2147,6 +2279,21 @@ nsNSSComponent::GetDefaultCertVerifier(SharedCertVerifier** result) {
 
 // static
 void nsNSSComponent::ClearSSLExternalAndInternalSessionCacheNative() {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  if (mozilla::net::nsIOService::UseSocketProcess()) {
+    if (mozilla::net::gIOService) {
+      mozilla::net::gIOService->CallOrWaitForSocketProcess([]() {
+        Unused << mozilla::net::SocketProcessParent::GetSingleton()
+                      ->SendClearSessionCache();
+      });
+    }
+  }
+  DoClearSSLExternalAndInternalSessionCache();
+}
+
+// static
+void nsNSSComponent::DoClearSSLExternalAndInternalSessionCache() {
   SSL_ClearSessionCache();
   mozilla::net::SSLTokensCache::Clear();
 }
@@ -2338,18 +2485,28 @@ nsresult setPassword(PK11SlotInfo* slot, nsIInterfaceRequestor* ctx) {
   return NS_OK;
 }
 
-// NSS will call this during PKCS12 export to potentially switch the endianness
-// of the characters of `inBuf` to big (network) endian. Since we already did
-// that in nsPKCS12Blob::stringToBigEndianBytes, we just perform a memcpy here.
-extern "C" {
-PRBool pkcs12StringEndiannessConversion(PRBool, unsigned char* inBuf,
-                                        unsigned int inBufLen,
-                                        unsigned char* outBuf, unsigned int,
-                                        unsigned int* outBufLen, PRBool) {
-  *outBufLen = inBufLen;
-  memcpy(outBuf, inBuf, inBufLen);
-  return true;
-}
+static PRBool ConvertBetweenUCS2andASCII(PRBool toUnicode, unsigned char* inBuf,
+                                         unsigned int inBufLen,
+                                         unsigned char* outBuf,
+                                         unsigned int maxOutBufLen,
+                                         unsigned int* outBufLen,
+                                         PRBool swapBytes) {
+  std::unique_ptr<unsigned char[]> inBufDup(new unsigned char[inBufLen]);
+  if (!inBufDup) {
+    return PR_FALSE;
+  }
+  std::memcpy(inBufDup.get(), inBuf, inBufLen * sizeof(unsigned char));
+
+  // If converting Unicode to ASCII, swap bytes before conversion as neccessary.
+  if (!toUnicode && swapBytes) {
+    if (inBufLen % 2 != 0) {
+      return PR_FALSE;
+    }
+    mozilla::NativeEndian::swapFromLittleEndianInPlace(
+        reinterpret_cast<char16_t*>(inBufDup.get()), inBufLen / 2);
+  }
+  return PORT_UCS2_UTF8Conversion(toUnicode, inBufDup.get(), inBufLen, outBuf,
+                                  maxOutBufLen, outBufLen);
 }
 
 namespace mozilla {
@@ -2370,12 +2527,13 @@ nsresult InitializeCipherSuite() {
   }
 
   // Now only set SSL/TLS ciphers we knew about at compile time
-  const CipherPref* const cp = sCipherPrefs;
-  for (size_t i = 0; cp[i].pref; ++i) {
+  for (const auto& cipherPref : sCipherPrefs) {
     bool cipherEnabled =
-        Preferences::GetBool(cp[i].pref, cp[i].enabledByDefault);
-    SSL_CipherPrefSetDefault(cp[i].id, cipherEnabled);
+        Preferences::GetBool(cipherPref.pref, cipherPref.enabledByDefault);
+    SSL_CipherPrefSetDefault(cipherPref.id, cipherEnabled);
   }
+
+  SetDeprecatedTLS1CipherPrefs();
 
   // Enable ciphers for PKCS#12
   SEC_PKCS12EnableCipher(PKCS12_RC4_40, 1);
@@ -2384,8 +2542,11 @@ nsresult InitializeCipherSuite() {
   SEC_PKCS12EnableCipher(PKCS12_RC2_CBC_128, 1);
   SEC_PKCS12EnableCipher(PKCS12_DES_56, 1);
   SEC_PKCS12EnableCipher(PKCS12_DES_EDE3_168, 1);
+  SEC_PKCS12EnableCipher(PKCS12_AES_CBC_128, 1);
+  SEC_PKCS12EnableCipher(PKCS12_AES_CBC_192, 1);
+  SEC_PKCS12EnableCipher(PKCS12_AES_CBC_256, 1);
   SEC_PKCS12SetPreferredCipher(PKCS12_DES_EDE3_168, 1);
-  PORT_SetUCS2_ASCIIConversionFunction(pkcs12StringEndiannessConversion);
+  PORT_SetUCS2_ASCIIConversionFunction(ConvertBetweenUCS2andASCII);
 
   // PSM enforces a minimum RSA key size of 1024 bits, which is overridable.
   // NSS has its own minimum, which is not overridable (the default is 1023

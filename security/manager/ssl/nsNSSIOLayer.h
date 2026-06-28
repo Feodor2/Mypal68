@@ -85,7 +85,7 @@ class nsNSSSocketInfo final : public mozilla::psm::TransportSecurityInfo,
   };
   void SetCertVerificationWaiting();
   // Use errorCode == 0 to indicate success;
-  void SetCertVerificationResult(PRErrorCode errorCode);
+  void SetCertVerificationResult(PRErrorCode errorCode) override;
 
   // for logging only
   PRBool IsWaitingForCertVerification() const {
@@ -143,6 +143,12 @@ class nsNSSSocketInfo final : public mozilla::psm::TransportSecurityInfo,
 
   void SetSharedOwningReference(mozilla::psm::SharedSSLState* ref);
 
+  nsresult SetResumptionTokenFromExternalCache();
+
+  void SetClientCertChain(mozilla::UniqueCERTCertList&& clientCertChain) {
+    mClientCertChain = std::move(clientCertChain);
+  }
+
  protected:
   virtual ~nsNSSSocketInfo();
 
@@ -161,6 +167,7 @@ class nsNSSSocketInfo final : public mozilla::psm::TransportSecurityInfo,
 
   nsCString mNegotiatedNPN;
   nsCString mEsniTxt;
+  nsCString mEchConfig;
   nsCString mPeerId;
   bool mNPNCompleted;
   bool mEarlyDataAccepted;
@@ -206,6 +213,17 @@ class nsNSSSocketInfo final : public mozilla::psm::TransportSecurityInfo,
   uint64_t mPlaintextBytesRead;
 
   nsCOMPtr<nsIX509Cert> mClientCert;
+  // Regarding the client certificate message in the TLS handshake, RFC 5246
+  // (TLS 1.2) says:
+  //   If the certificate_authorities list in the certificate request
+  //   message was non-empty, one of the certificates in the certificate
+  //   chain SHOULD be issued by one of the listed CAs.
+  // (RFC 8446 (TLS 1.3) has a similar provision)
+  // These certificates may be known to gecko but not NSS (e.g. enterprise
+  // intermediates). In order to make these certificates discoverable to NSS
+  // so it can include them in the message, we cache them here as temporary
+  // certificates.
+  mozilla::UniqueCERTCertList mClientCertChain;
 
   // if non-null this is a reference to the mSharedState (which is
   // not an owning reference). If this is used, the info has a private
@@ -213,6 +231,36 @@ class nsNSSSocketInfo final : public mozilla::psm::TransportSecurityInfo,
   // rest of the session. This is normally used when you have per
   // socket tls flags overriding session wide defaults.
   RefPtr<mozilla::psm::SharedSSLState> mOwningSharedRef;
+};
+
+// This class is used to store the needed information for invoking the client
+// cert selection UI.
+class ClientAuthInfo final {
+ public:
+  explicit ClientAuthInfo(const nsACString& hostName,
+                          const OriginAttributes& originAttributes,
+                          int32_t port, uint32_t providerFlags,
+                          uint32_t providerTlsFlags, nsIX509Cert* clientCert);
+  ~ClientAuthInfo() = default;
+  ClientAuthInfo(ClientAuthInfo&& aOther) noexcept;
+
+  const nsACString& HostName() const;
+  const OriginAttributes& OriginAttributesRef() const;
+  int32_t Port() const;
+  already_AddRefed<nsIX509Cert> GetClientCert() const;
+  uint32_t ProviderFlags() const;
+  uint32_t ProviderTlsFlags() const;
+
+ private:
+  ClientAuthInfo(const ClientAuthInfo&) = delete;
+  void operator=(const ClientAuthInfo&) = delete;
+
+  nsCString mHostName;
+  OriginAttributes mOriginAttributes;
+  int32_t mPort;
+  uint32_t mProviderFlags;
+  uint32_t mProviderTlsFlags;
+  nsCOMPtr<nsIX509Cert> mClientCert;
 };
 
 class nsSSLIOLayerHelpers {
@@ -292,6 +340,11 @@ nsresult nsSSLIOLayerAddToSocket(int32_t family, const char* host, int32_t port,
                                  bool forSTARTTLS, uint32_t flags,
                                  uint32_t tlsFlags);
 
-nsresult nsSSLIOLayerFreeTLSIntolerantSites();
+SECStatus DoGetClientAuthData(ClientAuthInfo&& info,
+                              const mozilla::UniqueCERTCertificate& serverCert,
+                              nsTArray<nsTArray<uint8_t>>&& collectedCANames,
+                              mozilla::UniqueCERTCertificate& outCert,
+                              mozilla::UniqueSECKEYPrivateKey& outKey,
+                              mozilla::UniqueCERTCertList& outBuiltChain);
 
 #endif  // nsNSSIOLayer_h

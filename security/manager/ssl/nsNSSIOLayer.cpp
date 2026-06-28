@@ -10,19 +10,26 @@
 
 #include "NSSCertDBTrustDomain.h"
 #include "NSSErrorsService.h"
+#include "PSMIPCCommon.h"
 #include "PSMRunnable.h"
 #include "SSLServerCertVerification.h"
 #include "ScopedNSSTypes.h"
 #include "SharedSSLState.h"
+#ifdef MOZ_NEW_CERT_STORAGE
+#  include "cert_storage/src/cert_storage.h"
+#endif
 #include "keyhi.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Casting.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Logging.h"
+#include "mozilla/net/SSLTokensCache.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/StaticPrefs_network.h" //MY
+#include "mozilla/net/SocketProcessChild.h"
 #include "mozpkix/pkixnss.h"
 #include "mozpkix/pkixtypes.h"
+#include "mozpkix/pkixutil.h"
 #include "nsArray.h"
 #include "nsArrayUtils.h"
 #include "nsCRT.h"
@@ -47,7 +54,6 @@
 #include "sslexp.h"
 #include "sslproto.h"
 
-using namespace mozilla;
 using namespace mozilla::psm;
 
 //#define DEBUG_SSL_VERBOSE //Enable this define to get minimal
@@ -234,41 +240,11 @@ void nsNSSSocketInfo::NoteTimeUntilReady() {
 
   mNotedTimeUntilReady = true;
 
-  // This will include TCP and proxy tunnel wait time
-  Telemetry::AccumulateTimeDelta(Telemetry::SSL_TIME_UNTIL_READY,
-                                 mSocketCreationTimestamp, TimeStamp::Now());
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
           ("[%p] nsNSSSocketInfo::NoteTimeUntilReady\n", mFd));
 }
 
 void nsNSSSocketInfo::SetHandshakeCompleted() {
-  if (!mHandshakeCompleted) {
-    enum HandshakeType {
-      Resumption = 1,
-      FalseStarted = 2,
-      ChoseNotToFalseStart = 3,
-      NotAllowedToFalseStart = 4,
-    };
-
-    HandshakeType handshakeType =
-        !IsFullHandshake() ? Resumption
-                           : mFalseStarted ? FalseStarted
-                                           : mFalseStartCallbackCalled
-                                                 ? ChoseNotToFalseStart
-                                                 : NotAllowedToFalseStart;
-
-    // This will include TCP and proxy tunnel wait time
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::SSL_TIME_UNTIL_HANDSHAKE_FINISHED_KEYED_BY_KA, mKeaGroup,
-        mSocketCreationTimestamp, TimeStamp::Now());
-
-    // If the handshake is completed for the first time from just 1 callback
-    // that means that TLS session resumption must have been used.
-    Telemetry::Accumulate(Telemetry::SSL_RESUMED_SESSION,
-                          handshakeType == Resumption);
-    Telemetry::Accumulate(Telemetry::SSL_HANDSHAKE_TYPE, handshakeType);
-  }
-
   // Remove the plaintext layer as it is not needed anymore.
   // The plaintext layer is not always present - so it's not a fatal error if it
   // cannot be removed.
@@ -538,7 +514,7 @@ nsresult nsNSSSocketInfo::ActivateSSL() {
 
   mHandshakePending = true;
 
-  return NS_OK;
+  return SetResumptionTokenFromExternalCache();
 }
 
 nsresult nsNSSSocketInfo::GetFileDescPtr(PRFileDesc** aFilePtr) {
@@ -583,11 +559,6 @@ void nsNSSSocketInfo::SetCertVerificationResult(PRErrorCode errorCode) {
   if (errorCode) {
     mFailedVerification = true;
     SetCanceled(errorCode);
-  }
-
-  if (mPlaintextBytesRead && !errorCode) {
-    Telemetry::Accumulate(Telemetry::SSL_BYTES_BEFORE_CERT_CALLBACK,
-                          AssertedCast<uint32_t>(mPlaintextBytesRead));
   }
 
   mCertVerificationState = after_cert_verification;
@@ -831,6 +802,12 @@ PRStatus nsNSSSocketInfo::CloseSocketAndDestroy() {
     poppedPlaintext->dtor(poppedPlaintext);
   }
 
+  // We need to clear the callback to make sure the ssl layer cannot call the
+  // callback after mFD is nulled.
+  if (StaticPrefs::network_ssl_tokens_cache_enabled()) {
+    SSL_SetResumptionTokenCallback(mFd, nullptr, nullptr);
+  }
+
   PRStatus status = mFd->methods->close(mFd);
 
   // the nsNSSSocketInfo instance can out-live the connection, so we need some
@@ -881,6 +858,40 @@ nsNSSSocketInfo::SetEsniTxt(const nsACString& aEsniTxt) {
 }
 
 NS_IMETHODIMP
+nsNSSSocketInfo::GetEchConfig(nsACString& aEchConfig) {
+  aEchConfig = mEchConfig;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsNSSSocketInfo::SetEchConfig(const nsACString& aEchConfig) {
+  mEchConfig = aEchConfig;
+
+#if 0
+  if (mEchConfig.Length()) {
+    nsAutoCString echBin;
+    if (NS_OK != Base64Decode(mEchConfig, echBin)) {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Error,
+              ("[%p] Invalid EchConfig record. Couldn't base64 decode\n",
+               (void*)mFd));
+      return NS_OK;
+    }
+
+    if (SECSuccess != SSL_SetClientEchConfigs(
+                          mFd, reinterpret_cast<const PRUint8*>(echBin.get()),
+                          echBin.Length())) {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Error,
+              ("[%p] Invalid EchConfig record %s\n", (void*)mFd,
+               PR_ErrorToName(PR_GetError())));
+      return NS_OK;
+    }
+  }
+#endif
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsNSSSocketInfo::GetPeerId(nsACString& aResult) {
   if (!mPeerId.IsEmpty()) {
     aResult.Assign(mPeerId);
@@ -908,6 +919,62 @@ nsNSSSocketInfo::GetPeerId(nsACString& aResult) {
   mPeerId.Append(suffix);
 
   aResult.Assign(mPeerId);
+  return NS_OK;
+}
+
+nsresult nsNSSSocketInfo::SetResumptionTokenFromExternalCache() {
+  if (!StaticPrefs::network_ssl_tokens_cache_enabled()) {
+    return NS_OK;
+  }
+
+  if (!mFd) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // If SSL_NO_CACHE option was set, we must not use the cache
+  PRIntn val;
+  if (SSL_OptionGet(mFd, SSL_NO_CACHE, &val) != SECSuccess) {
+    return NS_ERROR_FAILURE;
+  }
+
+  if (val != 0) {
+    return NS_OK;
+  }
+
+  nsTArray<uint8_t> token;
+  nsAutoCString peerId;
+  nsresult rv = GetPeerId(peerId);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  rv = mozilla::net::SSLTokensCache::Get(peerId, token);
+  if (NS_FAILED(rv)) {
+    if (rv == NS_ERROR_NOT_AVAILABLE) {
+      // It's ok if we can't find the token.
+      return NS_OK;
+    }
+
+    return rv;
+  }
+
+  SECStatus srv = SSL_SetResumptionToken(mFd, token.Elements(), token.Length());
+  if (srv == SECFailure) {
+    PRErrorCode error = PR_GetError();
+    mozilla::net::SSLTokensCache::Remove(peerId);
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("Setting token failed with NSS error %d [id=%s]", error,
+             PromiseFlatCString(peerId).get()));
+    // We don't consider SSL_ERROR_BAD_RESUMPTION_TOKEN_ERROR as a hard error,
+    // since this error means this token is just expired or can't be decoded
+    // correctly.
+    if (error == SSL_ERROR_BAD_RESUMPTION_TOKEN_ERROR) {
+      return NS_OK;
+    }
+
+    return NS_ERROR_FAILURE;
+  }
+
   return NS_OK;
 }
 
@@ -968,42 +1035,6 @@ static void nsDumpBuffer(unsigned char* buf, int len) {
 
 namespace {
 
-uint32_t tlsIntoleranceTelemetryBucket(PRErrorCode err) {
-  // returns a numeric code for where we track various errors in telemetry
-  // only errors that cause version fallback are tracked,
-  // so this is also used to determine which errors can cause version fallback
-  switch (err) {
-    case SSL_ERROR_BAD_MAC_ALERT:
-      return 1;
-    case SSL_ERROR_BAD_MAC_READ:
-      return 2;
-    case SSL_ERROR_HANDSHAKE_FAILURE_ALERT:
-      return 3;
-    case SSL_ERROR_HANDSHAKE_UNEXPECTED_ALERT:
-      return 4;
-    case SSL_ERROR_ILLEGAL_PARAMETER_ALERT:
-      return 6;
-    case SSL_ERROR_NO_CYPHER_OVERLAP:
-      return 7;
-    case SSL_ERROR_UNSUPPORTED_VERSION:
-      return 10;
-    case SSL_ERROR_PROTOCOL_VERSION_ALERT:
-      return 11;
-    case SSL_ERROR_BAD_HANDSHAKE_HASH_VALUE:
-      return 13;
-    case SSL_ERROR_DECODE_ERROR_ALERT:
-      return 14;
-    case PR_CONNECT_RESET_ERROR:
-      return 16;
-    case PR_END_OF_FILE_ERROR:
-      return 17;
-    case SSL_ERROR_INTERNAL_ERROR_ALERT:
-      return 18;
-    default:
-      return 0;
-  }
-}
-
 bool retryDueToTLSIntolerance(PRErrorCode err, nsNSSSocketInfo* socketInfo) {
   // This function is supposed to decide which error codes should
   // be used to conclude server is TLS intolerant.
@@ -1022,17 +1053,6 @@ bool retryDueToTLSIntolerance(PRErrorCode err, nsNSSSocketInfo* socketInfo) {
   // detected the downgrade.
   if (err == SSL_ERROR_INAPPROPRIATE_FALLBACK_ALERT ||
       err == SSL_ERROR_RX_MALFORMED_SERVER_HELLO) {
-    // This is a clear signal that we've fallen back too many versions.  Treat
-    // this as a hard failure, but forget any intolerance so that later attempts
-    // don't use this version (i.e., range.max) and trigger the error again.
-
-    // First, track the original cause of the version fallback.  This uses the
-    // same buckets as the telemetry below, except that bucket 0 will include
-    // all cases where there wasn't an original reason.
-    PRErrorCode originalReason = helpers.getIntoleranceReason(
-        socketInfo->GetHostName(), socketInfo->GetPort());
-    Telemetry::Accumulate(Telemetry::SSL_VERSION_FALLBACK_INAPPROPRIATE,
-                          tlsIntoleranceTelemetryBucket(originalReason));
 
     helpers.forgetIntolerance(socketInfo->GetHostName(), socketInfo->GetPort());
 
@@ -1049,46 +1069,11 @@ bool retryDueToTLSIntolerance(PRErrorCode err, nsNSSSocketInfo* socketInfo) {
     return false;
   }
 
-  uint32_t reason = tlsIntoleranceTelemetryBucket(err);
-  if (reason == 0) {
-    return false;
-  }
-
-  Telemetry::HistogramID pre;
-  Telemetry::HistogramID post;
-  switch (range.max) {
-    case SSL_LIBRARY_VERSION_TLS_1_3:
-      pre = Telemetry::SSL_TLS13_INTOLERANCE_REASON_PRE;
-      post = Telemetry::SSL_TLS13_INTOLERANCE_REASON_POST;
-      break;
-    case SSL_LIBRARY_VERSION_TLS_1_2:
-      pre = Telemetry::SSL_TLS12_INTOLERANCE_REASON_PRE;
-      post = Telemetry::SSL_TLS12_INTOLERANCE_REASON_POST;
-      break;
-    case SSL_LIBRARY_VERSION_TLS_1_1:
-      pre = Telemetry::SSL_TLS11_INTOLERANCE_REASON_PRE;
-      post = Telemetry::SSL_TLS11_INTOLERANCE_REASON_POST;
-      break;
-    case SSL_LIBRARY_VERSION_TLS_1_0:
-      pre = Telemetry::SSL_TLS10_INTOLERANCE_REASON_PRE;
-      post = Telemetry::SSL_TLS10_INTOLERANCE_REASON_POST;
-      break;
-    default:
-      MOZ_CRASH("impossible TLS version");
-      return false;
-  }
-
-  // The difference between _PRE and _POST represents how often we avoided
-  // TLS intolerance fallback due to remembered tolerance.
-  Telemetry::Accumulate(pre, reason);
-
   if (!helpers.rememberIntolerantAtVersion(socketInfo->GetHostName(),
                                            socketInfo->GetPort(), range.min,
                                            range.max, err)) {
     return false;
   }
-
-  Telemetry::Accumulate(post, reason);
 
   return true;
 }
@@ -1102,35 +1087,6 @@ static_assert((PR_MAX_ERROR - PR_NSPR_ERROR_BASE) <= 128,
               "too many NSPR errors");
 static_assert((mozilla::pkix::ERROR_BASE - mozilla::pkix::END_OF_LIST) < 31,
               "too many moz::pkix errors");
-
-static void reportHandshakeResult(int32_t bytesTransferred, bool wasReading,
-                                  PRErrorCode err) {
-  uint32_t bucket;
-
-  // A negative bytesTransferred or a 0 read are errors.
-  if (bytesTransferred > 0) {
-    bucket = 0;
-  } else if ((bytesTransferred == 0) && !wasReading) {
-    // PR_Write() is defined to never return 0, but let's make sure.
-    // https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSPR/Reference/PR_Write.
-    MOZ_ASSERT(false);
-    bucket = 671;
-  } else if (IS_SSL_ERROR(err)) {
-    bucket = err - SSL_ERROR_BASE;
-    MOZ_ASSERT(bucket > 0);  // SSL_ERROR_EXPORT_ONLY_SERVER isn't used.
-  } else if (IS_SEC_ERROR(err)) {
-    bucket = (err - SEC_ERROR_BASE) + 256;
-  } else if ((err >= PR_NSPR_ERROR_BASE) && (err < PR_MAX_ERROR)) {
-    bucket = (err - PR_NSPR_ERROR_BASE) + 512;
-  } else if ((err >= mozilla::pkix::ERROR_BASE) &&
-             (err < mozilla::pkix::ERROR_LIMIT)) {
-    bucket = (err - mozilla::pkix::ERROR_BASE) + 640;
-  } else {
-    bucket = 671;
-  }
-
-  Telemetry::Accumulate(Telemetry::SSL_HANDSHAKE_RESULT, bucket);
-}
 
 int32_t checkHandshake(int32_t bytesTransfered, bool wasReading,
                        PRFileDesc* ssl_layer_fd, nsNSSSocketInfo* socketInfo) {
@@ -1200,10 +1156,6 @@ int32_t checkHandshake(int32_t bytesTransfered, bool wasReading,
   // set the HandshakePending attribute to false so that we don't try the logic
   // above again in a subsequent transfer.
   if (handleHandshakeResultNow) {
-    // Report the result once for each handshake. Note that this does not
-    // get handshakes which are cancelled before any reads or writes
-    // happen.
-    reportHandshakeResult(bytesTransfered, wasReading, originalError);
     socketInfo->SetHandshakeNotPending();
   }
 
@@ -1619,7 +1571,7 @@ nsresult nsSSLIOLayerHelpers::Init() {
 }
 
 void nsSSLIOLayerHelpers::loadVersionFallbackLimit() {
-  // see nsNSSComponent::setEnabledTLSVersions for pref handling rules
+  // see nsNSSComponent::SetEnabledTLSVersions for pref handling rules
   uint32_t limit = 3;  // TLS 1.2
 
   if (NS_IsMainThread()) {
@@ -1808,62 +1760,109 @@ static bool hasExplicitKeyUsageNonRepudiation(CERTCertificate* cert) {
   return !!(keyUsage & KU_NON_REPUDIATION);
 }
 
+ClientAuthInfo::ClientAuthInfo(const nsACString& hostName,
+                               const OriginAttributes& originAttributes,
+                               int32_t port, uint32_t providerFlags,
+                               uint32_t providerTlsFlags,
+                               nsIX509Cert* clientCert)
+    : mHostName(hostName),
+      mOriginAttributes(originAttributes),
+      mPort(port),
+      mProviderFlags(providerFlags),
+      mProviderTlsFlags(providerTlsFlags),
+      mClientCert(clientCert) {}
+
+ClientAuthInfo::ClientAuthInfo(ClientAuthInfo&& aOther) noexcept
+    : mHostName(std::move(aOther.mHostName)),
+      mOriginAttributes(std::move(aOther.mOriginAttributes)),
+      mPort(aOther.mPort),
+      mProviderFlags(aOther.mProviderFlags),
+      mProviderTlsFlags(aOther.mProviderTlsFlags),
+      mClientCert(std::move(aOther.mClientCert)) {}
+
+const nsACString& ClientAuthInfo::HostName() const { return mHostName; }
+
+const OriginAttributes& ClientAuthInfo::OriginAttributesRef() const {
+  return mOriginAttributes;
+}
+
+int32_t ClientAuthInfo::Port() const { return mPort; }
+
+uint32_t ClientAuthInfo::ProviderFlags() const { return mProviderFlags; }
+
+uint32_t ClientAuthInfo::ProviderTlsFlags() const { return mProviderTlsFlags; }
+
+already_AddRefed<nsIX509Cert> ClientAuthInfo::GetClientCert() const {
+  nsCOMPtr<nsIX509Cert> cert = mClientCert;
+  return cert.forget();
+}
+
 class ClientAuthDataRunnable : public SyncRunnableBase {
  public:
-  ClientAuthDataRunnable(CERTCertificate** pRetCert, SECKEYPrivateKey** pRetKey,
-                         nsNSSSocketInfo* info,
+  ClientAuthDataRunnable(ClientAuthInfo&& info,
                          const UniqueCERTCertificate& serverCert,
-                         nsTArray<nsCString>& caNamesStrings)
-      : mRV(SECFailure),
-        mErrorCodeToReport(SEC_ERROR_NO_MEMORY),
-        mPRetCert(pRetCert),
-        mPRetKey(pRetKey),
-        mSocketInfo(info),
+                         nsTArray<nsTArray<uint8_t>>&& collectedCANames)
+      : mInfo(std::move(info)),
         mServerCert(serverCert.get()),
-        mCANamesStrings(std::move(caNamesStrings)) {}
+        mCollectedCANames(std::move(collectedCANames)),
+        mSelectedCertificate(nullptr),
+        mSelectedKey(nullptr) {}
 
-  SECStatus mRV;                      // out
-  PRErrorCode mErrorCodeToReport;     // out
-  CERTCertificate** const mPRetCert;  // in/out
-  SECKEYPrivateKey** const mPRetKey;  // in/out
+  virtual mozilla::pkix::Result BuildChainForCertificate(
+      CERTCertificate* cert, UniqueCERTCertList& builtChain);
+
+  // Take the selected certificate. Will be null if none was selected or if an
+  // error prevented selecting one.
+  UniqueCERTCertificate TakeSelectedCertificate() {
+    return std::move(mSelectedCertificate);
+  }
+  // Take the private key for the selected certificate. Will be null if no
+  // certificate was selected or an error prevented selecting one or getting
+  // the corresponding key.
+  UniqueSECKEYPrivateKey TakeSelectedKey() { return std::move(mSelectedKey); }
+
  protected:
   virtual void RunOnTargetThread() override;
 
- private:
-  nsNSSSocketInfo* const mSocketInfo;   // in
-  CERTCertificate* const mServerCert;   // in
-  nsTArray<nsCString> mCANamesStrings;  // in
+  ClientAuthInfo mInfo;
+  CERTCertificate* const mServerCert;
+  nsTArray<nsTArray<uint8_t>> mCollectedCANames;
+  nsTArray<nsTArray<uint8_t>> mEnterpriseIntermediates;
+  UniqueCERTCertificate mSelectedCertificate;
+  UniqueSECKEYPrivateKey mSelectedKey;
 };
 
-nsTArray<nsCString> DecodeCANames(CERTDistNames* caNames) {
+class RemoteClientAuthDataRunnable : public ClientAuthDataRunnable {
+ public:
+  RemoteClientAuthDataRunnable(ClientAuthInfo&& info,
+                               const UniqueCERTCertificate& serverCert,
+                               nsTArray<nsTArray<uint8_t>>&& collectedCANames)
+      : ClientAuthDataRunnable(std::move(info), serverCert,
+                               std::move(collectedCANames)) {}
+
+  virtual mozilla::pkix::Result BuildChainForCertificate(
+      CERTCertificate* cert, UniqueCERTCertList& builtChain) override;
+
+ protected:
+  virtual void RunOnTargetThread() override;
+
+  nsTArray<ByteArray> mBuiltChain;
+};
+
+nsTArray<nsTArray<uint8_t>> CollectCANames(CERTDistNames* caNames) {
   MOZ_ASSERT(caNames);
 
-  nsTArray<nsCString> caNamesStrings;
+  nsTArray<nsTArray<uint8_t>> collectedCANames;
   if (!caNames) {
-    return caNamesStrings;
+    return collectedCANames;
   }
 
   for (int i = 0; i < caNames->nnames; i++) {
-    char* caName = CERT_DerNameToAscii(&caNames->names[i]);
-    // Ignore failures
-    if (caName) {
-      caNamesStrings.AppendElement(nsCString(caName));
-      PORT_Free(caName);  // CERT_DerNameToAscii uses PORT_Alloc
-    }
+    nsTArray<uint8_t> caName;
+    caName.AppendElements(caNames->names[i].data, caNames->names[i].len);
+    collectedCANames.AppendElement(std::move(caName));
   }
-  return caNamesStrings;
-}
-
-nsTArray<char*> GetDependentStringPointers(nsTArray<nsCString>& strings) {
-  nsTArray<char*> pointers;
-  for (auto& string : strings) {
-    // We're not actually writing to the string. The API we're going to use this
-    // data with takes an array of non-const char pointers. To avoid the
-    // undefined behavior of reinterpreting a const pointer as a non-const
-    // pointer, everything we do here has to be non-const.
-    pointers.AppendElement(string.BeginWriting());
-  }
-  return pointers;
+  return collectedCANames;
 }
 
 // This callback function is used to pull client certificate
@@ -1886,8 +1885,8 @@ SECStatus nsNSS_SSLGetClientAuthData(void* arg, PRFileDesc* socket,
     return SECFailure;
   }
 
-  Telemetry::ScalarAdd(Telemetry::ScalarID::SECURITY_CLIENT_CERT,
-                       NS_LITERAL_STRING("requested"), 1);
+  *pRetCert = nullptr;
+  *pRetKey = nullptr;
 
   RefPtr<nsNSSSocketInfo> info(
       BitwiseCast<nsNSSSocketInfo*, PRFilePrivate*>(socket->higher->secret));
@@ -1905,8 +1904,6 @@ SECStatus nsNSS_SSLGetClientAuthData(void* arg, PRFileDesc* socket,
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("[%p] Not returning client cert due to denyClientCert attribute\n",
              socket));
-    *pRetCert = nullptr;
-    *pRetKey = nullptr;
     return SECSuccess;
   }
 
@@ -1917,31 +1914,326 @@ SECStatus nsNSS_SSLGetClientAuthData(void* arg, PRFileDesc* socket,
 
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("[%p] Not returning client cert due to previous join\n", socket));
-    *pRetCert = nullptr;
-    *pRetKey = nullptr;
     return SECSuccess;
   }
 
-  nsTArray<nsCString> caNamesStrings(DecodeCANames(caNames));
+  nsCOMPtr<nsIX509Cert> socketClientCert;
+  info->GetClientCert(getter_AddRefs(socketClientCert));
+  ClientAuthInfo authInfo(info->GetHostName(), info->GetOriginAttributes(),
+                          info->GetPort(), info->GetProviderFlags(),
+                          info->GetProviderTlsFlags(), socketClientCert);
+  nsTArray<nsTArray<uint8_t>> collectedCANames(CollectCANames(caNames));
+
+  UniqueCERTCertificate selectedCertificate;
+  UniqueSECKEYPrivateKey selectedKey;
+  UniqueCERTCertList builtChain;
+  SECStatus status = DoGetClientAuthData(
+      std::move(authInfo), serverCert, std::move(collectedCANames),
+      selectedCertificate, selectedKey, builtChain);
+  if (status != SECSuccess) {
+    return status;
+  }
+
+  if (selectedCertificate && selectedKey) {
+    if (builtChain) {
+      info->SetClientCertChain(std::move(builtChain));
+    } else {
+      MOZ_LOG(
+          gPIPNSSLog, LogLevel::Debug,
+          ("[%p] couldn't determine chain for selected client cert", socket));
+    }
+    *pRetCert = selectedCertificate.release();
+    *pRetKey = selectedKey.release();
+    // Make joinConnection prohibit joining after we've sent a client cert
+    info->SetSentClientCert();
+  }
+
+  return SECSuccess;
+}
+
+SECStatus DoGetClientAuthData(ClientAuthInfo&& info,
+                              const UniqueCERTCertificate& serverCert,
+                              nsTArray<nsTArray<uint8_t>>&& collectedCANames,
+                              UniqueCERTCertificate& outCert,
+                              UniqueSECKEYPrivateKey& outKey,
+                              UniqueCERTCertList& outBuiltChain) {
   // XXX: This should be done asynchronously; see bug 696976
-  RefPtr<ClientAuthDataRunnable> runnable(new ClientAuthDataRunnable(
-      pRetCert, pRetKey, info, serverCert, caNamesStrings));
+  RefPtr<ClientAuthDataRunnable> runnable =
+      XRE_IsSocketProcess()
+          ? new RemoteClientAuthDataRunnable(std::move(info), serverCert,
+                                             std::move(collectedCANames))
+          : new ClientAuthDataRunnable(std::move(info), serverCert,
+                                       std::move(collectedCANames));
+
   nsresult rv = runnable->DispatchToMainThreadAndWait();
   if (NS_FAILED(rv)) {
     PR_SetError(SEC_ERROR_NO_MEMORY, 0);
     return SECFailure;
   }
 
-  if (runnable->mRV != SECSuccess) {
-    PR_SetError(runnable->mErrorCodeToReport, 0);
-  } else if (*runnable->mPRetCert || *runnable->mPRetKey) {
-    // Make joinConnection prohibit joining after we've sent a client cert
-    info->SetSentClientCert();
-    Telemetry::ScalarAdd(Telemetry::ScalarID::SECURITY_CLIENT_CERT,
-                         NS_LITERAL_STRING("sent"), 1);
+  outCert = runnable->TakeSelectedCertificate();
+  outKey = runnable->TakeSelectedKey();
+  if (outCert && outKey) {
+    mozilla::pkix::Result result =
+        runnable->BuildChainForCertificate(outCert.get(), outBuiltChain);
+    if (result != Success) {
+      outBuiltChain.reset(nullptr);
+    }
   }
 
-  return runnable->mRV;
+  return SECSuccess;
+}
+
+// This TrustDomain only exists to facilitate the mozilla::pkix path building
+// algorithm. It considers any certificate with an issuer distinguished name in
+// the set of given CA names to be a trust anchor. It does essentially no
+// validation or verification (in particular, the signature checking function
+// always returns "Success").
+class ClientAuthCertNonverifyingTrustDomain final : public TrustDomain {
+ public:
+  ClientAuthCertNonverifyingTrustDomain(
+      nsTArray<nsTArray<uint8_t>>& collectedCANames,
+      nsTArray<nsTArray<uint8_t>>& thirdPartyIntermediates)
+      : mCollectedCANames(collectedCANames),
+#ifdef MOZ_NEW_CERT_STORAGE
+        mCertStorage(do_GetService(NS_CERT_STORAGE_CID)),
+#endif
+        mThirdPartyIntermediates(thirdPartyIntermediates) {
+  }
+
+  virtual mozilla::pkix::Result GetCertTrust(
+      EndEntityOrCA endEntityOrCA, const CertPolicyId& policy,
+      Input candidateCertDER,
+      /*out*/ TrustLevel& trustLevel) override;
+  virtual mozilla::pkix::Result FindIssuer(Input encodedIssuerName,
+                                           IssuerChecker& checker,
+                                           Time time) override;
+
+  virtual mozilla::pkix::Result CheckRevocation(
+      EndEntityOrCA endEntityOrCA, const CertID& certID, Time time,
+      Time validityPeriodBeginning, Duration validityDuration,
+      /*optional*/ const Input* stapledOCSPresponse,
+      /*optional*/ const Input* aiaExtension) override {
+    return Success;
+  }
+
+  virtual mozilla::pkix::Result IsChainValid(
+      const DERArray& certChain, Time time,
+      const CertPolicyId& requiredPolicy) override;
+
+  virtual mozilla::pkix::Result CheckSignatureDigestAlgorithm(
+      DigestAlgorithm digestAlg, EndEntityOrCA endEntityOrCA,
+      Time notBefore) override {
+    return Success;
+  }
+  virtual mozilla::pkix::Result CheckRSAPublicKeyModulusSizeInBits(
+      EndEntityOrCA endEntityOrCA, unsigned int modulusSizeInBits) override {
+    return Success;
+  }
+  virtual mozilla::pkix::Result VerifyRSAPKCS1SignedDigest(
+      const SignedDigest& signedDigest, Input subjectPublicKeyInfo) override {
+    return Success;
+  }
+  virtual mozilla::pkix::Result CheckECDSACurveIsAcceptable(
+      EndEntityOrCA endEntityOrCA, NamedCurve curve) override {
+    return Success;
+  }
+  virtual mozilla::pkix::Result VerifyECDSASignedDigest(
+      const SignedDigest& signedDigest, Input subjectPublicKeyInfo) override {
+    return Success;
+  }
+  virtual mozilla::pkix::Result CheckValidityIsAcceptable(
+      Time notBefore, Time notAfter, EndEntityOrCA endEntityOrCA,
+      KeyPurposeId keyPurpose) override {
+    return Success;
+  }
+  virtual mozilla::pkix::Result NetscapeStepUpMatchesServerAuth(
+      Time notBefore,
+      /*out*/ bool& matches) override {
+    matches = true;
+    return Success;
+  }
+  virtual void NoteAuxiliaryExtension(AuxiliaryExtension extension,
+                                      Input extensionData) override {}
+  virtual mozilla::pkix::Result DigestBuf(Input item, DigestAlgorithm digestAlg,
+                                          /*out*/ uint8_t* digestBuf,
+                                          size_t digestBufLen) override {
+    return DigestBufNSS(item, digestAlg, digestBuf, digestBufLen);
+  }
+
+  UniqueCERTCertList TakeBuiltChain() { return std::move(mBuiltChain); }
+
+ private:
+  nsTArray<nsTArray<uint8_t>>& mCollectedCANames;  // non-owning
+#ifdef MOZ_NEW_CERT_STORAGE
+  nsCOMPtr<nsICertStorage> mCertStorage;
+#endif
+  nsTArray<nsTArray<uint8_t>>& mThirdPartyIntermediates;  // non-owning
+  UniqueCERTCertList mBuiltChain;
+};
+
+mozilla::pkix::Result ClientAuthCertNonverifyingTrustDomain::GetCertTrust(
+    EndEntityOrCA endEntityOrCA, const CertPolicyId& policy,
+    Input candidateCertDER,
+    /*out*/ TrustLevel& trustLevel) {
+  // If the server did not specify any CA names, all client certificates are
+  // acceptable.
+  if (mCollectedCANames.Length() == 0) {
+    trustLevel = TrustLevel::TrustAnchor;
+    return Success;
+  }
+  BackCert cert(candidateCertDER, endEntityOrCA, nullptr);
+  mozilla::pkix::Result rv = cert.Init();
+  if (rv != Success) {
+    return rv;
+  }
+  // If this certificate's issuer distinguished name is in the set of acceptable
+  // CA names, we say this is a trust anchor so that the client certificate
+  // issued from this certificate will be presented as an option for the user.
+  Input issuer(cert.GetIssuer());
+  for (const auto& caName : mCollectedCANames) {
+    Input caNameInput;
+    rv = caNameInput.Init(caName.Elements(), caName.Length());
+    if (rv != Success) {
+      continue;  // probably too big
+    }
+    if (InputsAreEqual(issuer, caNameInput)) {
+      trustLevel = TrustLevel::TrustAnchor;
+      return Success;
+    }
+  }
+  trustLevel = TrustLevel::InheritsTrust;
+  return Success;
+}
+
+mozilla::pkix::Result ClientAuthCertNonverifyingTrustDomain::FindIssuer(
+    Input encodedIssuerName, IssuerChecker& checker, Time time) {
+  // First try all relevant certificates known to Gecko, which avoids calling
+  // CERT_CreateSubjectCertList, because that can be expensive.
+  Vector<Input> geckoIntermediateCandidates;
+#ifdef MOZ_NEW_CERT_STORAGE
+  if (!mCertStorage) {
+    return mozilla::pkix::Result::FATAL_ERROR_LIBRARY_FAILURE;
+  }
+  nsTArray<uint8_t> subject;
+  subject.AppendElements(encodedIssuerName.UnsafeGetData(),
+                         encodedIssuerName.GetLength());
+  nsTArray<nsTArray<uint8_t>> certs;
+  nsresult rv = mCertStorage->FindCertsBySubject(subject, certs);
+  if (NS_FAILED(rv)) {
+    return mozilla::pkix::Result::FATAL_ERROR_LIBRARY_FAILURE;
+  }
+  for (auto& cert : certs) {
+    Input certDER;
+    mozilla::pkix::Result rv = certDER.Init(cert.Elements(), cert.Length());
+    if (rv != Success) {
+      continue;  // probably too big
+    }
+    // Currently we're only expecting intermediate certificates in cert storage.
+    if (!geckoIntermediateCandidates.append(certDER)) {
+      return mozilla::pkix::Result::FATAL_ERROR_NO_MEMORY;
+    }
+  }
+#endif
+
+  for (const auto& thirdPartyIntermediate : mThirdPartyIntermediates) {
+    Input thirdPartyIntermediateInput;
+    mozilla::pkix::Result rv = thirdPartyIntermediateInput.Init(
+        thirdPartyIntermediate.Elements(), thirdPartyIntermediate.Length());
+    if (rv != Success) {
+      continue;  // probably too big
+    }
+    if (!geckoIntermediateCandidates.append(thirdPartyIntermediateInput)) {
+      return mozilla::pkix::Result::FATAL_ERROR_NO_MEMORY;
+    }
+  }
+
+  bool keepGoing = true;
+  for (Input candidate : geckoIntermediateCandidates) {
+    mozilla::pkix::Result rv = checker.Check(candidate, nullptr, keepGoing);
+    if (rv != Success) {
+      return rv;
+    }
+    if (!keepGoing) {
+      return Success;
+    }
+  }
+
+  SECItem encodedIssuerNameItem = UnsafeMapInputToSECItem(encodedIssuerName);
+  // NSS seems not to differentiate between "no potential issuers found" and
+  // "there was an error trying to retrieve the potential issuers." We assume
+  // there was no error if CERT_CreateSubjectCertList returns nullptr.
+  UniqueCERTCertList candidates(CERT_CreateSubjectCertList(
+      nullptr, CERT_GetDefaultCertDB(), &encodedIssuerNameItem, 0, false));
+  Vector<Input> nssIntermediateCandidates;
+  if (candidates) {
+    for (CERTCertListNode* n = CERT_LIST_HEAD(candidates);
+         !CERT_LIST_END(n, candidates); n = CERT_LIST_NEXT(n)) {
+      Input certDER;
+      mozilla::pkix::Result rv =
+          certDER.Init(n->cert->derCert.data, n->cert->derCert.len);
+      if (rv != Success) {
+        continue;  // probably too big
+      }
+      if (!n->cert->isRoot) {
+        if (!nssIntermediateCandidates.append(certDER)) {
+          return mozilla::pkix::Result::FATAL_ERROR_NO_MEMORY;
+        }
+      }
+    }
+  }
+
+  for (Input candidate : nssIntermediateCandidates) {
+    mozilla::pkix::Result rv = checker.Check(candidate, nullptr, keepGoing);
+    if (rv != Success) {
+      return rv;
+    }
+    if (!keepGoing) {
+      return Success;
+    }
+  }
+  return Success;
+}
+
+mozilla::pkix::Result ClientAuthCertNonverifyingTrustDomain::IsChainValid(
+    const DERArray& certChain, Time, const CertPolicyId&) {
+  if (ConstructCERTCertListFromReversedDERArray(certChain, mBuiltChain) !=
+      SECSuccess) {
+    return MapPRErrorCodeToResult(PR_GetError());
+  }
+  return Success;
+}
+
+mozilla::pkix::Result ClientAuthDataRunnable::BuildChainForCertificate(
+    CERTCertificate* cert, UniqueCERTCertList& builtChain) {
+  ClientAuthCertNonverifyingTrustDomain trustDomain(mCollectedCANames,
+                                                    mEnterpriseIntermediates);
+  Input certDER;
+  mozilla::pkix::Result result =
+      certDER.Init(cert->derCert.data, cert->derCert.len);
+  if (result != Success) {
+    return result;
+  }
+  mozilla::pkix::Result eeResult = BuildCertChain(
+      trustDomain, certDER, Now(), EndEntityOrCA::MustBeEndEntity,
+      KeyUsage::noParticularKeyUsageRequired, KeyPurposeId::anyExtendedKeyUsage,
+      CertPolicyId::anyPolicy, nullptr);
+  if (eeResult == Success) {
+    builtChain = trustDomain.TakeBuiltChain();
+    return Success;
+  }
+  mozilla::pkix::Result caResult = BuildCertChain(
+      trustDomain, certDER, Now(), EndEntityOrCA::MustBeCA,
+      KeyUsage::noParticularKeyUsageRequired, KeyPurposeId::anyExtendedKeyUsage,
+      CertPolicyId::anyPolicy, nullptr);
+  if (caResult == Success) {
+    builtChain = trustDomain.TakeBuiltChain();
+    return Success;
+  }
+  MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+          ("client cert non-validation returned %d %d\n",
+           static_cast<int>(eeResult), static_cast<int>(caResult)));
+  return eeResult;
 }
 
 void ClientAuthDataRunnable::RunOnTargetThread() {
@@ -1949,39 +2241,29 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
   // be run on the main thread.
   MOZ_ASSERT(NS_IsMainThread());
 
-  UniqueCERTCertificate cert;
-  UniqueSECKEYPrivateKey privKey;
-  void* wincx = mSocketInfo;
-
-  mRV = SECFailure;
-  *mPRetCert = nullptr;
-  *mPRetKey = nullptr;
-  mErrorCodeToReport = SEC_ERROR_LIBRARY_FAILURE;
-
-  if (NS_FAILED(CheckForSmartCardChanges())) {
+  nsCOMPtr<nsINSSComponent> component(do_GetService(PSM_COMPONENT_CONTRACTID));
+  if (NS_WARN_IF(!component)) {
+    return;
+  }
+  nsresult rv = component->GetEnterpriseIntermediates(mEnterpriseIntermediates);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
 
-  nsCOMPtr<nsIX509Cert> socketClientCert;
-  mSocketInfo->GetClientCert(getter_AddRefs(socketClientCert));
+  if (NS_WARN_IF(NS_FAILED(CheckForSmartCardChanges()))) {
+    return;
+  }
 
   // If a client cert preference was set on the socket info, use that and skip
   // the client cert UI and/or search of the user's past cert decisions.
+  nsCOMPtr<nsIX509Cert> socketClientCert = mInfo.GetClientCert();
   if (socketClientCert) {
-    cert.reset(socketClientCert->GetCert());
-    if (!cert) {
+    mSelectedCertificate.reset(socketClientCert->GetCert());
+    if (NS_WARN_IF(!mSelectedCertificate)) {
       return;
     }
-
-    // Get the private key
-    privKey.reset(PK11_FindKeyByAnyCert(cert.get(), wincx));
-    if (!privKey) {
-      return;
-    }
-
-    *mPRetCert = cert.release();
-    *mPRetKey = privKey.release();
-    mRV = SECSuccess;
+    mSelectedKey.reset(
+        PK11_FindKeyByAnyCert(mSelectedCertificate.get(), nullptr));
     return;
   }
 
@@ -1990,15 +2272,28 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
     return;
   }
 
-  nsTArray<char*> caNamesStringPointers(
-      GetDependentStringPointers(mCANamesStrings));
-  mRV = CERT_FilterCertListByCANames(
-      certList.get(), caNamesStringPointers.Length(),
-      caNamesStringPointers.Elements(), certUsageSSLClient);
-  if (mRV != SECSuccess) {
-    return;
+  CERTCertListNode* n = CERT_LIST_HEAD(certList);
+  while (!CERT_LIST_END(n, certList)) {
+    UniqueCERTCertList unusedBuiltChain;
+    mozilla::pkix::Result result =
+        BuildChainForCertificate(n->cert, unusedBuiltChain);
+    if (result != Success) {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+              ("removing cert '%s' (result=%d)", n->cert->subjectName,
+               static_cast<int>(result)));
+      CERTCertListNode* toRemove = n;
+      n = CERT_LIST_NEXT(n);
+      CERT_RemoveCertListNode(toRemove);
+      continue;
+    }
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("keeping cert '%s'\n", n->cert->subjectName));
+    n = CERT_LIST_NEXT(n);
   }
+
   if (CERT_LIST_EMPTY(certList)) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("no client certificates available after filtering by CA"));
     return;
   }
 
@@ -2009,171 +2304,210 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
     // loop through the list until we find a cert with a key
     for (CERTCertListNode* node = CERT_LIST_HEAD(certList);
          !CERT_LIST_END(node, certList); node = CERT_LIST_NEXT(node)) {
-      // if the certificate has restriction and we do not satisfy it we do not
-      // use it
-      privKey.reset(PK11_FindKeyByAnyCert(node->cert, wincx));
-      if (privKey) {
+      UniqueSECKEYPrivateKey tmpKey(PK11_FindKeyByAnyCert(node->cert, nullptr));
+      if (tmpKey) {
         if (hasExplicitKeyUsageNonRepudiation(node->cert)) {
-          privKey = nullptr;
           // Not a preferred cert
           if (!lowPrioNonrepCert) {  // did not yet find a low prio cert
             lowPrioNonrepCert.reset(CERT_DupCertificate(node->cert));
           }
         } else {
           // this is a good cert to present
-          cert.reset(CERT_DupCertificate(node->cert));
-          break;
+          mSelectedCertificate.reset(CERT_DupCertificate(node->cert));
+          mSelectedKey = std::move(tmpKey);
+          return;
         }
       }
       if (PR_GetError() == SEC_ERROR_BAD_PASSWORD) {
         // problem with password: bail
-        goto loser;
+        break;
       }
     }
 
-    if (!cert && lowPrioNonrepCert) {
-      cert = std::move(lowPrioNonrepCert);
-      privKey.reset(PK11_FindKeyByAnyCert(cert.get(), wincx));
+    if (lowPrioNonrepCert) {
+      mSelectedCertificate = std::move(lowPrioNonrepCert);
+      mSelectedKey.reset(
+          PK11_FindKeyByAnyCert(mSelectedCertificate.get(), nullptr));
     }
+    return;
+  }
 
-    if (!cert) {
-      goto loser;
-    }
-  } else {  // Not Auto => ask
-    // Get the SSL Certificate
+  // Not Auto => ask
+  // Get the SSL Certificate
+  const nsACString& hostname = mInfo.HostName();
+  nsCOMPtr<nsIClientAuthRemember> cars = nullptr;
 
-    const nsACString& hostname = mSocketInfo->GetHostName();
+  if (mInfo.ProviderTlsFlags() == 0) {
+    cars = do_GetService(NS_CLIENTAUTHREMEMBER_CONTRACTID);
+  }
 
-    nsCOMPtr<nsIClientAuthRemember> cars = nullptr;
-
-    if (mSocketInfo->GetProviderTlsFlags() == 0) {
-      cars = do_GetService(NS_CLIENTAUTHREMEMBER_CONTRACTID);
-    }
-
-    bool hasRemembered = false;
+  if (cars) {
     nsCString rememberedDBKey;
-    if (cars) {
-      bool found;
-      nsresult rv = cars->HasRememberedDecision(
-          hostname, mSocketInfo->GetOriginAttributes(), mServerCert,
-          rememberedDBKey, &found);
-      if (NS_SUCCEEDED(rv) && found) {
-        hasRemembered = true;
-      }
+    bool found;
+    nsresult rv =
+        cars->HasRememberedDecision(hostname, mInfo.OriginAttributesRef(),
+                                    mServerCert, rememberedDBKey, &found);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return;
     }
-
-    if (hasRemembered && !rememberedDBKey.IsEmpty()) {
+    if (found && !rememberedDBKey.IsEmpty()) {
       nsCOMPtr<nsIX509CertDB> certdb = do_GetService(NS_X509CERTDB_CONTRACTID);
-      if (certdb) {
-        nsCOMPtr<nsIX509Cert> foundCert;
-        nsresult rv =
-            certdb->FindCertByDBKey(rememberedDBKey, getter_AddRefs(foundCert));
-        if (NS_SUCCEEDED(rv) && foundCert) {
-          nsNSSCertificate* objCert =
-              BitwiseCast<nsNSSCertificate*, nsIX509Cert*>(foundCert.get());
-          if (objCert) {
-            cert.reset(objCert->GetCert());
-          }
+      if (NS_WARN_IF(!certdb)) {
+        return;
+      }
+      nsCOMPtr<nsIX509Cert> foundCert;
+      nsresult rv =
+          certdb->FindCertByDBKey(rememberedDBKey, getter_AddRefs(foundCert));
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return;
+      }
+      if (foundCert) {
+        nsNSSCertificate* objCert =
+            BitwiseCast<nsNSSCertificate*, nsIX509Cert*>(foundCert.get());
+        if (NS_WARN_IF(!objCert)) {
+          return;
         }
-
-        if (!cert) {
-          hasRemembered = false;
+        mSelectedCertificate.reset(objCert->GetCert());
+        if (NS_WARN_IF(!mSelectedCertificate)) {
+          return;
         }
+        mSelectedKey.reset(
+            PK11_FindKeyByAnyCert(mSelectedCertificate.get(), nullptr));
+        return;
       }
     }
+  }
 
-    if (!hasRemembered) {
-      // user selects a cert to present
-      nsCOMPtr<nsIClientAuthDialogs> dialogs;
-      UniquePORTString corg(CERT_GetOrgName(&mServerCert->subject));
-      nsAutoCString org(corg.get());
+  // ask the user to select a certificate
+  nsCOMPtr<nsIClientAuthDialogs> dialogs;
+  UniquePORTString corg(CERT_GetOrgName(&mServerCert->subject));
+  nsAutoCString org(corg.get());
 
-      UniquePORTString cissuer(CERT_GetOrgName(&mServerCert->issuer));
-      nsAutoCString issuer(cissuer.get());
+  UniquePORTString cissuer(CERT_GetOrgName(&mServerCert->issuer));
+  nsAutoCString issuer(cissuer.get());
 
-      nsCOMPtr<nsIMutableArray> certArray = nsArrayBase::Create();
-      if (!certArray) {
-        goto loser;
-      }
+  nsCOMPtr<nsIMutableArray> certArray = nsArrayBase::Create();
+  if (NS_WARN_IF(!certArray)) {
+    return;
+  }
 
-      for (CERTCertListNode* node = CERT_LIST_HEAD(certList);
-           !CERT_LIST_END(node, certList); node = CERT_LIST_NEXT(node)) {
-        nsCOMPtr<nsIX509Cert> tempCert = nsNSSCertificate::Create(node->cert);
-        if (!tempCert) {
-          goto loser;
-        }
-
-        nsresult rv = certArray->AppendElement(tempCert);
-        if (NS_FAILED(rv)) {
-          goto loser;
-        }
-      }
-
-      // Throw up the client auth dialog and get back the index of the selected
-      // cert
-      nsresult rv = getNSSDialogs(getter_AddRefs(dialogs),
-                                  NS_GET_IID(nsIClientAuthDialogs),
-                                  NS_CLIENTAUTHDIALOGS_CONTRACTID);
-
-      if (NS_FAILED(rv)) {
-        goto loser;
-      }
-
-      uint32_t selectedIndex = 0;
-      bool certChosen = false;
-
-      // even if the user has canceled, we want to remember that, to avoid
-      // repeating prompts
-      bool wantRemember = false;
-      rv = dialogs->ChooseCertificate(hostname, mSocketInfo->GetPort(), org,
-                                      issuer, certArray, &selectedIndex,
-                                      &wantRemember, &certChosen);
-      if (NS_FAILED(rv)) {
-        goto loser;
-      }
-
-      if (certChosen) {
-        nsCOMPtr<nsIX509Cert> selectedCert =
-            do_QueryElementAt(certArray, selectedIndex);
-        if (!selectedCert) {
-          goto loser;
-        }
-        cert.reset(selectedCert->GetCert());
-      }
-
-      if (cars && wantRemember) {
-        rv = cars->RememberDecision(
-            hostname, mSocketInfo->GetOriginAttributes(), mServerCert,
-            certChosen ? cert.get() : nullptr);
-        Unused << NS_WARN_IF(NS_FAILED(rv));
-      }
+  for (CERTCertListNode* node = CERT_LIST_HEAD(certList);
+       !CERT_LIST_END(node, certList); node = CERT_LIST_NEXT(node)) {
+    nsCOMPtr<nsIX509Cert> tempCert = nsNSSCertificate::Create(node->cert);
+    if (NS_WARN_IF(!tempCert)) {
+      return;
     }
+    nsresult rv = certArray->AppendElement(tempCert);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return;
+    }
+  }
 
+  // Throw up the client auth dialog and get back the index of the selected
+  // cert
+  rv = getNSSDialogs(getter_AddRefs(dialogs), NS_GET_IID(nsIClientAuthDialogs),
+                     NS_CLIENTAUTHDIALOGS_CONTRACTID);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  uint32_t selectedIndex = 0;
+  bool certChosen = false;
+
+  // even if the user has canceled, we want to remember that, to avoid
+  // repeating prompts
+  bool wantRemember = false;
+  rv =
+      dialogs->ChooseCertificate(hostname, mInfo.Port(), org, issuer, certArray,
+                                 &selectedIndex, &wantRemember, &certChosen);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  if (certChosen) {
+    nsCOMPtr<nsIX509Cert> selectedCert =
+        do_QueryElementAt(certArray, selectedIndex);
+    if (NS_WARN_IF(!selectedCert)) {
+      return;
+    }
+    mSelectedCertificate.reset(selectedCert->GetCert());
+    if (NS_WARN_IF(!mSelectedCertificate)) {
+      return;
+    }
+    mSelectedKey.reset(
+        PK11_FindKeyByAnyCert(mSelectedCertificate.get(), nullptr));
+  }
+
+  if (cars && wantRemember) {
+    rv = cars->RememberDecision(
+        hostname, mInfo.OriginAttributesRef(), mServerCert,
+        certChosen ? mSelectedCertificate.get() : nullptr);
+    Unused << NS_WARN_IF(NS_FAILED(rv));
+  }
+}
+
+mozilla::pkix::Result RemoteClientAuthDataRunnable::BuildChainForCertificate(
+    CERTCertificate*, UniqueCERTCertList& builtChain) {
+  builtChain.reset(CERT_NewCertList());
+  if (!builtChain) {
+    return mozilla::pkix::Result::FATAL_ERROR_NO_MEMORY;
+  }
+
+  for (auto& certBytes : mBuiltChain) {
+    SECItem certDER = {siBuffer, certBytes.data().Elements(),
+                       static_cast<unsigned int>(certBytes.data().Length())};
+    UniqueCERTCertificate cert(CERT_NewTempCertificate(
+        CERT_GetDefaultCertDB(), &certDER, nullptr, false, true));
     if (!cert) {
-      goto loser;
+      return mozilla::pkix::Result::ERROR_BAD_DER;
     }
 
-    // go get the private key
-    privKey.reset(PK11_FindKeyByAnyCert(cert.get(), wincx));
-    if (!privKey) {
-      goto loser;
+    if (CERT_AddCertToListTail(builtChain.get(), cert.get()) != SECSuccess) {
+      return mozilla::pkix::Result::FATAL_ERROR_NO_MEMORY;
     }
+    Unused << cert.release();
   }
-  goto done;
 
-loser:
-  if (mRV == SECSuccess) {
-    mRV = SECFailure;
+  return Success;
+}
+
+void RemoteClientAuthDataRunnable::RunOnTargetThread() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsTArray<uint8_t> serverCertSerialized;
+  serverCertSerialized.AppendElements(mServerCert->derCert.data,
+                                      mServerCert->derCert.len);
+
+  // Note that client cert is NULL in socket process until bug 1632809 is done.
+  Maybe<ByteArray> clientCertSerialized;
+  nsCOMPtr<nsIX509Cert> socketClientCert = mInfo.GetClientCert();
+  if (socketClientCert) {
+    nsTArray<uint8_t> certBytes;
+    if (NS_FAILED(socketClientCert->GetRawDER(certBytes))) {
+      return;
+    }
+    clientCertSerialized.emplace(std::move(certBytes));
   }
-done:
-  int error = PR_GetError();
 
-  *mPRetCert = cert.release();
-  *mPRetKey = privKey.release();
-
-  if (mRV == SECFailure) {
-    mErrorCodeToReport = error;
+  nsTArray<ByteArray> collectedCANames;
+  for (auto& name : mCollectedCANames) {
+    collectedCANames.AppendElement(std::move(name));
   }
+
+  bool succeeded = false;
+  ByteArray cert;
+  ByteArray key;
+  mozilla::net::SocketProcessChild::GetSingleton()->SendGetTLSClientCert(
+      nsCString(mInfo.HostName()), mInfo.OriginAttributesRef(), mInfo.Port(),
+      mInfo.ProviderFlags(), mInfo.ProviderTlsFlags(), serverCertSerialized,
+      clientCertSerialized, collectedCANames, &succeeded, &cert, &key,
+      &mBuiltChain);
+
+  if (!succeeded) {
+    return;
+  }
+
+  DeserializeClientCertAndKey(cert, key, mSelectedCertificate, mSelectedKey);
 }
 
 static PRFileDesc* nsSSLIOLayerImportFD(PRFileDesc* fd,
@@ -2406,6 +2740,29 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
   return NS_OK;
 }
 
+SECStatus StoreResumptionToken(PRFileDesc* fd, const PRUint8* resumptionToken,
+                               unsigned int len, void* ctx) {
+  PRIntn val;
+  if (SSL_OptionGet(fd, SSL_ENABLE_SESSION_TICKETS, &val) != SECSuccess ||
+      val == 0) {
+    return SECFailure;
+  }
+
+  nsNSSSocketInfo* infoObject = (nsNSSSocketInfo*)ctx;
+  if (!infoObject) {
+    return SECFailure;
+  }
+
+  nsAutoCString peerId;
+  infoObject->GetPeerId(peerId);
+  if (NS_FAILED(
+          net::SSLTokensCache::Put(peerId, resumptionToken, len, infoObject))) {
+    return SECFailure;
+  }
+
+  return SECSuccess;
+}
+
 nsresult nsSSLIOLayerAddToSocket(int32_t family, const char* host, int32_t port,
                                  nsIProxyInfo* proxy,
                                  const OriginAttributes& originAttributes,
@@ -2503,6 +2860,14 @@ nsresult nsSSLIOLayerAddToSocket(int32_t family, const char* host, int32_t port,
   }
 
   infoObject->SharedState().NoteSocketCreated();
+
+  if (StaticPrefs::network_ssl_tokens_cache_enabled()) {
+    rv = infoObject->SetResumptionTokenFromExternalCache();
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+    SSL_SetResumptionTokenCallback(sslSock, &StoreResumptionToken, infoObject);
+  }
 
   return NS_OK;
 loser:

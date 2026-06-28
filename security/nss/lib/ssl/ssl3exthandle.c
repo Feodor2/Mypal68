@@ -1032,7 +1032,9 @@ ssl_ParseSessionTicket(sslSocket *ss, const SECItem *decryptedTicket,
         PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
         return SECFailure;
     }
-    parsedTicket->timestamp = (PRTime)temp << 32;
+
+    /* Cast to avoid undefined behavior if the top bit is set. */
+    parsedTicket->timestamp = (PRTime)((PRUint64)temp << 32);
     rv = ssl3_ExtConsumeHandshakeNumber(ss, &temp, 4, &buffer, &len);
     if (rv != SECSuccess) {
         PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
@@ -1054,8 +1056,11 @@ ssl_ParseSessionTicket(sslSocket *ss, const SECItem *decryptedTicket,
         PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
         return SECFailure;
     }
+#ifndef UNSAFE_FUZZER_MODE
+    /* A well-behaving server should only write 0 or 1. */
     PORT_Assert(temp == PR_TRUE || temp == PR_FALSE);
-    parsedTicket->extendedMasterSecretUsed = (PRBool)temp;
+#endif
+    parsedTicket->extendedMasterSecretUsed = temp ? PR_TRUE : PR_FALSE;
 
     rv = ssl3_ExtConsumeHandshake(ss, &temp, 4, &buffer, &len);
     if (rv != SECSuccess) {

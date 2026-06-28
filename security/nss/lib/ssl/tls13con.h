@@ -42,10 +42,12 @@ PRBool tls13_InHsState(sslSocket *ss, ...);
 
 PRBool tls13_IsPostHandshake(const sslSocket *ss);
 
-SSLHashType tls13_GetHashForCipherSuite(ssl3CipherSuite suite);
 SSLHashType tls13_GetHash(const sslSocket *ss);
-unsigned int tls13_GetHashSizeForHash(SSLHashType hash);
+SECStatus tls13_GetHashAndCipher(PRUint16 version, PRUint16 cipherSuite,
+                                 SSLHashType *hash, const ssl3BulkCipherDef **cipher);
+SSLHashType tls13_GetHashForCipherSuite(ssl3CipherSuite suite);
 unsigned int tls13_GetHashSize(const sslSocket *ss);
+unsigned int tls13_GetHashSizeForHash(SSLHashType hash);
 CK_MECHANISM_TYPE tls13_GetHkdfMechanism(sslSocket *ss);
 CK_MECHANISM_TYPE tls13_GetHkdfMechanismForHash(SSLHashType hash);
 SECStatus tls13_ComputeHash(sslSocket *ss, SSL3Hashes *hashes,
@@ -105,8 +107,8 @@ SECStatus tls13_ProtectRecord(sslSocket *ss,
 PRInt32 tls13_Read0RttData(sslSocket *ss, PRUint8 *buf, PRInt32 len);
 SECStatus tls13_HandleEarlyApplicationData(sslSocket *ss, sslBuffer *origBuf);
 PRBool tls13_ClientAllow0Rtt(const sslSocket *ss, const sslSessionID *sid);
-PRUint16 tls13_EncodeDraftVersion(SSL3ProtocolVersion version,
-                                  SSLProtocolVariant variant);
+PRUint16 tls13_EncodeVersion(SSL3ProtocolVersion version,
+                             SSLProtocolVariant variant);
 SECStatus tls13_ClientReadSupportedVersion(sslSocket *ss);
 SECStatus tls13_NegotiateVersion(sslSocket *ss,
                                  const TLSExtension *supported_versions);

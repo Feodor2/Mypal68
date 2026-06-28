@@ -7,6 +7,7 @@
 #endif
 #include "CSTrustDomain.h"
 #include "mozilla/Base64.h"
+#include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #ifdef MOZ_NEW_CERT_STORAGE
 #  include "nsDirectoryServiceUtils.h"

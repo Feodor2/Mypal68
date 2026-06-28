@@ -540,7 +540,7 @@ FC_GetTokenInfo(CK_SLOT_ID slotID, CK_TOKEN_INFO_PTR pInfo)
 
     crv = NSC_GetTokenInfo(slotID, pInfo);
     if (crv == CKR_OK) {
-        /* use the global database to figure out if we are running in 
+        /* use the global database to figure out if we are running in
          * FIPS 140 Level 1 or Level 2 */
         if (slotID == FIPS_SLOT_ID &&
             (pInfo->flags & CKF_LOGIN_REQUIRED) == 0) {

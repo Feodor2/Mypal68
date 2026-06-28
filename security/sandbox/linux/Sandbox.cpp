@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/ptrace.h>
 #include <sys/syscall.h>
@@ -497,6 +498,14 @@ void SandboxEarlyInit() {
   }
 }
 
+static void RunGlibcLazyInitializers() {
+  // Make glibc's lazy initialization of shm_open() run before sandboxing
+  int fd = shm_open("/dummy", O_RDONLY, 0);
+  if (fd > 0) {
+    close(fd);  // In the unlikely case we actually opened something
+  }
+}
+
 static void SandboxLateInit() {
 #ifdef NIGHTLY_BUILD
   gSandboxCrashOnError = true;
@@ -513,6 +522,8 @@ static void SandboxLateInit() {
       gSandboxCrashOnError = envVar[0] != '0';
     }
   }
+
+  RunGlibcLazyInitializers();
 }
 
 // Common code for sandbox startup.
@@ -670,6 +681,26 @@ void SetRemoteDataDecoderSandbox(int aBroker) {
   }
 
   SetCurrentProcessSandbox(GetDecoderSandboxPolicy(sBroker));
+}
+
+void SetSocketProcessSandbox(int aBroker) {
+  if (!SandboxInfo::Get().Test(SandboxInfo::kHasSeccompBPF) ||
+      PR_GetEnv("MOZ_DISABLE_SOCKET_PROCESS_SANDBOX")) {
+    if (aBroker >= 0) {
+      close(aBroker);
+    }
+    return;
+  }
+
+  gSandboxReporterClient =
+      new SandboxReporterClient(SandboxReport::ProcType::SOCKET_PROCESS);
+
+  static SandboxBrokerClient* sBroker;
+  if (aBroker >= 0) {
+    sBroker = new SandboxBrokerClient(aBroker);
+  }
+
+  SetCurrentProcessSandbox(GetSocketProcessSandboxPolicy(sBroker));
 }
 
 }  // namespace mozilla

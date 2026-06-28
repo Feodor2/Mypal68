@@ -84,6 +84,7 @@ static sslOptions ssl_defaults = {
     .requireDHENamedGroups = PR_FALSE,
     .enable0RttData = PR_FALSE,
     .enableTls13CompatMode = PR_FALSE,
+    .enableDtls13VersionCompat = PR_FALSE,
     .enableDtlsShortHeader = PR_FALSE,
     .enableHelloDowngradeCheck = PR_FALSE,
     .enableV2CompatibleHello = PR_FALSE,
@@ -4218,8 +4219,12 @@ struct {
     EXP(CipherSuiteOrderGet),
     EXP(CipherSuiteOrderSet),
     EXP(CreateAntiReplayContext),
+    EXP(CreateMask),
+    EXP(CreateMaskingContext),
+    EXP(CreateVariantMaskingContext),
     EXP(DelegateCredential),
     EXP(DestroyAead),
+    EXP(DestroyMaskingContext),
     EXP(DestroyResumptionTokenInfo),
     EXP(EnableESNI),
     EXP(EncodeESNIKeys),
@@ -4231,8 +4236,11 @@ struct {
     EXP(HkdfExtract),
     EXP(HkdfExpandLabel),
     EXP(HkdfExpandLabelWithMech),
+    EXP(HkdfVariantExpandLabel),
+    EXP(HkdfVariantExpandLabelWithMech),
     EXP(KeyUpdate),
     EXP(MakeAead),
+    EXP(MakeVariantAead),
     EXP(RecordLayerData),
     EXP(RecordLayerWriteCallback),
     EXP(ReleaseAntiReplayContext),
@@ -4240,6 +4248,7 @@ struct {
     EXP(SendCertificateRequest),
     EXP(SendSessionTicket),
     EXP(SetAntiReplayContext),
+    EXP(SetDtls13VersionWorkaround),
     EXP(SetESNIKeyPair),
     EXP(SetMaxEarlyDataSize),
     EXP(SetResumptionTokenCallback),
@@ -4278,6 +4287,17 @@ ssl_ClearPRCList(PRCList *list, void (*f)(void *))
         }
         PORT_Free(cursor);
     }
+}
+
+SECStatus
+SSLExp_SetDtls13VersionWorkaround(PRFileDesc *fd, PRBool enabled)
+{
+    sslSocket *ss = ssl_FindSocket(fd);
+    if (!ss) {
+        return SECFailure;
+    }
+    ss->opt.enableDtls13VersionCompat = enabled;
+    return SECSuccess;
 }
 
 SECStatus

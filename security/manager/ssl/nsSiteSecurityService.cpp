@@ -21,6 +21,7 @@
 #include "nsITransportSecurityInfo.h"
 #include "nsIURI.h"
 #include "nsIX509Cert.h"
+#include "nsNSSCertificateDB.h"
 #include "nsNSSComponent.h"
 #include "nsNetUtil.h"
 #include "nsPromiseFlatString.h"
@@ -1139,11 +1140,11 @@ nsSiteSecurityService::Enumerate(uint32_t aType,
       return NS_ERROR_INVALID_ARG;
   }
 
-  InfallibleTArray<mozilla::dom::DataStorageItem> items;
+  InfallibleTArray<mozilla::psm::DataStorageItem> items;
   mSiteStateStorage->GetAll(&items);
 
   nsCOMArray<nsISiteSecurityState> states;
-  for (const mozilla::dom::DataStorageItem& item : items) {
+  for (const mozilla::psm::DataStorageItem& item : items) {
     if (!StringEndsWith(item.key(), keySuffix)) {
       // The key does not end with correct suffix, so is not the type we want.
       continue;

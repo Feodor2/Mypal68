@@ -70,6 +70,7 @@ EXPORTS += [
     'RootCertificateTelemetryUtils.h',
     'ScopedNSSTypes.h',
     'SharedCertVerifier.h',
+    'SSLServerCertVerification.h',
 ]
 
 EXPORTS.mozilla += [
@@ -79,7 +80,10 @@ EXPORTS.mozilla += [
 ]
 
 EXPORTS.mozilla.psm += [
+    'PSMIPCCommon.h',
     'TransportSecurityInfo.h',
+    'VerifySSLServerCertChild.h',
+    'VerifySSLServerCertParent.h',
 ]
 
 EXPORTS.ipc += [
@@ -122,6 +126,7 @@ UNIFIED_SOURCES += [
     'nsTLSSocketProvider.cpp',
     'OSKeyStore.cpp',
     'PKCS11ModuleDB.cpp',
+    'PSMIPCCommon.cpp',
     'PSMRunnable.cpp',
     'PublicKeyPinningService.cpp',
     'RootCertificateTelemetryUtils.cpp',
@@ -129,6 +134,8 @@ UNIFIED_SOURCES += [
     'SharedSSLState.cpp',
     'SSLServerCertVerification.cpp',
     'TransportSecurityInfo.cpp',
+    'VerifySSLServerCertChild.cpp',
+    'VerifySSLServerCertParent.cpp',
     'X509CertValidity.cpp',
 ]
 
@@ -168,6 +175,11 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     UNIFIED_SOURCES += [
         'CredentialManagerSecret.cpp',
     ]
+
+IPDL_SOURCES += [
+    'PSMIPCTypes.ipdlh',
+    'PVerifySSLServerCert.ipdl',
+]
 
 if CONFIG['MOZ_XUL']:
     UNIFIED_SOURCES += [

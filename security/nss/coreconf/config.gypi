@@ -99,9 +99,10 @@
     'disable_arm_hw_aes%': 0,
     'disable_tests%': 0,
     'disable_chachapoly%': 0,
-    'disable_dbm%': 0,
+    'disable_dbm%': 1,
     'disable_libpkix%': 1,
     'disable_werror%': 0,
+    'disable_altivec%': 0,
     'mozilla_client%': 0,
     'comm_client%': 0,
     'moz_fold_libs%': 0,
@@ -124,6 +125,8 @@
     'only_dev_random%': 1,
     'disable_fips%': 1,
     'mozpkix_only%': 0,
+    'coverage%': 0,
+    'softfp_cflags%': '',
   },
   'target_defaults': {
     # Settings specific to targets should go here.
@@ -357,6 +360,7 @@
               'linux',
               '_DEFAULT_SOURCE', # for <endian.h> functions, strdup, realpath, and getentropy
               '_BSD_SOURCE', # for the above in glibc <= 2.19
+              '_POSIX_SOURCE', # for <signal.h>
             ],
           }],
           [ 'OS=="dragonfly" or OS=="freebsd"', {

@@ -4,43 +4,37 @@ py2:
     include: ['.']
     exclude:
         - build
-        - client.py
         - dom
         - editor
         - gfx
         - ipc
         - js/src
-        - js/xpconnect
         - layout
-        - media
-        - mobile
         - modules
         - mozglue
         - netwerk
         - nsprpub
         - other-licenses
-        - python/devtools
-        - python/mach
-        - python/mozbuild
         - security
         - servo
         - taskcluster/docker/funsize-update-generator
+        - taskcluster/docker/visual-metrics
+        - testing/condprofile
         - testing/gtest
         - testing/mochitest
         - testing/mozharness
         - testing/raptor
-        - testing/runtimes
         - testing/tools
-        - testing/tps
         - testing/web-platform
         - toolkit
-        - tools/docs
-        - tools/jprof/split-profile.py
-        - tools/lint
-        - tools/profiler
-        - tools/rb
         - tools/update-packaging
         - xpcom
+
+        # These paths are intentionally excluded (Python 3 only)
+        - python/mozlint
+        - tools/crashreporter/system-symbols/win/symsrv-fetch.py
+        - tools/github-sync
+        - tools/lint
     extensions: ['py']
     support-files:
         - 'tools/lint/python/*compat*'

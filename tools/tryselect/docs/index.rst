@@ -21,7 +21,8 @@ changeset gets marked 'public'. This ensures changes that are shared with others
 get mutated.  Pushing to try doesn't actually share the changeset with anyone, so changesets remain
 in the 'draft' state and they are still ok to mutate.
 
-.. rubric:: Using Try
+Using Try
+---------
 
 Before you can push to try, you'll need to have the proper credentials and do some light setup. See
 the :doc:`configuration` page for more information.
@@ -46,9 +47,26 @@ You can choose to use a different default selector by configuring your ``~/.mozb
     [try]
     default=fuzzy
 
+.. _attach-job-review:
+
+Attaching new jobs from a review
+--------------------------------
+
+For every patch submitted for review in Phabricator, a new Try run is automatically created.
+A link called ``Treeherder Jobs`` can be found in the ``Diff Detail`` section of the review in
+Phabricator.
+
+.. image:: img/phab-treeherder-link.png
+
+This run is created for static analysis, linting and other tasks. Attaching new jobs to the run is
+easy and doesn't require more actions from the developer.
+
+.. image:: img/add-new-jobs.png
+
+Table of Contents
+-----------------
 
 .. toctree::
-  :caption: Table of Contents
   :maxdepth: 2
 
   configuration
@@ -57,7 +75,8 @@ You can choose to use a different default selector by configuring your ``~/.mozb
   tasks
 
 
-.. rubric:: Indices and tables
+Indices and tables
+------------------
 
 * :ref:`genindex`
 * :ref:`modindex`

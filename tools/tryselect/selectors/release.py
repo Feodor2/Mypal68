@@ -58,7 +58,7 @@ class ReleaseParser(BaseTryParser):
 
     ]
     common_groups = ['push']
-    templates = ['disable-pgo']
+    task_configs = ['disable-pgo', 'worker-overrides']
 
     def __init__(self, *args, **kwargs):
         super(ReleaseParser, self).__init__(*args, **kwargs)

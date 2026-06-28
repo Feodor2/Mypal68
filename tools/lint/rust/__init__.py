@@ -2,13 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-from collections import namedtuple
-
 import os
 import signal
 import re
 import subprocess
+from collections import namedtuple
 
 from mozfile import which
 from mozlint import result
@@ -114,7 +112,9 @@ def is_old_rustfmt(binary):
     """
     try:
         output = subprocess.check_output(
-            [binary, " --version"], stderr=subprocess.STDOUT
+            [binary, " --version"],
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
         )
     except subprocess.CalledProcessError as e:
         output = e.output
@@ -125,7 +125,7 @@ def is_old_rustfmt(binary):
     return False
 
 
-def run_rustfmt(config, paths, fix=None):
+def run_rustfmt(config, paths, log, fix=None):
     binary = get_rustfmt_binary()
 
     if is_old_rustfmt(binary):
@@ -142,15 +142,16 @@ def run_rustfmt(config, paths, fix=None):
     if not fix:
         cmd_args.append("--check")
     base_command = cmd_args + paths
+    log.debug("Command: {}".format(' '.join(cmd_args)))
     return parse_issues(config, run_process(config, base_command), paths)
 
 
 def lint(paths, config, fix=None, **lintargs):
-
+    log = lintargs['log']
     files = list(expand_exclusions(paths, config, lintargs['root']))
 
     # to retrieve the future changes
-    results = run_rustfmt(config, files, fix=False)
+    results = run_rustfmt(config, files, log, fix=False)
 
     if fix and results:
         # To do the actual change

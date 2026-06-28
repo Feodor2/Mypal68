@@ -2,9 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import os
+import platform
 
 from mozlint import result
 from mozlint.pathutils import expand_exclusions
@@ -13,6 +12,12 @@ results = []
 
 
 def lint(paths, config, fix=None, **lintargs):
+
+    if platform.system() == 'Windows':
+        # Windows doesn't have permissions in files
+        # Exit now
+        return results
+
     files = list(expand_exclusions(paths, config, lintargs['root']))
     for f in files:
         if os.access(f, os.X_OK):

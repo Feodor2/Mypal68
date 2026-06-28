@@ -7,6 +7,8 @@
 # produced by NS_FormatCodeAddress(), which on Linux often lack a function
 # name, a file name and a line number.
 
+from __future__ import absolute_import
+
 import json
 import os
 import re
@@ -151,7 +153,7 @@ def separate_debug_file_for(file):
 
     def word32(s):
         if type(s) != str or len(s) != 4:
-            raise StandardError("expected 4 byte string input")
+            raise Exception("expected 4 byte string input")
         s = list(s)
         if endian == "big":
             s.reverse()

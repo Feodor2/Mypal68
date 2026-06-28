@@ -4,7 +4,6 @@
 
 import json
 import os
-import platform
 import sys
 
 from mozprocess import ProcessHandler
@@ -15,6 +14,7 @@ results = []
 
 
 def lint(files, config, **kwargs):
+    log = kwargs['log']
     tests_dir = os.path.join(kwargs['root'], 'testing', 'web-platform', 'tests')
 
     def process_line(line):
@@ -29,14 +29,23 @@ def lint(files, config, **kwargs):
         results.append(result.from_config(config, **data))
 
     if files == [tests_dir]:
-        print >> sys.stderr, ("No specific files specified, running the full wpt lint"
-                              " (this is slow)")
+        print("No specific files specified, running the full wpt lint"
+              " (this is slow)", file=sys.stderr)
         files = ["--all"]
-    cmd = [os.path.join(tests_dir, 'wpt'), 'lint', '--json'] + files
-    if platform.system() == 'Windows':
-        cmd.insert(0, sys.executable)
+    cmd = ['python2', os.path.join(tests_dir, 'wpt'), 'lint', '--json'] + files
+    log.debug("Command: {}".format(' '.join(cmd)))
 
-    proc = ProcessHandler(cmd, env=os.environ, processOutputLine=process_line)
+    proc = ProcessHandler(cmd, env=os.environ, processOutputLine=process_line,
+                          universal_newlines=True)
+
+    if sys.platform == 'win32':
+        # Workaround for bug 1585702. According to the win32 docs,
+        # CreateProcess will use the calling process's env by default. Since we
+        # are passing in `os.environ` wholesale anyway, setting the env to
+        # `None` shouldn't make a difference. An alternative workaround would
+        # be to stop using mozprocess here and use subprocess directly.
+        proc.env = None
+
     proc.run()
     try:
         proc.wait()

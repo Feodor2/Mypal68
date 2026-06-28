@@ -13,7 +13,6 @@ from mozlint import result
 from mozlint.pathutils import get_ancestors_by_name
 from mozprocess import ProcessHandlerMixin
 
-
 here = os.path.abspath(os.path.dirname(__file__))
 YAMLLINT_REQUIREMENTS_PATH = os.path.join(here, 'yamllint_requirements.txt')
 
@@ -33,6 +32,7 @@ class YAMLLintProcess(ProcessHandlerMixin):
     def __init__(self, config, *args, **kwargs):
         self.config = config
         kwargs['processOutputLine'] = [self.process_line]
+        kwargs['universal_newlines'] = True
         ProcessHandlerMixin.__init__(self, *args, **kwargs)
 
     def process_line(self, line):
@@ -110,7 +110,7 @@ def run_process(config, cmd):
 
 def gen_yamllint_args(cmdargs, paths=None, conf_file=None):
     args = cmdargs[:]
-    if isinstance(paths, basestring):
+    if isinstance(paths, str):
         paths = [paths]
     if conf_file and conf_file != 'default':
         return args + ['-c', conf_file] + paths
@@ -118,6 +118,7 @@ def gen_yamllint_args(cmdargs, paths=None, conf_file=None):
 
 
 def lint(files, config, **lintargs):
+    log = lintargs['log']
     if not reinstall_yamllint():
         print(YAMLLINT_INSTALL_ERROR)
         return 1
@@ -125,9 +126,11 @@ def lint(files, config, **lintargs):
     binary = get_yamllint_binary()
 
     cmdargs = [
+        which('python'),
         binary,
         '-f', 'parsable'
     ]
+    log.debug("Command: {}".format(' '.join(cmdargs)))
 
     config = config.copy()
     config['root'] = lintargs['root']

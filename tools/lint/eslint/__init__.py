@@ -2,12 +2,16 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import, print_function
+
 import json
 import os
 import signal
 import sys
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "eslint"))
-import setup_helper
+from eslint import setup_helper
+
 from mozbuild.nodeutil import find_node_executable
 
 from mozprocess import ProcessHandler
@@ -42,6 +46,7 @@ def setup(root, **lintargs):
 
 def lint(paths, config, binary=None, fix=None, setup=None, **lintargs):
     """Run eslint."""
+    log = lintargs['log']
     setup_helper.set_project_root(lintargs['root'])
     module_path = setup_helper.get_project_root()
 
@@ -72,7 +77,9 @@ def lint(paths, config, binary=None, fix=None, setup=None, **lintargs):
                 # This keeps ext as a single argument.
                 '--ext', '[{}]'.format(','.join(config['extensions'])),
                 '--format', 'json',
+                '--no-error-on-unmatched-pattern',
                 ] + extra_args + exclude_args + paths
+    log.debug("Command: {}".format(' '.join(cmd_args)))
 
     # eslint requires that --fix be set before the --ext argument.
     if fix:
@@ -84,7 +91,17 @@ def lint(paths, config, binary=None, fix=None, setup=None, **lintargs):
         shell = True
 
     orig = signal.signal(signal.SIGINT, signal.SIG_IGN)
-    proc = ProcessHandler(cmd_args, env=os.environ, stream=None, shell=shell)
+    proc = ProcessHandler(cmd_args, env=os.environ, stream=None,
+                          shell=shell, universal_newlines=True)
+
+    if sys.platform == 'win32':
+        # Workaround for bug 1585702. According to the win32 docs,
+        # CreateProcess will use the calling process's env by default. Since we
+        # are passing in `os.environ` wholesale anyway, setting the env to
+        # `None` shouldn't make a difference. An alternative workaround would
+        # be to stop using mozprocess here and use subprocess directly.
+        proc.env = None
+
     proc.run()
     signal.signal(signal.SIGINT, orig)
 
@@ -100,7 +117,8 @@ def lint(paths, config, binary=None, fix=None, setup=None, **lintargs):
     try:
         jsonresult = json.loads(proc.output[0])
     except ValueError:
-        print(ESLINT_ERROR_MESSAGE.format("\n".join(proc.output)))
+        output = "\n".join(proc.output)
+        print(ESLINT_ERROR_MESSAGE.format(output))
         return 1
 
     results = []

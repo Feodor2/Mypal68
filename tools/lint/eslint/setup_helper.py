@@ -2,23 +2,22 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
-from filecmp import dircmp
 import json
 import os
 import platform
 import re
-from mozfile.mozfile import remove as mozfileremove
+import shutil
 import subprocess
 import sys
-import shutil
 import tempfile
 from distutils.version import LooseVersion, StrictVersion
+from filecmp import dircmp
+
 from mozbuild.nodeutil import (find_node_executable, find_npm_executable,
                                NPM_MIN_VERSION, NODE_MIN_VERSION)
-sys.path.append(os.path.join(
-    os.path.dirname(__file__), "..", "..", "..", "third_party", "python", "which"))
+from mozbuild.util import ensure_subprocess_env
+from mozfile.mozfile import remove as mozfileremove
+
 
 NODE_MACHING_VERSION_NOT_FOUND_MESSAGE = """
 Could not find Node.js executable later than %s.
@@ -161,7 +160,7 @@ def package_setup(package_root, package_name, should_clobber=False, no_optional=
 
 def call_process(name, cmd, cwd=None, append_env={}):
     env = dict(os.environ)
-    env.update(append_env)
+    env.update(ensure_subprocess_env(append_env))
 
     try:
         with open(os.devnull, "w") as fnull:
@@ -180,7 +179,7 @@ def call_process(name, cmd, cwd=None, append_env={}):
 def expected_eslint_modules():
     # Read the expected version of ESLint and external modules
     expected_modules_path = os.path.join(get_project_root(), "package.json")
-    with open(expected_modules_path, "r") as f:
+    with open(expected_modules_path, "r", encoding="utf-8") as f:
         sections = json.load(f)
         expected_modules = sections["dependencies"]
         expected_modules.update(sections["devDependencies"])
@@ -189,14 +188,14 @@ def expected_eslint_modules():
     # dependencies are up to date.
     mozilla_json_path = os.path.join(get_eslint_module_path(),
                                      "eslint-plugin-mozilla", "package.json")
-    with open(mozilla_json_path, "r") as f:
+    with open(mozilla_json_path, "r", encoding="utf-8") as f:
         expected_modules.update(json.load(f)["dependencies"])
 
     # Also read the in-tree ESLint plugin spidermonkey information, to ensure the
     # dependencies are up to date.
     mozilla_json_path = os.path.join(get_eslint_module_path(),
                                      "eslint-plugin-spidermonkey-js", "package.json")
-    with open(mozilla_json_path, "r") as f:
+    with open(mozilla_json_path, "r", encoding="utf-8") as f:
         expected_modules.update(json.load(f)["dependencies"])
 
     return expected_modules
@@ -230,7 +229,7 @@ def eslint_module_needs_setup():
     needs_clobber = False
     node_modules_path = os.path.join(get_project_root(), "node_modules")
 
-    for name, expected_data in expected_eslint_modules().iteritems():
+    for name, expected_data in expected_eslint_modules().items():
         # expected_eslint_modules returns a string for the version number of
         # dependencies for installation of eslint generally, and an object
         # for our in-tree plugins (which contains the entire module info).
@@ -245,8 +244,7 @@ def eslint_module_needs_setup():
             print("%s v%s needs to be installed locally." % (name, version_range))
             has_issues = True
             continue
-
-        data = json.load(open(path))
+        data = json.load(open(path, encoding="utf-8"))
 
         if version_range.startswith("file:"):
             # We don't need to check local file installations for versions, as
@@ -313,8 +311,8 @@ def get_possible_node_paths_win():
 
 def get_version(path):
     try:
-        version_str = subprocess.check_output([path, "--version"],
-                                              stderr=subprocess.STDOUT)
+        version_str = subprocess.check_output([path, "--version"], stderr=subprocess.STDOUT,
+                                              universal_newlines=True)
         return version_str
     except (subprocess.CalledProcessError, OSError):
         return None

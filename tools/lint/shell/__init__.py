@@ -2,17 +2,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import os
 import json
 import signal
-
-# py2-compat
-try:
-    from json.decoder import JSONDecodeError
-except ImportError:
-    JSONDecodeError = ValueError
+from json.decoder import JSONDecodeError
 
 import mozpack.path as mozpath
 from mozfile import which
@@ -34,6 +27,7 @@ results = []
 class ShellcheckProcess(ProcessHandlerMixin):
     def __init__(self, config, *args, **kwargs):
         self.config = config
+        kwargs['universal_newlines'] = True
         kwargs['processOutputLine'] = [self.process_line]
         ProcessHandlerMixin.__init__(self, *args, **kwargs)
 
@@ -139,7 +133,7 @@ def get_shellcheck_binary():
 
 
 def lint(paths, config, **lintargs):
-
+    log = lintargs['log']
     binary = get_shellcheck_binary()
 
     if not binary:
@@ -159,5 +153,6 @@ def lint(paths, config, **lintargs):
     for f in files:
         cmd = list(base_command)
         cmd.extend(['-s', files[f], f])
+        log.debug("Command: {}".format(cmd))
         run_process(config, cmd)
     return results

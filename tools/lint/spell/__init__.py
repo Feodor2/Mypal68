@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import os
 import signal
 import re
@@ -43,7 +41,10 @@ CODESPELL_FORMAT_REGEX = re.compile(r'(.*):(.*): (.*) ==> (.*)$')
 class CodespellProcess(ProcessHandlerMixin):
     def __init__(self, config, *args, **kwargs):
         self.config = config
-        kwargs['processOutputLine'] = [self.process_line]
+        kwargs = {
+            'processOutputLine': [self.process_line],
+            'universal_newlines': True,
+        }
         ProcessHandlerMixin.__init__(self, *args, **kwargs)
 
     def process_line(self, line):
@@ -60,7 +61,7 @@ class CodespellProcess(ProcessHandlerMixin):
         if m:
             return
         res = {'path': abspath,
-               'message': typo + " ==> " + correct,
+               'message': typo.strip() + " ==> " + correct,
                'level': 'error',
                'lineno': line,
                }
@@ -93,14 +94,15 @@ def get_codespell_binary():
     return which('codespell')
 
 
-def lint(paths, config, fix=None, **lintargs):
-
+def setup(root, **lintargs):
     if not pip.reinstall_program(CODESPELL_REQUIREMENTS_PATH):
         print(CODESPELL_INSTALL_ERROR)
         return 1
 
-    binary = get_codespell_binary()
 
+def lint(paths, config, fix=None, **lintargs):
+    log = lintargs['log']
+    binary = get_codespell_binary()
     if not binary:
         print(CODESPELL_NOT_FOUND)
         if 'MOZ_AUTOMATION' in os.environ:
@@ -108,8 +110,12 @@ def lint(paths, config, fix=None, **lintargs):
         return []
 
     config['root'] = lintargs['root']
+
+    skip_files = '--skip=*.dic,{}'.format(','.join(config['exclude']))
+
     exclude_list = os.path.join(here, 'exclude-list.txt')
-    cmd_args = [binary,
+    cmd_args = [which('python'),
+                binary,
                 '--disable-colors',
                 # Silence some warnings:
                 # 1: disable warnings about wrong encoding
@@ -118,12 +124,11 @@ def lint(paths, config, fix=None, **lintargs):
                 #    that were disabled in dictionary.
                 '--quiet-level=7',
                 '--ignore-words=' + exclude_list,
-                # Ignore dictonnaries
-                '--skip=*.dic',
-                ]
+                skip_files]
 
     if fix:
         cmd_args.append('--write-changes')
+    log.debug("Command: {}".format(' '.join(cmd_args)))
 
     base_command = cmd_args + paths
 

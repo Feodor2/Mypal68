@@ -29,6 +29,7 @@ dom/media/platforms/ffmpeg/libav53/
 dom/media/platforms/ffmpeg/libav54/
 dom/media/platforms/ffmpeg/libav55/
 dom/media/webaudio/test/blink/
+dom/media/webrtc/transport/third_party/
 dom/media/webspeech/recognition/endpointer.cc
 dom/media/webspeech/recognition/endpointer.h
 dom/media/webspeech/recognition/energy_endpointer.cc
@@ -94,7 +95,6 @@ media/libvorbis/
 media/libvpx/
 media/libwebp/
 media/libyuv/
-media/mtransport/third_party/
 media/openmax_dl/
 media/openmax_il/
 media/webrtc/signaling/src/sdp/sipcc/
@@ -121,6 +121,7 @@ security/sandbox/chromium/
 security/sandbox/chromium-shim/
 testing/gtest/gmock/
 testing/gtest/gtest/
+testing/mochitest/pywebsocket
 testing/talos/talos/tests/dromaeo/
 testing/talos/talos/tests/kraken/
 testing/talos/talos/tests/v8_7/

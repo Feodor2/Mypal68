@@ -1,9 +1,7 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
-from __future__ import absolute_import, print_function
 
 import os
 import subprocess
@@ -13,7 +11,7 @@ import sys
 here = os.path.dirname(os.path.realpath(__file__))
 topsrcdir = os.path.join(here, os.pardir, os.pardir)
 
-EXTRA_PATHS = ("python/mozversioncontrol",)
+EXTRA_PATHS = ("python/mozversioncontrol", "python/mozbuild", "testing/mozbase/mozfile",)
 sys.path[:0] = [os.path.join(topsrcdir, p) for p in EXTRA_PATHS]
 
 from mozversioncontrol import get_repository_object, InvalidRepoPath
@@ -38,7 +36,7 @@ def run_clang_format(hooktype, changedFiles):
     path_list = []
     for filename in sorted(changedFiles):
         # Ignore files unsupported in clang-format
-        if filename.endswith(extensions):
+        if filename.decode().endswith(extensions):
             path_list.append(filename)
 
     if not path_list:
@@ -55,10 +53,7 @@ def run_clang_format(hooktype, changedFiles):
         # don't prevent commits, just display the clang-format results
         subprocess.call(clang_format_cmd)
 
-        # Add the modified files back to the repo (expect a string)
-        # one by one (fails otherwise, see bug #1541409)
-        for f in path_list:
-            vcs.add_remove_files(f)
+        vcs.add_remove_files(*path_list)
 
         return False
     print("warning: '{}' is not a valid clang-format hooktype".format(hooktype))

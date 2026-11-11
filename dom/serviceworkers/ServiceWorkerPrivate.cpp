@@ -1706,12 +1706,15 @@ nsresult ServiceWorkerPrivate::SpawnWorkerIfNeeded(WakeUpReason aWhy,
 
   info.mPrincipal = mInfo->Principal();
   info.mLoadingPrincipal = info.mPrincipal;
-  // StoragePrincipal for ServiceWorkers is equal to mPrincipal because, at the
-  // moment, ServiceWorkers are not exposed in partitioned contexts.
-  info.mStoragePrincipal = info.mPrincipal;
+  // PartitionedPrincipal for ServiceWorkers is equal to mPrincipal because, at
+  // the moment, ServiceWorkers are not exposed in partitioned contexts.
+  info.mPartitionedPrincipal = info.mPrincipal;
 
   info.mCookieJarSettings = mozilla::net::CookieJarSettings::Create();
   MOZ_ASSERT(info.mCookieJarSettings);
+
+  net::CookieJarSettings::Cast(info.mCookieJarSettings)
+      ->SetPartitionKey(info.mResolvedScriptURI);
 
   info.mStorageAccess =
       StorageAllowedForServiceWorker(info.mPrincipal, info.mCookieJarSettings);
@@ -1738,7 +1741,7 @@ nsresult ServiceWorkerPrivate::SpawnWorkerIfNeeded(WakeUpReason aWhy,
   WorkerPrivate::OverrideLoadInfoLoadGroup(info, info.mPrincipal);
 
   rv = info.SetPrincipalsAndCSPOnMainThread(
-      info.mPrincipal, info.mStoragePrincipal, info.mLoadGroup, nullptr);
+      info.mPrincipal, info.mPartitionedPrincipal, info.mLoadGroup, nullptr);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -1903,16 +1906,33 @@ nsresult ServiceWorkerPrivate::GetDebugger(nsIWorkerDebugger** aResult) {
 nsresult ServiceWorkerPrivate::AttachDebugger() {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (mInner) {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-
   // When the first debugger attaches to a worker, we spawn a worker if needed,
   // and cancel the idle timeout. The idle timeout should not be reset until
   // the last debugger detached from the worker.
   if (!mDebuggerCount) {
-    nsresult rv = SpawnWorkerIfNeeded(AttachEvent);
+    nsresult rv = mInner ? mInner->SpawnWorkerIfNeeded()
+                         : SpawnWorkerIfNeeded(AttachEvent);
     NS_ENSURE_SUCCESS(rv, rv);
+
+    /**
+     * Under parent-intercept mode (i.e. non-null `mInner`), renewing the idle
+     * KeepAliveToken for spawning workers happens asynchronously, rather than
+     * synchronously without parent-intercept (see
+     * `ServiceWorkerPrivate::SpawnWorkerIfNeeded`). The asynchronous renewal is
+     * because the actual spawning of workers under parent-intercept occurs in a
+     * content process, so we will only renew once notified that the worker has
+     * been successfully created
+     * (see `ServiceWorkerPrivateImpl::CreationSucceeded`).
+     *
+     * This means that the DevTools way of starting up a worker by calling
+     * `AttachDebugger` immediately followed by `DetachDebugger` will spawn and
+     * immediately terminate a worker (because `mTokenCount` is possibly 0
+     * due to the idle KeepAliveToken being created asynchronously). So, just
+     * renew the KeepAliveToken right now.
+     */
+    if (mInner) {
+      RenewKeepAliveToken(AttachEvent);
+    }
 
     mIdleWorkerTimer->Cancel();
   }
@@ -1924,10 +1944,6 @@ nsresult ServiceWorkerPrivate::AttachDebugger() {
 
 nsresult ServiceWorkerPrivate::DetachDebugger() {
   MOZ_ASSERT(NS_IsMainThread());
-
-  if (mInner) {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
 
   if (!mDebuggerCount) {
     return NS_ERROR_UNEXPECTED;

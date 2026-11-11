@@ -8,12 +8,12 @@
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/RadioGroupManager.h"
 #include "nsCOMPtr.h"
 #include "nsIFormControl.h"
 #include "nsGenericHTMLElement.h"
-#include "nsIWebProgressListener.h"
 #include "nsIRadioGroupContainer.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsThreadUtils.h"
@@ -36,7 +36,6 @@ class HTMLImageElement;
 class FormData;
 
 class HTMLFormElement final : public nsGenericHTMLElement,
-                              public nsIWebProgressListener,
                               public nsIRadioGroupContainer,
                               RadioGroupManager {
   friend class HTMLFormControlsCollection;
@@ -51,9 +50,6 @@ class HTMLFormElement final : public nsGenericHTMLElement,
 
   // nsISupports
   NS_DECL_ISUPPORTS_INHERITED
-
-  // nsIWebProgressListener
-  NS_DECL_NSIWEBPROGRESSLISTENER
 
   int32_t IndexOfContent(nsIContent* aContent);
   nsGenericHTMLFormElement* GetDefaultSubmitElement() const;
@@ -226,8 +222,8 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   void OnSubmitClickEnd();
 
   /**
-   * This method will update the form validity so the submit controls states
-   * will be updated (for -moz-submit-invalid pseudo-class).
+   * This method will update the form validity.
+   *
    * This method has to be called by form elements whenever their validity state
    * or status regarding constraint validation changes.
    *
@@ -238,16 +234,6 @@ class HTMLFormElement final : public nsGenericHTMLElement,
    * @param aElementValidityState the new validity state of the element
    */
   void UpdateValidity(bool aElementValidityState);
-
-  /**
-   * Returns the form validity based on the last UpdateValidity() call.
-   *
-   * @return Whether the form was valid the last time UpdateValidity() was
-   * called.
-   *
-   * @note This method may not return the *current* validity state!
-   */
-  bool GetValidity() const { return !mInvalidElementsCount; }
 
   /**
    * This method check the form validity and make invalid form elements send
@@ -559,6 +545,12 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   /** The web progress object we are currently listening to */
   nsWeakPtr mWebProgress;
 
+  /** The target browsing context, if any. */
+  RefPtr<BrowsingContext> mTargetContext;
+  /** The load identifier for the pending request created for a
+   * submit, used to be able to block double submits. */
+  Maybe<uint64_t> mCurrentLoadId;
+
   /** The default submit element -- WEAK */
   nsGenericHTMLFormElement* mDefaultSubmitElement;
 
@@ -593,7 +585,6 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   /**
    * Number of invalid and candidate for constraint validation elements in the
    * form the last time UpdateValidity has been called.
-   * @note Should only be used by UpdateValidity() and GetValidity()!
    */
   int32_t mInvalidElementsCount;
 
@@ -604,8 +595,6 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   bool mGeneratingSubmit;
   /** Whether we are currently processing a reset event or not */
   bool mGeneratingReset;
-  /** Whether we are submitting currently */
-  bool mIsSubmitting;
   /** Whether the submission is to be deferred in case a script triggers it */
   bool mDeferSubmission;
   /** Whether we notified NS_FORMSUBMIT_SUBJECT listeners already */
@@ -623,6 +612,8 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   bool mIsFiringSubmissionEvents;
 
  private:
+  bool IsSubmitting() const;
+
   NotNull<const Encoding*> GetSubmitEncoding();
   ~HTMLFormElement();
 };

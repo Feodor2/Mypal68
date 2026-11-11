@@ -9,6 +9,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/RemoteWorkerTypes.h"
+#include "mozilla/dom/WorkerPrivate.h"  // WorkerKind enum
 #include "nsISupportsImpl.h"
 #include "nsTArray.h"
 
@@ -32,6 +33,22 @@ class RemoteWorkerManager final {
   void Launch(RemoteWorkerController* aController,
               const RemoteWorkerData& aData, base::ProcessId aProcessId);
 
+  static bool MatchRemoteType(const nsACString& processRemoteType,
+                              const nsACString& workerRemoteType);
+
+  /**
+   * Get the child process RemoteType where a RemoteWorker should be
+   * launched.
+   */
+  static Result<nsCString, nsresult> GetRemoteType(
+      const nsCOMPtr<nsIPrincipal>& aPrincipal, WorkerKind aWorkerKind);
+
+  /**
+   * Verify if a remote worker should be allowed to run in the current
+   * child process remoteType.
+   */
+  static bool IsRemoteTypeAllowed(const RemoteWorkerData& aData);
+
  private:
   RemoteWorkerManager();
   ~RemoteWorkerManager();
@@ -43,7 +60,7 @@ class RemoteWorkerManager final {
       const RemoteWorkerData& aData) const;
 
   RemoteWorkerServiceParent* SelectTargetActorForSharedWorker(
-      base::ProcessId aProcessId) const;
+      base::ProcessId aProcessId, const RemoteWorkerData& aData) const;
 
   void LaunchInternal(RemoteWorkerController* aController,
                       RemoteWorkerServiceParent* aTargetActor,
@@ -53,6 +70,9 @@ class RemoteWorkerManager final {
   void LaunchNewContentProcess(const RemoteWorkerData& aData);
 
   void AsyncCreationFailed(RemoteWorkerController* aController);
+
+  static nsCString GetRemoteTypeForActor(
+      const RemoteWorkerServiceParent* aActor);
 
   // Iterate through all RemoteWorkerServiceParent actors, starting from a
   // random index (as if iterating through a circular array).

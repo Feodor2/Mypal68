@@ -301,23 +301,19 @@ class BrowserParent final : public PBrowserParent,
       const RequestData& aRequestData, const nsresult aStatus,
       const nsString& aMessage);
 
-  mozilla::ipc::IPCResult RecvOnSecurityChange(
-      const Maybe<WebProgressData>& aWebProgressData,
-      const RequestData& aRequestData, const uint32_t aState,
-      const Maybe<WebProgressSecurityChangeData>& aSecurityChangeData);
-
-  mozilla::ipc::IPCResult RecvOnContentBlockingEvent(
-      const Maybe<WebProgressData>& aWebProgressData,
-      const RequestData& aRequestData, const uint32_t& aEvent);
+  mozilla::ipc::IPCResult RecvNotifyContentBlockingEvent(
+      const uint32_t& aEvent, const RequestData& aRequestData,
+      const bool aBlocked, const nsACString& aTrackingOrigin,
+      nsTArray<nsCString>&& aTrackingFullHashes,
+      const Maybe<mozilla::ContentBlockingNotifier::
+                      StorageAccessPermissionGrantedReason>& aReason);
 
   mozilla::ipc::IPCResult RecvNavigationFinished();
 
-  bool GetWebProgressListener(nsIBrowser** aOutBrowser,
-                              nsIWebProgress** aOutManager,
-                              nsIWebProgressListener** aOutListener);
+  already_AddRefed<nsIBrowser> GetBrowser();
 
   void ReconstructWebProgressAndRequest(
-      nsIWebProgress* aManager, const Maybe<WebProgressData>& aWebProgressData,
+      const Maybe<WebProgressData>& aWebProgressData,
       const RequestData& aRequestData, nsIWebProgress** aOutWebProgress,
       nsIRequest** aOutRequest);
 
@@ -330,7 +326,8 @@ class BrowserParent final : public PBrowserParent,
       const nsTArray<CollectedInputDataValue>& aXPathVals,
       nsTArray<nsCString>&& aOrigins, nsTArray<nsString>&& aKeys,
       nsTArray<nsString>&& aValues, const bool aIsFullStorage,
-      const uint32_t& aFlushId, const bool& aIsFinal, const uint32_t& aEpoch);
+      const bool aNeedCollectSHistory, const uint32_t& aFlushId,
+      const bool& aIsFinal, const uint32_t& aEpoch);
 
   mozilla::ipc::IPCResult RecvSyncMessage(
       const nsString& aMessage, const ClonedMessageData& aData,
@@ -399,6 +396,8 @@ class BrowserParent final : public PBrowserParent,
       const NativeEventData& aKeyEventData);
 
   mozilla::ipc::IPCResult RecvRequestFocus(const bool& aCanRaise);
+
+  mozilla::ipc::IPCResult RecvWheelZoomChange(bool aIncrease);
 
   mozilla::ipc::IPCResult RecvLookUpDictionary(
       const nsString& aText, nsTArray<mozilla::FontRange>&& aFontRangeArray,
@@ -469,7 +468,7 @@ class BrowserParent final : public PBrowserParent,
       ManagedEndpoint<PWindowGlobalParent>&& aEndpoint,
       const WindowGlobalInit& aInit);
 
-  void LoadURL(nsIURI* aURI);
+  void LoadURL(nsIURI* aURI, nsIPrincipal* aTriggeringPrincipal);
 
   void ResumeLoad(uint64_t aPendingSwitchID);
 
@@ -486,8 +485,6 @@ class BrowserParent final : public PBrowserParent,
   nsresult UpdatePosition();
 
   void SizeModeChanged(const nsSizeMode& aSizeMode);
-
-  void ThemeChanged();
 
   void HandleAccessKey(const WidgetKeyboardEvent& aEvent,
                        nsTArray<uint32_t>& aCharCodes);
@@ -590,7 +587,7 @@ class BrowserParent final : public PBrowserParent,
 
   bool GetGlobalJSObject(JSContext* cx, JSObject** globalp);
 
-  void StartPersistence(uint64_t aOuterWindowID,
+  void StartPersistence(CanonicalBrowsingContext* aContext,
                         nsIWebBrowserPersistDocumentReceiver* aRecv,
                         ErrorResult& aRv);
 
@@ -750,7 +747,7 @@ class BrowserParent final : public PBrowserParent,
       const nsTArray<RefPtr<nsIURI>>&& aURIs);
 
   mozilla::ipc::IPCResult RecvMaybeFireEmbedderLoadEvents(
-      bool aIsTrusted, bool aFireLoadAtEmbeddingElement);
+      EmbedderElementEventType aFireEventAtEmbeddingElement);
 
  private:
   void SuppressDisplayport(bool aEnabled);
@@ -814,8 +811,6 @@ class BrowserParent final : public PBrowserParent,
 
   // Recomputes sFocus and returns it.
   static BrowserParent* UpdateFocus();
-
-  void OnSubFrameCrashed();
 
  public:
   // Unsets sTopLevelWebFocus regardless of its current value.

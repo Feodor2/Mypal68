@@ -24,7 +24,7 @@ interface HTMLIFrameElement : HTMLElement {
            attribute DOMString name;
   [PutForwards=value] readonly attribute DOMTokenList sandbox;
            // attribute boolean seamless;
-  [CEReactions, SetterThrows, Pure]
+  [CEReactions, SetterThrows, Pure, BinaryName="allowFullscreenForBindings"]
            attribute boolean allowFullscreen;
   [CEReactions, SetterThrows, Pure]
            attribute DOMString width;

@@ -23,7 +23,6 @@
 #include "nsIBrowserDOMWindow.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIDOMChromeWindow.h"
-#include "nsIObserver.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "mozilla/EventListenerManager.h"
@@ -163,8 +162,7 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
                                   public nsIScriptObjectPrincipal,
                                   public nsSupportsWeakReference,
                                   public nsIInterfaceRequestor,
-                                  public PRCListStr,
-                                  public nsIObserver {
+                                  public PRCListStr {
  public:
   using OuterWindowByIdTable =
       nsTHashMap<nsUint64HashKey, nsGlobalWindowOuter*>;
@@ -248,7 +246,7 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
 
   virtual nsIPrincipal* GetEffectiveStoragePrincipal() override;
 
-  virtual nsIPrincipal* IntrinsicStoragePrincipal() override;
+  virtual nsIPrincipal* PartitionedPrincipal() override;
 
   // nsIDOMWindow
   NS_DECL_NSIDOMWINDOW
@@ -299,7 +297,9 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
 
   // Outer windows only.
   virtual void SetInitialPrincipalToSubject(
-      nsIContentSecurityPolicy* aCSP) override;
+      nsIContentSecurityPolicy* aCSP,
+      const mozilla::Maybe<nsILoadInfo::CrossOriginEmbedderPolicy>& aCoep)
+      override;
 
   virtual already_AddRefed<nsISupports> SaveWindowState() override;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual nsresult RestoreWindowState(
@@ -355,9 +355,6 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
 
   // nsIInterfaceRequestor
   NS_DECL_NSIINTERFACEREQUESTOR
-
-  // nsIObserver
-  NS_DECL_NSIOBSERVER
 
   mozilla::dom::Nullable<mozilla::dom::WindowProxyHolder> IndexedGetterOuter(
       uint32_t aIndex);
@@ -466,18 +463,9 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
     return GetBrowsingContext()->HadOriginalOpener();
   }
 
-  bool IsTopLevelWindow();
-
   virtual void FirePopupBlockedEvent(
       Document* aDoc, nsIURI* aPopupURI, const nsAString& aPopupWindowName,
       const nsAString& aPopupWindowFeatures) override;
-
-  virtual void NotifyContentBlockingEvent(
-      unsigned aEvent, nsIChannel* aChannel, bool aBlocked,
-      const nsACString& aTrackingOrigin, nsIChannel* aTrackingChannel,
-      const mozilla::Maybe<
-          mozilla::ContentBlockingNotifier::StorageAccessGrantedReason>& aReason)
-      override;
 
   void AddSizeOfIncludingThis(nsWindowSizes& aWindowSizes) const;
 
@@ -686,8 +674,8 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   virtual bool IsInSyncOperation() override;
 
   void ParentWindowChanged() {
-    // Reset our storage access flag when we get reparented.
-    mHasStorageAccess = false;
+    // Reset our storage access permission flag when we get reparented.
+    mStorageAccessPermissionGranted = false;
   }
 
  public:
@@ -812,9 +800,6 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
                         nsDocShellLoadState* aLoadState, bool aForceNoOpener,
                         mozilla::dom::BrowsingContext** aReturn);
 
-  // Checks that the channel was loaded by the URI currently loaded in aDoc
-  static bool SameLoadingURI(Document* aDoc, nsIChannel* aChannel);
-
  public:
   nsresult SecurityCheckURL(const char* aURL, nsIURI** aURI);
 
@@ -825,10 +810,6 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
                        const nsAString& aPopupWindowName,
                        const nsAString& aPopupWindowFeatures);
 
- private:
-  void ReportLargeAllocStatus();
-
- public:
   void FlushPendingNotifications(mozilla::FlushType aType);
 
   // Outer windows only.
@@ -871,8 +852,6 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   nsRect GetInnerScreenRect();
   static mozilla::Maybe<mozilla::CSSIntSize> GetRDMDeviceSize(const Document& aDocument);
 
-  bool IsFrame();
-
   // Outer windows only.
   // If aLookForCallerOnJSStack is true, this method will look at the JS stack
   // to determine who the caller is.  If it's false, it'll use |this| as the
@@ -885,9 +864,11 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
 
   bool IsInModalState();
 
-  bool HasStorageAccess() const { return mHasStorageAccess; }
-  void SetHasStorageAccess(bool aHasStorageAccess) {
-    mHasStorageAccess = aHasStorageAccess;
+  bool IsStorageAccessPermissionGranted() const {
+    return mStorageAccessPermissionGranted;
+  }
+  void SetStorageAccessPermissionGranted(bool aStorageAccessPermissionGranted) {
+    mStorageAccessPermissionGranted = aStorageAccessPermissionGranted;
   }
 
   // Convenience functions for the many methods that need to scale
@@ -1048,6 +1029,11 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
 
   void MaybeAllowStorageForOpenedWindow(nsIURI* aURI);
 
+  bool IsOnlyTopLevelDocumentInSHistory();
+
+  bool CheckStorageAccessPermission(Document* aDocument,
+                                    nsGlobalWindowInner* aInnerWindow);
+
  public:
   // Dispatch a runnable related to the global.
   virtual nsresult Dispatch(mozilla::TaskCategory aCategory,
@@ -1090,7 +1076,7 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   bool mTopLevelOuterContentWindow : 1;
 
   // whether storage access has been granted to this frame.
-  bool mHasStorageAccess : 1;
+  bool mStorageAccessPermissionGranted : 1;
 
   nsCOMPtr<nsIScriptContext> mContext;
   nsCOMPtr<nsIControllers> mControllers;
@@ -1105,7 +1091,7 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
 
   nsCOMPtr<nsIPrincipal> mDocumentPrincipal;
   nsCOMPtr<nsIPrincipal> mDocumentStoragePrincipal;
-  nsCOMPtr<nsIPrincipal> mDocumentIntrinsicStoragePrincipal;
+  nsCOMPtr<nsIPrincipal> mDocumentPartitionedPrincipal;
 
 #ifdef DEBUG
   uint32_t mSerial;
@@ -1194,15 +1180,6 @@ inline nsGlobalWindowInner* nsGlobalWindowOuter::GetCurrentInnerWindowInternal()
 
 inline nsGlobalWindowInner* nsGlobalWindowOuter::EnsureInnerWindowInternal() {
   return nsGlobalWindowInner::Cast(EnsureInnerWindow());
-}
-
-inline bool nsGlobalWindowOuter::IsTopLevelWindow() {
-  nsPIDOMWindowOuter* parentWindow = GetInProcessScriptableTop();
-  return parentWindow == this;
-}
-
-inline bool nsGlobalWindowOuter::IsFrame() {
-  return GetInProcessParentInternal() != nullptr;
 }
 
 inline void nsGlobalWindowOuter::MaybeClearInnerWindow(

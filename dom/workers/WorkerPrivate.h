@@ -6,15 +6,18 @@
 #define mozilla_dom_workers_workerprivate_h__
 
 #include <bitset>
+#include "MainThreadUtils.h"
 #include "ScriptLoader.h"
 #include "js/ContextOptions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
 #include "base/condition_variable.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/PerformanceCounter.h"
 #include "mozilla/RelativeTimeline.h"
+#include "mozilla/Result.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/ThreadBound.h"
 #include "mozilla/ThreadSafeWeakPtr.h"
@@ -35,6 +38,7 @@
 #include "nsIChannel.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIEventTarget.h"
+#include "nsILoadInfo.h"
 #include "nsTObserverArray.h"
 
 class nsIThreadInternal;
@@ -96,6 +100,8 @@ class SharedMutex {
   void AssertCurrentThreadOwns() const { mMutex->AssertCurrentThreadOwns(); }
 };
 
+nsString ComputeWorkerPrivateId();
+
 class WorkerPrivate final
     : public RelativeTimeline,
       public SupportsCheckedUnsafePtr<CheckIf<DiagnosticAssertEnabled>> {
@@ -118,7 +124,7 @@ class WorkerPrivate final
       JSContext* aCx, const nsAString& aScriptURL, bool aIsChromeWorker,
       WorkerKind aWorkerKind, const nsAString& aWorkerName,
       const nsACString& aServiceWorkerScope, WorkerLoadInfo* aLoadInfo,
-      ErrorResult& aRv);
+      ErrorResult& aRv, nsString aId = EmptyString());
 
   enum LoadGroupBehavior { InheritLoadGroup, OverrideLoadGroup };
 
@@ -240,7 +246,7 @@ class WorkerPrivate final
 
   bool ThawInternal();
 
-  void PropagateFirstPartyStorageAccessGrantedInternal();
+  void PropagateStorageAccessPermissionGrantedInternal();
 
   void TraverseTimeouts(nsCycleCollectionTraversalCallback& aCallback);
 
@@ -700,17 +706,16 @@ class WorkerPrivate final
     return mLoadInfo.mPrincipal;
   }
 
-  nsIPrincipal* GetEffectiveStoragePrincipal() const {
-    AssertIsOnMainThread();
-    return mLoadInfo.mStoragePrincipal;
-  }
-
   nsIPrincipal* GetLoadingPrincipal() const {
     AssertIsOnMainThread();
     return mLoadInfo.mLoadingPrincipal;
   }
 
-  const nsAString& Origin() const { return mLoadInfo.mOrigin; }
+  const nsAString& OriginNoSuffix() const { return mLoadInfo.mOriginNoSuffix; }
+
+  const nsACString& Origin() const { return mLoadInfo.mOrigin; }
+
+  const nsACString& EffectiveStoragePrincipalOrigin() const;
 
   nsILoadGroup* GetLoadGroup() const {
     AssertIsOnMainThread();
@@ -726,16 +731,14 @@ class WorkerPrivate final
     return *mLoadInfo.mPrincipalInfo;
   }
 
-  const mozilla::ipc::PrincipalInfo& GetEffectiveStoragePrincipalInfo() const {
-    return *mLoadInfo.mStoragePrincipalInfo;
-  }
+  const mozilla::ipc::PrincipalInfo& GetEffectiveStoragePrincipalInfo() const;
 
   already_AddRefed<nsIChannel> ForgetWorkerChannel() {
     AssertIsOnMainThread();
     return mLoadInfo.mChannel.forget();
   }
 
-  nsPIDOMWindowInner* GetWindow() {
+  nsPIDOMWindowInner* GetWindow() const {
     AssertIsOnMainThread();
     return mLoadInfo.mWindow;
   }
@@ -803,11 +806,21 @@ class WorkerPrivate final
 
   mozilla::StorageAccess StorageAccess() const {
     AssertIsOnWorkerThread();
-    if (mLoadInfo.mFirstPartyStorageAccessGranted) {
+    if (mLoadInfo.mHasStorageAccessPermissionGranted) {
       return mozilla::StorageAccess::eAllow;
     }
 
     return mLoadInfo.mStorageAccess;
+  }
+
+  bool UseRegularPrincipal() const {
+    AssertIsOnWorkerThread();
+    return mLoadInfo.mUseRegularPrincipal;
+  }
+
+  bool HasStorageAccessPermissionGranted() const {
+    AssertIsOnWorkerThread();
+    return mLoadInfo.mHasStorageAccessPermissionGranted;
   }
 
   nsICookieJarSettings* CookieJarSettings() const {
@@ -825,7 +838,7 @@ class WorkerPrivate final
     return mLoadInfo.mServiceWorkersTestingInWindow;
   }
 
-  bool IsWatchedByDevtools() const { return mLoadInfo.mWatchedByDevtools; }
+  bool IsWatchedByDevTools() const { return mLoadInfo.mWatchedByDevTools; }
 
   // Determine if the worker is currently loading its top level script.
   bool IsLoadingWorkerScript() const { return mLoadingWorkerScript; }
@@ -854,7 +867,7 @@ class WorkerPrivate final
 
   bool Thaw(const nsPIDOMWindowInner* aWindow);
 
-  void PropagateFirstPartyStorageAccessGranted();
+  void PropagateStorageAccessPermissionGranted();
 
   void EnableDebugger();
 
@@ -872,7 +885,7 @@ class WorkerPrivate final
   void CycleCollect();
 
   nsresult SetPrincipalsAndCSPOnMainThread(nsIPrincipal* aPrincipal,
-                                           nsIPrincipal* aStoragePrincipal,
+                                           nsIPrincipal* aPartitionedPrincipal,
                                            nsILoadGroup* aLoadGroup,
                                            nsIContentSecurityPolicy* aCsp);
 
@@ -929,7 +942,39 @@ class WorkerPrivate final
 
   void StartCancelingTimer();
 
-  nsAString& Id();
+  const nsAString& Id();
+
+  // https://whatpr.org/html/4734/structured-data.html#cross-origin-isolated
+  bool CrossOriginIsolated() const;
+
+  /**
+   * COEP Methods
+   *
+   * If browser.tabs.remote.useCrossOriginEmbedderPolicy=false, these methods
+   * will, depending on the return type, return a value that will avoid
+   * assertion failures or a value that won't block loads.
+   */
+  nsILoadInfo::CrossOriginEmbedderPolicy GetEmbedderPolicy() const;
+
+  // Fails if a policy has already been set or if `aPolicy` violates the owner's
+  // policy, if an owner exists.
+  mozilla::Result<Ok, nsresult> SetEmbedderPolicy(
+      nsILoadInfo::CrossOriginEmbedderPolicy aPolicy);
+
+  // `aRequest` is the request loading the worker and must be QI-able to
+  // `nsIChannel*`. It's used to verify that the worker can indeed inherit its
+  // owner's COEP (when an owner exists).
+  //
+  // TODO: remove `aRequest`; currently, it's required because instances may not
+  // always know its final, resolved script URL or have access internally to
+  // `aRequest`.
+  void InheritOwnerEmbedderPolicyOrNull(nsIRequest* aRequest);
+
+  // Requires a policy to already have been set.
+  bool MatchEmbedderPolicy(
+      nsILoadInfo::CrossOriginEmbedderPolicy aPolicy) const;
+
+  nsILoadInfo::CrossOriginEmbedderPolicy GetOwnerEmbedderPolicy() const;
 
   void SetCCCollectedAnything(bool collectedAnything);
 
@@ -938,7 +983,7 @@ class WorkerPrivate final
                 bool aIsChromeWorker, WorkerKind aWorkerKind,
                 const nsAString& aWorkerName,
                 const nsACString& aServiceWorkerScope,
-                WorkerLoadInfo& aLoadInfo);
+                WorkerLoadInfo& aLoadInfo, nsString&& aId);
 
   ~WorkerPrivate();
 
@@ -1029,6 +1074,14 @@ class WorkerPrivate final
 
   UniquePtr<ClientSource> CreateClientSource();
 
+  // This method is called when corresponding script loader processes the COEP
+  // header for the worker.
+  // This method should be called only once in the main thread.
+  // After this method is called the COEP value owner(window/parent worker) is
+  // cached in mOwnerEmbedderPolicy such that it can be accessed in other
+  // threads, i.e. WorkerThread.
+  void EnsureOwnerEmbedderPolicy();
+
   class EventTarget;
   friend class EventTarget;
   friend class AutoSyncLoopHolder;
@@ -1045,9 +1098,9 @@ class WorkerPrivate final
 
   // We cannot make this CheckedUnsafePtr<WorkerPrivate> as this would violate
   // our static assert
-  MOZ_NON_OWNING_REF WorkerPrivate* mParent;
+  MOZ_NON_OWNING_REF WorkerPrivate* const mParent;
 
-  nsString mScriptURL;
+  const nsString mScriptURL;
 
   // This is the worker name for shared workers and dedicated workers.
   const nsString mWorkerName;
@@ -1274,7 +1327,16 @@ class WorkerPrivate final
       MakeRefPtr<mozilla::PerformanceCounter>(nsPrintfCString(
           "Worker:%s", NS_ConvertUTF16toUTF8(mWorkerName).get()));
 
-  nsString mID;
+  nsString mId;
+
+  // Member variable of this class rather than the worker global scope because
+  // it's received on the main thread, but the global scope is thread-bound
+  // to the worker thread, so storing the value in the global scope would
+  // involve sacrificing the thread-bound-ness or using a WorkerRunnable, and
+  // there isn't a strong reason to store it on the global scope other than
+  // better consistency with the COEP spec.
+  Maybe<nsILoadInfo::CrossOriginEmbedderPolicy> mEmbedderPolicy;
+  Maybe<nsILoadInfo::CrossOriginEmbedderPolicy> mOwnerEmbedderPolicy;
 };
 
 class AutoSyncLoopHolder {

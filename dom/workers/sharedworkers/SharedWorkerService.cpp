@@ -166,11 +166,11 @@ void SharedWorkerService::GetOrCreateWorkerManagerOnMainThread(
   MOZ_ASSERT(aBackgroundEventTarget);
   MOZ_ASSERT(aActor);
 
-  auto storagePrincipalOrErr =
-      PrincipalInfoToPrincipal(aData.storagePrincipalInfo());
-  if (NS_WARN_IF(storagePrincipalOrErr.isErr())) {
+  auto partitionedPrincipalOrErr =
+      PrincipalInfoToPrincipal(aData.partitionedPrincipalInfo());
+  if (NS_WARN_IF(partitionedPrincipalOrErr.isErr())) {
     ErrorPropagationOnMainThread(aBackgroundEventTarget, aActor,
-                                 storagePrincipalOrErr.unwrapErr());
+                                 partitionedPrincipalOrErr.unwrapErr());
     return;
   }
 
@@ -185,7 +185,13 @@ void SharedWorkerService::GetOrCreateWorkerManagerOnMainThread(
   RefPtr<SharedWorkerManagerHolder> managerHolder;
 
   nsCOMPtr<nsIPrincipal> loadingPrincipal = loadingPrincipalOrErr.unwrap();
-  nsCOMPtr<nsIPrincipal> storagePrincipal = storagePrincipalOrErr.unwrap();
+  nsCOMPtr<nsIPrincipal> partitionedPrincipal =
+      partitionedPrincipalOrErr.unwrap();
+
+  nsCOMPtr<nsIPrincipal> effectiveStoragePrincipal = partitionedPrincipal;
+  if (aData.useRegularPrincipal()) {
+    effectiveStoragePrincipal = loadingPrincipal;
+  }
 
   // Let's see if there is already a SharedWorker to share.
   nsCOMPtr<nsIURI> resolvedScriptURL =
@@ -193,7 +199,7 @@ void SharedWorkerService::GetOrCreateWorkerManagerOnMainThread(
   for (SharedWorkerManager* workerManager : mWorkerManagers) {
     managerHolder = workerManager->MatchOnMainThread(
         this, aData.domain(), resolvedScriptURL, aData.name(), loadingPrincipal,
-        BasePrincipal::Cast(storagePrincipal)->OriginAttributesRef());
+        BasePrincipal::Cast(effectiveStoragePrincipal)->OriginAttributesRef());
     if (managerHolder) {
       break;
     }
@@ -203,7 +209,7 @@ void SharedWorkerService::GetOrCreateWorkerManagerOnMainThread(
   if (!managerHolder) {
     managerHolder = SharedWorkerManager::Create(
         this, aBackgroundEventTarget, aData, loadingPrincipal,
-        BasePrincipal::Cast(storagePrincipal)->OriginAttributesRef());
+        BasePrincipal::Cast(effectiveStoragePrincipal)->OriginAttributesRef());
 
     mWorkerManagers.AppendElement(managerHolder->Manager());
   } else {

@@ -47,7 +47,6 @@ class nsGenericHTMLFrameElement : public nsGenericHTMLElement,
         mSrcLoadHappened(false),
         mNetworkCreated(aFromParser == mozilla::dom::FROM_PARSER_NETWORK),
         mBrowserFrameListenersRegistered(false),
-        mFrameLoaderCreationDisallowed(false),
         mReallyIsBrowser(false) {}
 
   NS_DECL_ISUPPORTS_INHERITED
@@ -81,31 +80,6 @@ class nsGenericHTMLFrameElement : public nsGenericHTMLElement,
 
   void SwapFrameLoaders(nsFrameLoaderOwner* aOtherLoaderOwner,
                         mozilla::ErrorResult& rv);
-
-  /**
-   * Normally, a frame tries to create its frame loader when its src is
-   * modified, or its contentWindow is accessed.
-   *
-   * disallowCreateFrameLoader prevents the frame element from creating its
-   * frame loader (in the same way that not being inside a document prevents the
-   * creation of a frame loader).  allowCreateFrameLoader lifts this
-   * restriction.
-   *
-   * These methods are not re-entrant -- it is an error to call
-   * disallowCreateFrameLoader twice without first calling allowFrameLoader.
-   *
-   * It's also an error to call either method if we already have a frame loader.
-   */
-  void DisallowCreateFrameLoader();
-  void AllowCreateFrameLoader();
-
-  /**
-   * Create a remote (i.e., out-of-process) frame loader attached to the given
-   * remote tab.
-   *
-   * It is an error to call this method if we already have a frame loader.
-   */
-  void CreateRemoteFrameLoader(mozilla::dom::BrowserParent* aBrowserParent);
 
   /**
    * Helper method to map a HTML 'scrolling' attribute value (which can be null)
@@ -157,7 +131,6 @@ class nsGenericHTMLFrameElement : public nsGenericHTMLElement,
   bool mNetworkCreated;
 
   bool mBrowserFrameListenersRegistered;
-  bool mFrameLoaderCreationDisallowed;
   bool mReallyIsBrowser;
 
   // This flag is only used by <iframe>. See HTMLIFrameElement::

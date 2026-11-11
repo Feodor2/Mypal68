@@ -101,9 +101,9 @@ class CacheLoadHandler final : public PromiseNativeHandler,
   void DataReceived();
 
   ScriptLoadInfo& mLoadInfo;
-  RefPtr<WorkerScriptLoader> mLoader;
+  const RefPtr<WorkerScriptLoader> mLoader;
   WorkerPrivate* const mWorkerPrivate;
-  bool mIsWorkerScript;
+  const bool mIsWorkerScript;
   bool mFailed;
   const ServiceWorkerState mState;
   nsCOMPtr<nsIInputStreamPump> mPump;

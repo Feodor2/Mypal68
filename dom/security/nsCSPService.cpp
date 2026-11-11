@@ -19,6 +19,8 @@
 #include "nsContentPolicyUtils.h"
 #include "nsNetUtil.h"
 #include "nsIProtocolHandler.h"
+#include "mozilla/net/DocumentLoadListener.h"
+#include "mozilla/net/DocumentChannel.h"
 
 using namespace mozilla;
 
@@ -107,7 +109,7 @@ bool subjectToCSP(nsIURI* aURI, nsContentPolicyType aContentType) {
   }
 
   nsContentPolicyType contentType = aLoadInfo->InternalContentPolicyType();
-  nsCOMPtr<nsISupports> requestContext = aLoadInfo->GetLoadingContext();
+  bool parserCreatedScript = aLoadInfo->GetParserCreatedScript();
 
   nsCOMPtr<nsICSPEventListener> cspEventListener;
   nsresult rv =
@@ -145,9 +147,9 @@ bool subjectToCSP(nsIURI* aURI, nsContentPolicyType aContentType) {
     if (preloadCsp) {
       // obtain the enforcement decision
       rv = preloadCsp->ShouldLoad(
-          contentType, cspEventListener, aContentLocation, requestContext,
+          contentType, cspEventListener, aContentLocation,
           nullptr,  // no redirect, aOriginal URL is null.
-          false, cspNonce, aDecision);
+          false, cspNonce, parserCreatedScript, aDecision);
       NS_ENSURE_SUCCESS(rv, rv);
 
       // if the preload policy already denied the load, then there
@@ -168,12 +170,31 @@ bool subjectToCSP(nsIURI* aURI, nsContentPolicyType aContentType) {
   nsCOMPtr<nsIContentSecurityPolicy> csp = aLoadInfo->GetCsp();
 
   if (csp) {
+    // Generally aOriginalURI denotes the URI before a redirect and hence
+    // will always be a nullptr here. Only exception are frame navigations
+    // which we want to treat as a redirect for the purpose of CSP reporting
+    // and in particular the `blocked-uri` in the CSP report where we want
+    // to report the prePath information.
+    nsCOMPtr<nsIURI> originalURI = nullptr;
+    ExtContentPolicyType extType =
+        nsContentUtils::InternalContentPolicyTypeToExternal(contentType);
+    if (extType == ExtContentPolicy::TYPE_SUBDOCUMENT &&
+        !aLoadInfo->GetOriginalFrameSrcLoad() &&
+        mozilla::StaticPrefs::
+            security_csp_truncate_blocked_uri_for_frame_navigations()) {
+      nsAutoCString prePathStr;
+      nsresult rv = aContentLocation->GetPrePath(prePathStr);
+      NS_ENSURE_SUCCESS(rv, rv);
+      rv = NS_NewURI(getter_AddRefs(originalURI), prePathStr);
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
+
     // obtain the enforcement decision
-    rv = csp->ShouldLoad(contentType, cspEventListener, aContentLocation,
-                         requestContext,
-                         nullptr,  // no redirect, aOriginal URL is null.
-                         !isPreload && aLoadInfo->GetSendCSPViolationEvents(),
-                         cspNonce, aDecision);
+    rv = csp->ShouldLoad(
+        contentType, cspEventListener, aContentLocation,
+        originalURI,  // no redirect, unless it's a frame navigation.
+        !isPreload && aLoadInfo->GetSendCSPViolationEvents(), cspNonce,
+        parserCreatedScript, aDecision);
 
     if (NS_CP_REJECTED(*aDecision)) {
       NS_SetRequestBlockingReason(
@@ -233,12 +254,28 @@ CSPService::AsyncOnChannelRedirect(nsIChannel* oldChannel,
   if (XRE_IsE10sParentProcess()) {
     nsCOMPtr<nsIParentChannel> parentChannel;
     NS_QueryNotificationCallbacks(oldChannel, parentChannel);
+    RefPtr<net::DocumentLoadListener> docListener =
+        do_QueryObject(parentChannel);
     // Since this is an IPC'd channel we do not have access to the request
     // context. In turn, we do not have an event target for policy violations.
     // Enforce the CSP check in the content process where we have that info.
-    if (parentChannel) {
+    // We allow redirect checks to run for document loads via
+    // DocumentLoadListener, since these are fully supported and we don't
+    // expose the redirects to the content process. We can't do this for all
+    // request types yet because we don't serialize nsICSPEventListener.
+    if (parentChannel && !docListener) {
       return NS_OK;
     }
+  }
+
+  // Don't do these checks if we're switching from DocumentChannel
+  // to a real channel. In that case, we should already have done
+  // the checks in the parent process. AsyncOnChannelRedirect
+  // isn't called in the content process if we switch process,
+  // so checking here would just hide bugs in the process switch
+  // cases.
+  if (RefPtr<net::DocumentChannel> docChannel = do_QueryObject(oldChannel)) {
+    return NS_OK;
   }
 
   nsCOMPtr<nsIURI> newUri;
@@ -306,7 +343,7 @@ nsresult CSPService::ConsultCSPForRedirect(nsIURI* aOriginalURI,
    */
 
   int16_t decision = nsIContentPolicy::ACCEPT;
-  nsCOMPtr<nsISupports> requestContext = aLoadInfo->GetLoadingContext();
+  bool parserCreatedScript = aLoadInfo->GetParserCreatedScript();
 
   // 1) Apply speculative CSP for preloads
   if (isPreload) {
@@ -317,11 +354,10 @@ nsresult CSPService::ConsultCSPForRedirect(nsIURI* aOriginalURI,
           policyType,  // load type per nsIContentPolicy (uint32_t)
           cspEventListener,
           aNewURI,         // nsIURI
-          requestContext,  // nsISupports
           aOriginalURI,    // Original nsIURI
           true,            // aSendViolationReports
           cspNonce,        // nonce
-          &decision);
+          parserCreatedScript, &decision);
 
       // if the preload policy already denied the load, then there
       // is no point in checking the real policy
@@ -339,11 +375,10 @@ nsresult CSPService::ConsultCSPForRedirect(nsIURI* aOriginalURI,
     csp->ShouldLoad(policyType,  // load type per nsIContentPolicy (uint32_t)
                     cspEventListener,
                     aNewURI,         // nsIURI
-                    requestContext,  // nsISupports
                     aOriginalURI,    // Original nsIURI
                     true,            // aSendViolationReports
                     cspNonce,        // nonce
-                    &decision);
+                    parserCreatedScript, &decision);
     if (NS_CP_REJECTED(decision)) {
       aCancelCode = Some(NS_ERROR_DOM_BAD_URI);
       return NS_BINDING_FAILED;

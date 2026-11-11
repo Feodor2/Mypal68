@@ -29,7 +29,9 @@ class RemoteLazyInputStreamStorage final : public nsIObserver {
   void AddStream(nsIInputStream* aInputStream, const nsID& aID, uint64_t aSize,
                  uint64_t aChildID);
 
-  void ForgetStream(const nsID& aID);
+  // Removes and returns the stream corresponding to the nsID. May return a
+  // nullptr if there's no stream stored for the nsID.
+  nsCOMPtr<nsIInputStream> ForgetStream(const nsID& aID);
 
   bool HasStream(const nsID& aID);
 

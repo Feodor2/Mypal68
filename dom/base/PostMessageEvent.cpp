@@ -159,6 +159,11 @@ PostMessageEvent::Run() {
   nsCOMPtr<mozilla::dom::EventTarget> eventTarget =
       do_QueryObject(targetWindow);
 
+  if (mHolder.empty()) {
+    DispatchError(cx, targetWindow, eventTarget);
+    return NS_OK;
+  }
+
   StructuredCloneHolder* holder;
   if (mHolder.constructed<StructuredCloneHolder>()) {
     mHolder.ref<StructuredCloneHolder>().Read(targetWindow->AsGlobal(), cx,

@@ -42,13 +42,6 @@ class TabContext {
 
   uint64_t ChromeOuterWindowID() const;
 
-  /**
-   * OriginAttributesRef() returns the OriginAttributes of this frame to
-   * the caller. This is used to store any attribute associated with the frame's
-   * docshell.
-   */
-  const OriginAttributes& OriginAttributesRef() const;
-
   UIStateChangeType ShowFocusRings() const;
 
   uint32_t MaxTouchPoints() const { return mMaxTouchPoints; }
@@ -70,19 +63,8 @@ class TabContext {
    */
   bool SetTabContext(const TabContext& aContext);
 
-  /**
-   * Set the tab context's origin attributes to a private browsing value.
-   */
-  void SetPrivateBrowsingAttributes(bool aIsPrivateBrowsing);
-
-  /**
-   * Set the first party domain of the tab context's origin attributes.
-   */
-  void SetFirstPartyDomainAttributes(const nsAString& aFirstPartyDomain);
-
   bool SetTabContext(uint64_t aChromeOuterWindowID,
                      UIStateChangeType aShowFocusRings,
-                     const OriginAttributes& aOriginAttributes,
                      uint32_t aMaxTouchPoints);
 
   /**
@@ -124,11 +106,6 @@ class TabContext {
   int32_t mJSPluginID;
 
   /**
-   * OriginAttributes of the top level tab docShell
-   */
-  OriginAttributes mOriginAttributes;
-
-  /**
    * Keyboard indicator state (focus rings).
    */
   UIStateChangeType mShowFocusRings;
@@ -152,18 +129,13 @@ class MutableTabContext : public TabContext {
 
   bool SetTabContext(uint64_t aChromeOuterWindowID,
                      UIStateChangeType aShowFocusRings,
-                     const OriginAttributes& aOriginAttributes,
                      uint32_t aMaxTouchPoints) {
     return TabContext::SetTabContext(aChromeOuterWindowID, aShowFocusRings,
-                                     aOriginAttributes, aMaxTouchPoints);
+                                     aMaxTouchPoints);
   }
 
   bool SetTabContextForJSPluginFrame(uint32_t aJSPluginID) {
     return TabContext::SetTabContextForJSPluginFrame(aJSPluginID);
-  }
-
-  void SetFirstPartyDomainAttributes(const nsAString& aFirstPartyDomain) {
-    TabContext::SetFirstPartyDomainAttributes(aFirstPartyDomain);
   }
 };
 

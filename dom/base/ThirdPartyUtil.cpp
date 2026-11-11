@@ -110,7 +110,9 @@ nsresult ThirdPartyUtil::IsThirdPartyInternal(const nsCString& aFirstDomain,
   nsresult rv = GetBaseDomain(aSecondURI, secondDomain);
   LOG(("ThirdPartyUtil::IsThirdPartyInternal %s =? %s", aFirstDomain.get(),
        secondDomain.get()));
-  if (NS_FAILED(rv)) return rv;
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   *aResult = IsThirdPartyInternal(aFirstDomain, secondDomain);
   return NS_OK;
@@ -184,7 +186,7 @@ ThirdPartyUtil::GetContentBlockingAllowListPrincipalFromWindow(
                                                  getter_AddRefs(principal));
   }
 
-  if (!principal || !principal->GetIsCodebasePrincipal()) {
+  if (!principal || !principal->GetIsContentPrincipal()) {
     // This is for compatibility with GetURIFromWindow.  Null principals are
     // explicitly special cased there.  GetURI returns nullptr for
     // SystemPrincipal and ExpandedPrincipal.
@@ -209,13 +211,16 @@ ThirdPartyUtil::IsThirdPartyURI(nsIURI* aFirstURI, nsIURI* aSecondURI,
 
   nsAutoCString firstHost;
   nsresult rv = GetBaseDomain(aFirstURI, firstHost);
-  if (NS_FAILED(rv)) return rv;
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   return IsThirdPartyInternal(firstHost, aSecondURI, aResult);
 }
 
-// Determine if any URI of the window hierarchy of aWindow is foreign with
-// respect to aSecondURI. See docs for mozIThirdPartyUtil.
+// If the optional aURI is provided, determine whether aWindow is foreign with
+// respect to aURI. If the optional aURI is not provided, determine whether the
+// given "window hierarchy" is third party. See docs for mozIThirdPartyUtil.
 NS_IMETHODIMP
 ThirdPartyUtil::IsThirdPartyWindow(mozIDOMWindowProxy* aWindow, nsIURI* aURI,
                                    bool* aResult) {
@@ -243,44 +248,17 @@ ThirdPartyUtil::IsThirdPartyWindow(mozIDOMWindowProxy* aWindow, nsIURI* aURI,
   }
 
   nsPIDOMWindowOuter* current = nsPIDOMWindowOuter::From(aWindow);
-  do {
-    // We use GetInProcessScriptableParent rather than GetParent because we
-    // consider <iframe mozbrowser> to be a top-level frame.
-    nsPIDOMWindowOuter* parent = current->GetInProcessScriptableParent();
-    // We don't use SameCOMIdentity here since we know that nsPIDOMWindowOuter
-    // is only implemented by nsGlobalWindowOuter, so different objects of that
-    // type will not have different nsISupports COM identities, and checking the
-    // actual COM identity using SameCOMIdentity is expensive due to the virtual
-    // calls involved.
-    if (parent == current) {
-      // We're at the topmost content window. We already know the answer.
-      *aResult = false;
-      return NS_OK;
-    }
+  auto* const browsingContext = current->GetBrowsingContext();
+  MOZ_ASSERT(browsingContext);
 
-    nsCOMPtr<nsIPrincipal> currentPrincipal;
-    nsresult rv =
-        GetPrincipalFromWindow(current, getter_AddRefs(currentPrincipal));
-    NS_ENSURE_SUCCESS(rv, rv);
-    nsCOMPtr<nsIPrincipal> parentPrincipal;
-    rv = GetPrincipalFromWindow(parent, getter_AddRefs(parentPrincipal));
-    NS_ENSURE_SUCCESS(rv, rv);
+  WindowContext* wc = browsingContext->GetCurrentWindowContext();
+  if (NS_WARN_IF(!wc)) {
+    *aResult = true;
+    return NS_OK;
+  }
 
-    rv = currentPrincipal->IsThirdPartyPrincipal(parentPrincipal, &result);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-
-    if (result) {
-      *aResult = true;
-      return NS_OK;
-    }
-
-    current = parent;
-  } while (1);
-
-  MOZ_ASSERT_UNREACHABLE("should've returned");
-  return NS_ERROR_UNEXPECTED;
+  *aResult = wc->GetIsThirdPartyWindow();
+  return NS_OK;
 }
 
 nsresult ThirdPartyUtil::IsThirdPartyGlobal(
@@ -349,15 +327,14 @@ ThirdPartyUtil::IsThirdPartyChannel(nsIChannel* aChannel, nsIURI* aURI,
   }
 
   bool parentIsThird = false;
+  nsAutoCString channelDomain;
 
   // Obtain the URI from the channel, and its base domain.
   nsCOMPtr<nsIURI> channelURI;
   rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(channelURI));
-  if (NS_FAILED(rv)) return rv;
-
-  nsAutoCString channelDomain;
-  rv = GetBaseDomain(channelURI, channelDomain);
-  if (NS_FAILED(rv)) return rv;
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   BasePrincipal* loadingPrincipal = nullptr;
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
@@ -372,10 +349,40 @@ ThirdPartyUtil::IsThirdPartyChannel(nsIChannel* aChannel, nsIURI* aURI,
     }
   }
 
-  if (loadingPrincipal) {
-    rv = loadingPrincipal->IsThirdPartyURI(channelURI, &parentIsThird);
+  // Special consideration must be done for about:blank URIs because those
+  // inherit the principal from the parent context. For them, let's consider the
+  // principal URI.
+  if (NS_IsAboutBlank(channelURI)) {
+    nsCOMPtr<nsIPrincipal> principalToInherit =
+        loadInfo->FindPrincipalToInherit(aChannel);
+    if (!principalToInherit) {
+      *aResult = true;
+      return NS_OK;
+    }
+
+    rv = principalToInherit->GetBaseDomain(channelDomain);
     if (NS_FAILED(rv)) {
       return rv;
+    }
+
+    if (loadingPrincipal) {
+      rv = loadingPrincipal->IsThirdPartyPrincipal(principalToInherit,
+                                                   &parentIsThird);
+      if (NS_FAILED(rv)) {
+        return rv;
+      }
+    }
+  } else {
+    rv = GetBaseDomain(channelURI, channelDomain);
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    if (loadingPrincipal) {
+      rv = loadingPrincipal->IsThirdPartyURI(channelURI, &parentIsThird);
+      if (NS_FAILED(rv)) {
+        return rv;
+      }
     }
   }
 
@@ -533,11 +540,11 @@ ThirdPartyUtil::AnalyzeChannel(nsIChannel* aChannel, bool aNotify, nsIURI* aURI,
     if (performStorageChecks &&
         ContentBlocking::ShouldAllowAccessFor(aChannel, aURI ? aURI : uri.get(),
                                               aRejectedReason)) {
-      result += ThirdPartyAnalysis::IsFirstPartyStorageAccessGranted;
+      result += ThirdPartyAnalysis::IsStorageAccessPermissionGranted;
     }
 
     if (aNotify && !result.contains(
-                       ThirdPartyAnalysis::IsFirstPartyStorageAccessGranted)) {
+                       ThirdPartyAnalysis::IsStorageAccessPermissionGranted)) {
       ContentBlockingNotifier::OnDecision(
           aChannel, ContentBlockingNotifier::BlockingDecision::eBlock,
           *aRejectedReason);

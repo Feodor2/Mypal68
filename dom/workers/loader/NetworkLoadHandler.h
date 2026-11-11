@@ -55,6 +55,8 @@ class NetworkLoadHandler final : public nsIStreamLoaderObserver,
   NS_IMETHOD
   OnStartRequest(nsIRequest* aRequest) override;
 
+  nsresult PrepareForRequest(nsIRequest* aRequest);
+
   NS_IMETHOD
   OnStopRequest(nsIRequest* aRequest, nsresult aStatusCode) override {
     // Nothing to do here!

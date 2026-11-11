@@ -257,17 +257,16 @@ nsresult ClientSource::WindowExecutionReady(nsPIDOMWindowInner* aInnerWindow) {
   // continue to inherit the SW as well.  We need to avoid triggering the
   // assertion in this corner case.
   if (mController.isSome()) {
-    MOZ_DIAGNOSTIC_ASSERT(spec.LowerCaseEqualsLiteral("about:blank") ||
-                          StringBeginsWith(spec, "blob:"_ns) ||
-                          StorageAllowedForWindow(aInnerWindow) ==
-                              StorageAccess::eAllow);
+    MOZ_ASSERT(spec.LowerCaseEqualsLiteral("about:blank") ||
+               StringBeginsWith(spec, "blob:"_ns) ||
+               StorageAllowedForWindow(aInnerWindow) == StorageAccess::eAllow);
   }
 
   nsPIDOMWindowOuter* outer = aInnerWindow->GetOuterWindow();
   NS_ENSURE_TRUE(outer, NS_ERROR_UNEXPECTED);
 
   FrameType frameType = FrameType::Top_level;
-  if (!outer->IsTopLevelWindow()) {
+  if (!outer->GetBrowsingContext()->IsTop()) {
     frameType = FrameType::Nested;
   } else if (outer->HadOriginalOpener()) {
     frameType = FrameType::Auxiliary;
@@ -309,7 +308,7 @@ nsresult ClientSource::DocShellExecutionReady(nsIDocShell* aDocShell) {
 
   // TODO: dedupe this with WindowExecutionReady
   FrameType frameType = FrameType::Top_level;
-  if (!outer->IsTopLevelWindow()) {
+  if (!outer->GetBrowsingContext()->IsTop()) {
     frameType = FrameType::Nested;
   } else if (outer->HadOriginalOpener()) {
     frameType = FrameType::Auxiliary;

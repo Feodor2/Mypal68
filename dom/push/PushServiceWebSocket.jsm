@@ -509,6 +509,8 @@ var PushServiceWebSocket = {
       Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
       Ci.nsIContentPolicy.TYPE_WEBSOCKET
     );
+    // Allow deprecated HTTP request from SystemPrincipal
+    socket.loadInfo.allowDeprecatedSystemRequests = true;
 
     return socket;
   },

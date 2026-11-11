@@ -8,7 +8,7 @@ add_task(async function test_CtoPtoC_big() {
   let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, BASE_URI);
   let browser1 = gBrowser.getBrowserForTab(tab1);
 
-  let blob = await ContentTask.spawn(browser1, null, function() {
+  let blob = await SpecialPowers.spawn(browser1, [], function() {
     Cu.importGlobalProperties(["Blob"]);
     let blob = new Blob([new Array(1024 * 1024).join("123456789ABCDEF")]);
     return blob;
@@ -24,7 +24,7 @@ add_task(async function test_CtoPtoC_big() {
   let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser, BASE_URI);
   let browser2 = gBrowser.getBrowserForTab(tab2);
 
-  let status = await ContentTask.spawn(browser2, blob, function(blob) {
+  let status = await SpecialPowers.spawn(browser2, [blob], function(blob) {
     return new Promise(resolve => {
       let fr = new content.FileReader();
       fr.readAsText(blob);
@@ -45,7 +45,7 @@ add_task(async function test_CtoPtoC_small() {
   let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, BASE_URI);
   let browser1 = gBrowser.getBrowserForTab(tab1);
 
-  let blob = await ContentTask.spawn(browser1, null, function() {
+  let blob = await SpecialPowers.spawn(browser1, [], function() {
     Cu.importGlobalProperties(["Blob"]);
     let blob = new Blob(["hello world!"]);
     return blob;
@@ -57,7 +57,7 @@ add_task(async function test_CtoPtoC_small() {
   let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser, BASE_URI);
   let browser2 = gBrowser.getBrowserForTab(tab2);
 
-  let status = await ContentTask.spawn(browser2, blob, function(blob) {
+  let status = await SpecialPowers.spawn(browser2, [blob], function(blob) {
     return new Promise(resolve => {
       let fr = new content.FileReader();
       fr.readAsText(blob);
@@ -78,7 +78,7 @@ add_task(async function test_CtoPtoC_bc_big() {
   let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, BASE_URI);
   let browser1 = gBrowser.getBrowserForTab(tab1);
 
-  await ContentTask.spawn(browser1, null, function() {
+  await SpecialPowers.spawn(browser1, [], function() {
     Cu.importGlobalProperties(["Blob"]);
     var bc = new content.BroadcastChannel("test");
     bc.onmessage = function() {
@@ -91,7 +91,7 @@ add_task(async function test_CtoPtoC_bc_big() {
   let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser, BASE_URI);
   let browser2 = gBrowser.getBrowserForTab(tab2);
 
-  let status = await ContentTask.spawn(browser2, null, function() {
+  let status = await SpecialPowers.spawn(browser2, [], function() {
     return new Promise(resolve => {
       var bc = new content.BroadcastChannel("test");
       bc.onmessage = function(e) {
@@ -117,7 +117,7 @@ add_task(async function test_CtoPtoC_bc_small() {
   let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, BASE_URI);
   let browser1 = gBrowser.getBrowserForTab(tab1);
 
-  await ContentTask.spawn(browser1, null, function() {
+  await SpecialPowers.spawn(browser1, [], function() {
     Cu.importGlobalProperties(["Blob"]);
     var bc = new content.BroadcastChannel("test");
     bc.onmessage = function() {
@@ -128,7 +128,7 @@ add_task(async function test_CtoPtoC_bc_small() {
   let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser, BASE_URI);
   let browser2 = gBrowser.getBrowserForTab(tab2);
 
-  let status = await ContentTask.spawn(browser2, null, function() {
+  let status = await SpecialPowers.spawn(browser2, [], function() {
     return new Promise(resolve => {
       var bc = new content.BroadcastChannel("test");
       bc.onmessage = function(e) {
@@ -154,7 +154,7 @@ add_task(async function test_CtoPtoC_bc_small() {
   let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, BASE_URI);
   let browser1 = gBrowser.getBrowserForTab(tab1);
 
-  let blobURL = await ContentTask.spawn(browser1, null, function() {
+  let blobURL = await SpecialPowers.spawn(browser1, [], function() {
     Cu.importGlobalProperties(["Blob"]);
     return content.URL.createObjectURL(new content.Blob(["hello world!"]));
   });
@@ -162,7 +162,9 @@ add_task(async function test_CtoPtoC_bc_small() {
   let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser, BASE_URI);
   let browser2 = gBrowser.getBrowserForTab(tab2);
 
-  let status = await ContentTask.spawn(browser2, blobURL, function(blobURL) {
+  let status = await SpecialPowers.spawn(browser2, [blobURL], function(
+    blobURL
+  ) {
     return new Promise(resolve => {
       var xhr = new content.XMLHttpRequest();
       xhr.open("GET", blobURL);
@@ -185,7 +187,7 @@ add_task(async function test_CtoPtoC_multipart() {
   let tab1 = await BrowserTestUtils.openNewForegroundTab(gBrowser, BASE_URI);
   let browser1 = gBrowser.getBrowserForTab(tab1);
 
-  let blob = await ContentTask.spawn(browser1, null, function() {
+  let blob = await SpecialPowers.spawn(browser1, [], function() {
     Cu.importGlobalProperties(["Blob"]);
     return new Blob(["!"]);
   });
@@ -198,7 +200,7 @@ add_task(async function test_CtoPtoC_multipart() {
   let tab2 = await BrowserTestUtils.openNewForegroundTab(gBrowser, BASE_URI);
   let browser2 = gBrowser.getBrowserForTab(tab2);
 
-  let status = await ContentTask.spawn(browser2, newBlob, function(blob) {
+  let status = await SpecialPowers.spawn(browser2, [newBlob], function(blob) {
     Cu.importGlobalProperties(["Blob"]);
     return new Promise(resolve => {
       let fr = new content.FileReader();
@@ -220,7 +222,7 @@ add_task(async function test_CtoPsize_multipart() {
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, BASE_URI);
   let browser = gBrowser.getBrowserForTab(tab);
 
-  let blob = await ContentTask.spawn(browser, null, function() {
+  let blob = await SpecialPowers.spawn(browser, [], function() {
     Cu.importGlobalProperties(["Blob"]);
 
     let data = new Array(1024 * 512).join("A");

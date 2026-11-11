@@ -445,7 +445,7 @@ void WorkerGlobalScope::ImportScripts(JSContext* aCx,
   AssertIsOnWorkerThread();
 
   UniquePtr<SerializedStackHolder> stack;
-  if (mWorkerPrivate->IsWatchedByDevtools()) {
+  if (mWorkerPrivate->IsWatchedByDevTools()) {
     stack = GetCurrentStackForNetMonitor(aCx);
   }
 
@@ -547,7 +547,11 @@ int32_t WorkerGlobalScope::SetTimeoutOrInterval(JSContext* aCx,
 
 void WorkerGlobalScope::GetOrigin(nsAString& aOrigin) const {
   AssertIsOnWorkerThread();
-  aOrigin = mWorkerPrivate->Origin();
+  aOrigin = mWorkerPrivate->OriginNoSuffix();
+}
+
+bool WorkerGlobalScope::CrossOriginIsolated() const {
+  return mWorkerPrivate->CrossOriginIsolated();
 }
 
 void WorkerGlobalScope::Dump(const Optional<nsAString>& aString) const {
@@ -715,7 +719,7 @@ uint64_t WorkerGlobalScope::WindowID() const {
   return mWorkerPrivate->WindowID();
 }
 
-void WorkerGlobalScope::FirstPartyStorageAccessGranted() {
+void WorkerGlobalScope::StorageAccessPermissionGranted() {
   // Reset the IndexedDB factory.
   mIndexedDB = nullptr;
 

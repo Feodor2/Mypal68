@@ -10,13 +10,14 @@ include protocol PDocAccessible;
 include DOMTypes;
 
 using mozilla::layers::LayersObserverEpoch from "mozilla/layers/LayersTypes.h";
-using mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
 using class mozilla::WidgetMouseEvent from "ipc/nsGUIEventIPC.h";
 using mozilla::a11y::IDispatchHolder from "mozilla/a11y/IPCTypes.h";
 using mozilla::dom::EffectsInfo from "mozilla/dom/TabMessageUtils.h";
 using mozilla::ScrollAxis from "mozilla/PresShellForwards.h";
 using mozilla::ScrollFlags from "mozilla/PresShellForwards.h";
 using struct nsRect from "nsRect.h";
+using nsIntRect from "nsRect.h";
+using mozilla::dom::EmbedderElementEventType from "mozilla/dom/TabMessageUtils.h";
 
 namespace mozilla {
 namespace dom {
@@ -32,8 +33,6 @@ async refcounted protocol PBrowserBridge {
   manager PBrowser;
 
 child:
-  async SetLayersId(LayersId layersId);
-
   /**
    * Request that the IPC child / Web parent process move focus to the
    * browser's frame. If canRaise is true, the window can be raised if
@@ -56,27 +55,26 @@ child:
    * Called once this PBrowserBridge's OOP subdoc no longer blocks its
    * embedding element's and embedding doc's 'load' events.
    */
-  async MaybeFireEmbedderLoadEvents(bool aIsTrusted,
-                                    bool aFireLoadAtEmbeddingElement);
+  async MaybeFireEmbedderLoadEvents(EmbedderElementEventType aFireEventAtEmbeddingElement);
 
   async ScrollRectIntoView(nsRect aRect, ScrollAxis aVertical,
                            ScrollAxis aHorizontal, ScrollFlags aScrollFlags,
                            int32_t aAppUnitsPerDevPixel);
 
-  async SubFrameCrashed(MaybeDiscardedBrowsingContext aContext);
+  async SubFrameCrashed();
 
 parent:
   // Destroy the remote web browser due to the nsFrameLoader going away.
   async __delete__();
 
   // DocShell messaging.
-  async LoadURL(nsCString aSpec);
+  async LoadURL(nsCString aSpec, nsIPrincipal aTriggeringPrincipal);
   async ResumeLoad(uint64_t aPendingSwitchID);
 
   // Out of process rendering.
   async Show(OwnerShowInfo info);
   async ScrollbarPreferenceChanged(ScrollbarPreference pref);
-  async UpdateDimensions(DimensionInfo dimensions) compressall;
+  async UpdateDimensions(nsIntRect rect, ScreenIntSize size) compressall;
   async RenderLayers(bool aEnabled, LayersObserverEpoch aEpoch);
 
   async UpdateEffects(EffectsInfo aEffects);

@@ -120,7 +120,7 @@ class WorkerScriptLoader final : public nsINamed {
   friend class CacheLoadHandler;
   friend class NetworkLoadHandler;
 
-  WorkerPrivate* mWorkerPrivate;
+  WorkerPrivate* const mWorkerPrivate;
   UniquePtr<SerializedStackHolder> mOriginStack;
   nsString mOriginStackJSON;
   nsCOMPtr<nsIEventTarget> mSyncLoopTarget;
@@ -128,7 +128,7 @@ class WorkerScriptLoader final : public nsINamed {
   RefPtr<CacheCreator> mCacheCreator;
   Maybe<ClientInfo> mClientInfo;
   Maybe<ServiceWorkerDescriptor> mController;
-  bool mIsMainScript;
+  const bool mIsMainScript;
   WorkerScriptType mWorkerScriptType;
   bool mCanceledMainThread;
   ErrorResult& mRv;

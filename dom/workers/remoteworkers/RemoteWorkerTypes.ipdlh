@@ -8,6 +8,7 @@ include IPCServiceWorkerRegistrationDescriptor;
 include PBackgroundSharedTypes;
 include URIParams;
 include DOMTypes;
+include NeckoChannelParams;
 
 include "mozilla/dom/ClientIPCUtils.h";
 include "mozilla/dom/ReferrerInfoUtils.h";
@@ -23,6 +24,7 @@ struct ServiceWorkerData {
   IPCServiceWorkerRegistrationDescriptor registrationDescriptor;
   nsString cacheName;
   uint32_t loadFlags;
+  nsString id;
 };
 
 union OptionalServiceWorkerData {
@@ -50,7 +52,12 @@ struct RemoteWorkerData
 
   PrincipalInfo loadingPrincipalInfo;
   PrincipalInfo principalInfo;
-  PrincipalInfo storagePrincipalInfo;
+  PrincipalInfo partitionedPrincipalInfo;
+
+  bool useRegularPrincipal;
+  bool hasStorageAccessPermissionGranted;
+
+  CookieJarSettingsArgs cookieJarSettings;
 
   nsCString domain;
 
@@ -63,6 +70,9 @@ struct RemoteWorkerData
   StorageAccess storageAccess;
 
   OptionalServiceWorkerData serviceWorkerData;
+
+  // Child process remote type where the worker should only run on.
+  nsCString remoteType;
 };
 
 // ErrorData/ErrorDataNote correspond to WorkerErrorReport/WorkerErrorNote

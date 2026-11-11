@@ -29,8 +29,8 @@ using namespace mozilla::ipc;
 namespace mozilla::dom {
 
 BrowserBridgeChild::BrowserBridgeChild(BrowsingContext* aBrowsingContext,
-                                       TabId aId)
-    : mId{aId}, mLayersId{0}, mBrowsingContext(aBrowsingContext) {}
+                                       TabId aId, const LayersId& aLayersId)
+    : mId{aId}, mLayersId{aLayersId}, mBrowsingContext(aBrowsingContext) {}
 
 BrowserBridgeChild::~BrowserBridgeChild() {
 #if defined(ACCESSIBILITY) && defined(XP_WIN)
@@ -65,6 +65,10 @@ already_AddRefed<BrowserBridgeHost> BrowserBridgeChild::FinishInit(
   return MakeAndAddRef<BrowserBridgeHost>(this);
 }
 
+nsILoadContext* BrowserBridgeChild::GetLoadContext() {
+  return mBrowsingContext;
+}
+
 void BrowserBridgeChild::NavigateByKey(bool aForward,
                                        bool aForDocumentNavigation) {
   Unused << SendNavigateByKey(aForward, aForDocumentNavigation);
@@ -97,22 +101,6 @@ BrowserBridgeChild* BrowserBridgeChild::GetFrom(nsIContent* aContent) {
   }
   RefPtr<nsFrameLoader> frameLoader = loaderOwner->GetFrameLoader();
   return GetFrom(frameLoader);
-}
-
-IPCResult BrowserBridgeChild::RecvSetLayersId(
-    const mozilla::layers::LayersId& aLayersId) {
-  MOZ_ASSERT(!mLayersId.IsValid() && aLayersId.IsValid());
-  mLayersId = aLayersId;
-
-  // Invalidate the nsSubdocumentFrame now that we have a layers ID for the
-  // child browser
-  if (RefPtr<Element> owner = mFrameLoader->GetOwnerContent()) {
-    if (nsIFrame* frame = owner->GetPrimaryFrame()) {
-      frame->InvalidateFrame();
-    }
-  }
-
-  return IPC_OK();
 }
 
 mozilla::ipc::IPCResult BrowserBridgeChild::RecvRequestFocus(
@@ -170,18 +158,21 @@ BrowserBridgeChild::RecvSetEmbeddedDocAccessibleCOMProxy(
 }
 
 mozilla::ipc::IPCResult BrowserBridgeChild::RecvMaybeFireEmbedderLoadEvents(
-    bool aIsTrusted, bool aFireLoadAtEmbeddingElement) {
+    EmbedderElementEventType aFireEventAtEmbeddingElement) {
   RefPtr<Element> owner = mFrameLoader->GetOwnerContent();
   if (!owner) {
     return IPC_OK();
   }
 
-  if (aFireLoadAtEmbeddingElement) {
+  if (aFireEventAtEmbeddingElement == EmbedderElementEventType::LoadEvent) {
     nsEventStatus status = nsEventStatus_eIgnore;
-    WidgetEvent event(aIsTrusted, eLoad);
+    WidgetEvent event(/* aIsTrusted = */ true, eLoad);
     event.mFlags.mBubbles = false;
     event.mFlags.mCancelable = false;
     EventDispatcher::Dispatch(owner, nullptr, &event, nullptr, &status);
+  } else if (aFireEventAtEmbeddingElement ==
+             EmbedderElementEventType::ErrorEvent) {
+    mFrameLoader->FireErrorEvent();
   }
 
   UnblockOwnerDocsLoadEvent();
@@ -221,27 +212,11 @@ mozilla::ipc::IPCResult BrowserBridgeChild::RecvScrollRectIntoView(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult BrowserBridgeChild::RecvSubFrameCrashed(
-    const MaybeDiscarded<BrowsingContext>& aContext) {
-  if (aContext.IsNullOrDiscarded()) {
-    return IPC_OK();
+mozilla::ipc::IPCResult BrowserBridgeChild::RecvSubFrameCrashed() {
+  if (RefPtr<nsFrameLoaderOwner> frameLoaderOwner =
+          do_QueryObject(mFrameLoader->GetOwnerContent())) {
+    frameLoaderOwner->SubframeCrashed();
   }
-
-  RefPtr<nsFrameLoaderOwner> frameLoaderOwner =
-      do_QueryObject(aContext.get()->GetEmbedderElement());
-  if (!frameLoaderOwner) {
-    return IPC_OK();
-  }
-
-  IgnoredErrorResult rv;
-  RemotenessOptions options;
-  options.mError.Construct(static_cast<uint32_t>(NS_ERROR_FRAME_CRASHED));
-  frameLoaderOwner->ChangeRemoteness(options, rv);
-
-  if (NS_WARN_IF(rv.Failed())) {
-    return IPC_FAIL(this, "Remoteness change failed");
-  }
-
   return IPC_OK();
 }
 

@@ -331,7 +331,6 @@
 #include "nsIWebNavigationInfo.h"
 #include "nsIWidget.h"
 #include "nsIWindowMediator.h"
-#include "nsIWindowProvider.h"
 #include "nsIXPConnect.h"
 #include "nsJSPrincipals.h"
 #include "nsJSUtils.h"
@@ -697,9 +696,7 @@ void AutoSuppressEventHandlingAndSuspend::SuppressBrowsingContext(
     }
   }
 
-  BrowsingContext::Children children;
-  aBC->GetChildren(children);
-  for (const auto& bc : children) {
+  for (const auto& bc : aBC->Children()) {
     SuppressBrowsingContext(bc);
   }
 }
@@ -5723,12 +5720,6 @@ void nsContentUtils::RemoveScriptBlocker() {
 }
 
 /* static */
-nsIWindowProvider* nsContentUtils::GetWindowProviderForContentProcess() {
-  MOZ_ASSERT(XRE_IsContentProcess());
-  return ContentChild::GetSingleton();
-}
-
-/* static */
 already_AddRefed<nsPIDOMWindowOuter>
 nsContentUtils::GetMostRecentNonPBWindow() {
   nsCOMPtr<nsIWindowMediator> wm = do_GetService(NS_WINDOWMEDIATOR_CONTRACTID);
@@ -6740,10 +6731,10 @@ bool nsContentUtils::IsPDFJS(nsIPrincipal* aPrincipal) {
   if (!aPrincipal) {
     return false;
   }
-  nsCOMPtr<nsIURI> uri;
-  aPrincipal->GetURI(getter_AddRefs(uri));
-  return uri && uri->GetSpecOrDefault().EqualsLiteral(
-                    "resource://pdf.js/web/viewer.html");
+  nsAutoCString spec;
+  nsresult rv = aPrincipal->GetAsciiSpec(spec);
+  NS_ENSURE_SUCCESS(rv, false);
+  return spec.EqualsLiteral("resource://pdf.js/web/viewer.html");
 }
 
 already_AddRefed<nsIDocumentLoaderFactory>
@@ -7522,9 +7513,9 @@ nsresult nsContentUtils::GetHostOrIPv6WithBrackets(nsIURI* aURI,
   return NS_OK;
 }
 
-bool nsContentUtils::CallOnAllRemoteChildren(
+CallState nsContentUtils::CallOnAllRemoteChildren(
     MessageBroadcaster* aManager,
-    const std::function<bool(BrowserParent*)>& aCallback) {
+    const std::function<CallState(BrowserParent*)>& aCallback) {
   uint32_t browserChildCount = aManager->ChildCount();
   for (uint32_t j = 0; j < browserChildCount; ++j) {
     RefPtr<MessageListenerManager> childMM = aManager->GetChildAt(j);
@@ -7534,8 +7525,8 @@ bool nsContentUtils::CallOnAllRemoteChildren(
 
     RefPtr<MessageBroadcaster> nonLeafMM = MessageBroadcaster::From(childMM);
     if (nonLeafMM) {
-      if (CallOnAllRemoteChildren(nonLeafMM, aCallback)) {
-        return true;
+      if (CallOnAllRemoteChildren(nonLeafMM, aCallback) == CallState::Stop) {
+        return CallState::Stop;
       }
       continue;
     }
@@ -7545,19 +7536,19 @@ bool nsContentUtils::CallOnAllRemoteChildren(
       nsFrameLoader* fl = static_cast<nsFrameLoader*>(cb);
       BrowserParent* remote = BrowserParent::GetFrom(fl);
       if (remote && aCallback) {
-        if (aCallback(remote)) {
-          return true;
+        if (aCallback(remote) == CallState::Stop) {
+          return CallState::Stop;
         }
       }
     }
   }
 
-  return false;
+  return CallState::Continue;
 }
 
 void nsContentUtils::CallOnAllRemoteChildren(
     nsPIDOMWindowOuter* aWindow,
-    const std::function<bool(BrowserParent*)>& aCallback) {
+    const std::function<CallState(BrowserParent*)>& aCallback) {
   nsGlobalWindowOuter* window = nsGlobalWindowOuter::Cast(aWindow);
   if (window->IsChromeWindow()) {
     RefPtr<MessageBroadcaster> windowMM = window->GetMessageManager();
@@ -7580,7 +7571,7 @@ void nsContentUtils::SetKeyboardIndicatorsOnRemoteChildren(
   CallOnAllRemoteChildren(aWindow, [&stateInfo](BrowserParent* aBrowserParent) {
     Unused << aBrowserParent->SendSetKeyboardIndicators(
         stateInfo.mShowFocusRings);
-    return false;
+    return CallState::Continue;
   });
 }
 
@@ -9297,7 +9288,7 @@ bool nsContentUtils::HttpsStateIsModern(Document* aDocument) {
     return false;
   }
 
-  MOZ_ASSERT(principal->GetIsCodebasePrincipal());
+  MOZ_ASSERT(principal->GetIsContentPrincipal());
 
   return principal->GetIsOriginPotentiallyTrustworthy();
 }
@@ -9680,149 +9671,6 @@ void nsContentUtils::EnqueueLifecycleCallback(
 
   CustomElementRegistry::EnqueueLifecycleCallback(aType, aCustomElement, aArgs,
                                                   aDefinition);
-}
-
-/* static */
-bool nsContentUtils::AttemptLargeAllocationLoad(nsIHttpChannel* aChannel) {
-  MOZ_ASSERT(aChannel);
-
-  nsCOMPtr<nsILoadGroup> loadGroup;
-  nsresult rv = aChannel->GetLoadGroup(getter_AddRefs(loadGroup));
-  if (NS_WARN_IF(NS_FAILED(rv) || !loadGroup)) {
-    return false;
-  }
-
-  nsCOMPtr<nsIInterfaceRequestor> callbacks;
-  rv = loadGroup->GetNotificationCallbacks(getter_AddRefs(callbacks));
-  if (NS_WARN_IF(NS_FAILED(rv) || !callbacks)) {
-    return false;
-  }
-
-  nsCOMPtr<nsILoadContext> loadContext = do_GetInterface(callbacks);
-  if (NS_WARN_IF(!loadContext)) {
-    return false;
-  }
-
-  nsCOMPtr<mozIDOMWindowProxy> window;
-  rv = loadContext->GetAssociatedWindow(getter_AddRefs(window));
-  if (NS_WARN_IF(NS_FAILED(rv) || !window)) {
-    return false;
-  }
-
-  nsPIDOMWindowOuter* outer = nsPIDOMWindowOuter::From(window);
-  if (NS_WARN_IF(!outer)) {
-    return false;
-  }
-
-  if (!XRE_IsContentProcess()) {
-    outer->SetLargeAllocStatus(LargeAllocStatus::NON_E10S);
-    return false;
-  }
-
-  nsIDocShell* docShell = outer->GetDocShell();
-  BrowsingContext* browsingContext = docShell->GetBrowsingContext();
-  bool isOnlyToplevelBrowsingContext =
-      browsingContext->IsTop() &&
-      browsingContext->Group()->Toplevels().Length() == 1;
-  if (!isOnlyToplevelBrowsingContext) {
-    outer->SetLargeAllocStatus(LargeAllocStatus::NOT_ONLY_TOPLEVEL_IN_TABGROUP);
-    return false;
-  }
-
-  // Get the request method, and check if it is a GET request. If it is not GET,
-  // then we cannot perform a large allocation load.
-  nsAutoCString requestMethod;
-  rv = aChannel->GetRequestMethod(requestMethod);
-  NS_ENSURE_SUCCESS(rv, false);
-
-  if (NS_WARN_IF(!requestMethod.LowerCaseEqualsLiteral("get"))) {
-    outer->SetLargeAllocStatus(LargeAllocStatus::NON_GET);
-    return false;
-  }
-
-  BrowserChild* browserChild = BrowserChild::GetFrom(outer);
-  NS_ENSURE_TRUE(browserChild, false);
-
-  if (browserChild->IsAwaitingLargeAlloc()) {
-    NS_WARNING(
-        "In a Large-Allocation BrowserChild, ignoring Large-Allocation "
-        "header!");
-    browserChild->StopAwaitingLargeAlloc();
-    outer->SetLargeAllocStatus(LargeAllocStatus::SUCCESS);
-    return false;
-  }
-
-  // On Win32 systems, we want to behave differently, so set the isWin32 bool to
-  // be true iff we are on win32.
-#if defined(XP_WIN) && defined(_X86_)
-  const bool isWin32 = true;
-#else
-  const bool isWin32 = false;
-#endif
-
-  // We want to enable the large allocation header on 32-bit windows machines,
-  // and disable it on other machines, while still printing diagnostic messages.
-  // dom.largeAllocation.forceEnable can allow you to enable the process
-  // switching behavior of the Large-Allocation header on non 32-bit windows
-  // machines.
-  bool largeAllocEnabled =
-      isWin32 || StaticPrefs::dom_largeAllocation_forceEnable();
-  if (!largeAllocEnabled) {
-    NS_WARNING(
-        "dom.largeAllocation.forceEnable not set - "
-        "ignoring otherwise successful Large-Allocation header.");
-    // On platforms which aren't WIN32, we don't activate the largeAllocation
-    // header, instead we simply emit diagnostics into the console.
-    outer->SetLargeAllocStatus(LargeAllocStatus::NON_WIN32);
-    return false;
-  }
-
-  // At this point the fress process load should succeed! We just need to get
-  // ourselves a nsIWebBrowserChrome3 to ask to perform the reload. We should
-  // have one, as we have already confirmed that we are running in a content
-  // process.
-  nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
-  docShell->GetTreeOwner(getter_AddRefs(treeOwner));
-  NS_ENSURE_TRUE(treeOwner, false);
-
-  nsCOMPtr<nsIWebBrowserChrome3> wbc3 = do_GetInterface(treeOwner);
-  NS_ENSURE_TRUE(wbc3, false);
-
-  nsCOMPtr<nsIURI> uri;
-  rv = aChannel->GetURI(getter_AddRefs(uri));
-  NS_ENSURE_SUCCESS(rv, false);
-  NS_ENSURE_TRUE(uri, false);
-
-  nsCOMPtr<nsIReferrerInfo> referrerInfo;
-  rv = aChannel->GetReferrerInfo(getter_AddRefs(referrerInfo));
-  NS_ENSURE_SUCCESS(rv, false);
-
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-  nsCOMPtr<nsIPrincipal> triggeringPrincipal = loadInfo->TriggeringPrincipal();
-  nsCOMPtr<nsIContentSecurityPolicy> csp = loadInfo->GetCspToInherit();
-
-  // Get the channel's load flags, and use them to generate nsIWebNavigation
-  // load flags. We want to make sure to propagate the refresh and cache busting
-  // flags.
-  nsLoadFlags channelLoadFlags;
-  aChannel->GetLoadFlags(&channelLoadFlags);
-
-  uint32_t webnavLoadFlags = nsIWebNavigation::LOAD_FLAGS_NONE;
-  if (channelLoadFlags & nsIRequest::LOAD_BYPASS_CACHE) {
-    webnavLoadFlags |= nsIWebNavigation::LOAD_FLAGS_BYPASS_CACHE;
-    webnavLoadFlags |= nsIWebNavigation::LOAD_FLAGS_BYPASS_PROXY;
-  } else if (channelLoadFlags & nsIRequest::VALIDATE_ALWAYS) {
-    webnavLoadFlags |= nsIWebNavigation::LOAD_FLAGS_IS_REFRESH;
-  }
-
-  // Actually perform the cross process load
-  bool reloadSucceeded = false;
-  rv = wbc3->ReloadInFreshProcess(docShell, uri, referrerInfo,
-                                  triggeringPrincipal, webnavLoadFlags, csp,
-                                  &reloadSucceeded);
-  NS_ENSURE_SUCCESS(rv, false);
-
-  return reloadSucceeded;
 }
 
 /* static */
@@ -10239,6 +10087,14 @@ uint64_t nsContentUtils::GenerateTabId() {
   return GenerateProcessSpecificId(++gNextTabId);
 }
 
+// Next process-local Browser ID.
+static uint64_t gNextBrowserId = 0;
+
+/* static */
+uint64_t nsContentUtils::GenerateBrowserId() {
+  return GenerateProcessSpecificId(++gNextBrowserId);
+}
+
 // Next process-local Browsing Context ID.
 static uint64_t gNextBrowsingContextId = 0;
 
@@ -10253,6 +10109,14 @@ static uint64_t gNextWindowId = 0;
 /* static */
 uint64_t nsContentUtils::GenerateWindowId() {
   return GenerateProcessSpecificId(++gNextWindowId);
+}
+
+// Next process-local load.
+static Atomic<uint64_t> gNextLoadIdentifier(0);
+
+/* static */
+uint64_t nsContentUtils::GenerateLoadIdentifier() {
+  return GenerateProcessSpecificId(++gNextLoadIdentifier);
 }
 
 /* static */

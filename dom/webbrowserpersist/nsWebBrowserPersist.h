@@ -78,6 +78,7 @@ class nsWebBrowserPersist final : public nsIInterfaceRequestor,
   struct URIFixupData;
 
   class OnWalk;
+  class OnRemoteWalk;
   class OnWrite;
   class FlatURIMap;
   friend class OnWalk;

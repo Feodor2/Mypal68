@@ -45,6 +45,12 @@
  * parent process and sent to content (a FilePicker creates Blobs and it runs on
  * the parent process).
  *
+ * DocumentLoadListener uses blobs to serialize the POST data back to the
+ * content process (for insertion into session history). This lets it correctly
+ * handle OS files by reference, and avoid copying the underlying buffer data
+ * unless it is read. This can hopefully be removed once SessionHistory is
+ * handled in the parent process.
+ *
  * Child to Parent Blob Serialization
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  *

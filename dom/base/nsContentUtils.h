@@ -27,6 +27,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BasicEvents.h"
+#include "mozilla/CallState.h"
 #include "mozilla/CORSMode.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
@@ -116,7 +117,6 @@ class nsStringHashKey;
 class nsTextFragment;
 class nsView;
 class nsWrapperCache;
-class nsIWindowProvider;
 
 struct JSContext;
 struct nsPoint;
@@ -2133,10 +2133,6 @@ class nsContentUtils {
    */
   static bool IsSafeToRunScript();
 
-  // XXXcatalinb: workaround for weird include error when trying to reference
-  // ipdl types in WindowWatcher.
-  static nsIWindowProvider* GetWindowProviderForContentProcess();
-
   // Returns the browser window with the most recent time stamp that is
   // not in private browsing mode.
   static already_AddRefed<nsPIDOMWindowOuter> GetMostRecentNonPBWindow();
@@ -2826,11 +2822,13 @@ class nsContentUtils {
 
   /*
    * Call the given callback on all remote children of the given top-level
-   * window. Return true from the callback to stop calling further children.
+   * window. Return Callstate::Stop from the callback to stop calling further
+   * children.
    */
   static void CallOnAllRemoteChildren(
       nsPIDOMWindowOuter* aWindow,
-      const std::function<bool(mozilla::dom::BrowserParent*)>& aCallback);
+      const std::function<mozilla::CallState(mozilla::dom::BrowserParent*)>&
+          aCallback);
 
   /*
    * Call nsPIDOMWindow::SetKeyboardIndicators all all remote children. This is
@@ -3055,8 +3053,6 @@ class nsContentUtils {
       const mozilla::dom::LifecycleCallbackArgs& aArgs,
       mozilla::dom::CustomElementDefinition* aDefinition = nullptr);
 
-  static bool AttemptLargeAllocationLoad(nsIHttpChannel* aChannel);
-
   /**
    * Appends all "document level" native anonymous content subtree roots for
    * aDocument to aElements.  Document level NAC subtrees are those created
@@ -3167,6 +3163,11 @@ class nsContentUtils {
   static uint64_t GenerateTabId();
 
   /**
+   * Compose a browser id with process id and a serial number.
+   */
+  static uint64_t GenerateBrowserId();
+
+  /**
    * Generate an id for a BrowsingContext using a range of serial
    * numbers reserved for the current process.
    */
@@ -3184,6 +3185,12 @@ class nsContentUtils {
    * recycled.
    */
   static uint64_t GenerateWindowId();
+
+  /**
+   * Generate an ID for a load which is unique across processes and will never
+   * be recycled.
+   */
+  static uint64_t GenerateLoadIdentifier();
 
   /**
    * Determine whether or not the user is currently interacting with the web
@@ -3313,9 +3320,10 @@ class nsContentUtils {
       const nsAttrValue* aAttrVal, mozilla::dom::AutocompleteInfo& aInfo,
       bool aGrantAllValidValue = false);
 
-  static bool CallOnAllRemoteChildren(
+  static mozilla::CallState CallOnAllRemoteChildren(
       mozilla::dom::MessageBroadcaster* aManager,
-      const std::function<bool(mozilla::dom::BrowserParent*)>& aCallback);
+      const std::function<mozilla::CallState(mozilla::dom::BrowserParent*)>&
+          aCallback);
 
   static nsINode* GetCommonAncestorHelper(nsINode* aNode1, nsINode* aNode2);
   static nsIContent* GetCommonFlattenedTreeAncestorHelper(

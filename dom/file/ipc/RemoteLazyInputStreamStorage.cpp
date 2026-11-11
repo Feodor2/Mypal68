@@ -28,6 +28,7 @@ NS_INTERFACE_MAP_END
 
 NS_IMPL_ADDREF(RemoteLazyInputStreamStorage)
 NS_IMPL_RELEASE(RemoteLazyInputStreamStorage)
+
 /* static */
 Result<RefPtr<RemoteLazyInputStreamStorage>, nsresult>
 RemoteLazyInputStreamStorage::Get() {
@@ -106,9 +107,18 @@ void RemoteLazyInputStreamStorage::AddStream(nsIInputStream* aInputStream,
   mStorage.InsertOrUpdate(aID, std::move(data));
 }
 
-void RemoteLazyInputStreamStorage::ForgetStream(const nsID& aID) {
+nsCOMPtr<nsIInputStream> RemoteLazyInputStreamStorage::ForgetStream(
+    const nsID& aID) {
+  UniquePtr<StreamData> entry;
+
   mozilla::StaticMutexAutoLock lock(gMutex);
-  mStorage.Remove(aID);
+  mStorage.Remove(aID, &entry);
+
+  if (!entry) {
+    return nullptr;
+  }
+
+  return std::move(entry->mInputStream);
 }
 
 bool RemoteLazyInputStreamStorage::HasStream(const nsID& aID) {

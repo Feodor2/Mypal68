@@ -258,12 +258,21 @@ nsresult NetworkLoadHandler::DataReceivedFromNetwork(nsIStreamLoader* aLoader,
 
 NS_IMETHODIMP
 NetworkLoadHandler::OnStartRequest(nsIRequest* aRequest) {
+  nsresult rv = PrepareForRequest(aRequest);
+
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    aRequest->Cancel(rv);
+  }
+
+  return rv;
+}
+
+nsresult NetworkLoadHandler::PrepareForRequest(nsIRequest* aRequest) {
   AssertIsOnMainThread();
 
   // If one load info cancels or hits an error, it can race with the start
   // callback coming from another load info.
   if (mLoader->IsCancelled() || !mLoader->GetCacheCreator()) {
-    aRequest->Cancel(NS_ERROR_FAILURE);
     return NS_ERROR_FAILURE;
   }
 
@@ -320,19 +329,11 @@ NetworkLoadHandler::OnStartRequest(nsIRequest* aRequest) {
   NS_ASSERTION(ssm, "Should never be null!");
 
   nsCOMPtr<nsIPrincipal> channelPrincipal;
-    nsresult rv = ssm->GetChannelResultPrincipal(
-        channel, getter_AddRefs(channelPrincipal));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      channel->Cancel(rv);
-      return rv;
-    }
+  MOZ_TRY(ssm->GetChannelResultPrincipal(channel,
+                                         getter_AddRefs(channelPrincipal)));
 
   UniquePtr<PrincipalInfo> principalInfo(new PrincipalInfo());
-    rv = PrincipalToPrincipalInfo(channelPrincipal, principalInfo.get());
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      channel->Cancel(rv);
-      return rv;
-    }
+  MOZ_TRY(PrincipalToPrincipalInfo(channelPrincipal, principalInfo.get()));
 
   ir->SetPrincipalInfo(std::move(principalInfo));
   ir->Headers()->FillResponseHeaders(mLoadInfo.mChannel);
@@ -355,9 +356,7 @@ NetworkLoadHandler::OnStartRequest(nsIRequest* aRequest) {
       jsapi.cx(), request, *response, error);
   error.WouldReportJSException();
   if (NS_WARN_IF(error.Failed())) {
-    nsresult rv = error.StealNSResult();
-    channel->Cancel(rv);
-    return rv;
+    return error.StealNSResult();
   }
 
   RefPtr<CachePromiseHandler> promiseHandler =

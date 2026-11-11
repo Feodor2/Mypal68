@@ -119,7 +119,7 @@ Nullable<WindowProxyHolder> nsGenericHTMLFrameElement::GetContentWindow() {
 }
 
 void nsGenericHTMLFrameElement::EnsureFrameLoader() {
-  if (!IsInComposedDoc() || mFrameLoader || mFrameLoaderCreationDisallowed) {
+  if (!IsInComposedDoc() || mFrameLoader || OwnerDoc()->IsStaticDocument()) {
     // If frame loader is there, we just keep it around, cached
     return;
   }
@@ -127,36 +127,6 @@ void nsGenericHTMLFrameElement::EnsureFrameLoader() {
   // Strangely enough, this method doesn't actually ensure that the
   // frameloader exists.  It's more of a best-effort kind of thing.
   mFrameLoader = nsFrameLoader::Create(this, mNetworkCreated);
-}
-
-void nsGenericHTMLFrameElement::DisallowCreateFrameLoader() {
-  MOZ_ASSERT(!mFrameLoader);
-  MOZ_ASSERT(!mFrameLoaderCreationDisallowed);
-  mFrameLoaderCreationDisallowed = true;
-}
-
-void nsGenericHTMLFrameElement::AllowCreateFrameLoader() {
-  MOZ_ASSERT(!mFrameLoader);
-  MOZ_ASSERT(mFrameLoaderCreationDisallowed);
-  mFrameLoaderCreationDisallowed = false;
-}
-
-void nsGenericHTMLFrameElement::CreateRemoteFrameLoader(
-    BrowserParent* aBrowserParent) {
-  MOZ_ASSERT(!mFrameLoader);
-  EnsureFrameLoader();
-  if (NS_WARN_IF(!mFrameLoader)) {
-    return;
-  }
-  mFrameLoader->InitializeFromBrowserParent(aBrowserParent);
-
-  if (nsSubDocumentFrame* subdocFrame = do_QueryFrame(GetPrimaryFrame())) {
-    // The reflow for this element already happened while we were waiting
-    // for the iframe creation. Therefore the subdoc frame didn't have a
-    // frameloader when UpdatePositionAndSize was supposed to be called in
-    // ReflowFinished, and we need to do it properly now.
-    mFrameLoader->UpdatePositionAndSize(subdocFrame);
-  }
 }
 
 void nsGenericHTMLFrameElement::SwapFrameLoaders(
@@ -315,12 +285,11 @@ void nsGenericHTMLFrameElement::AfterMaybeChangeAttr(
         LoadSrc();
       }
     } else if (aName == nsGkAtoms::name) {
-      // Propagate "name" to the docshell to make browsing context names live,
-      // per HTML5.
-      nsIDocShell* docShell =
-          mFrameLoader ? mFrameLoader->GetExistingDocShell() : nullptr;
-      if (docShell) {
-        docShell->SetName(aValue ? aValue->String() : u""_ns);
+      // Propagate "name" to the browsing context per HTML5.
+      RefPtr<BrowsingContext> bc =
+          mFrameLoader ? mFrameLoader->GetExtantBrowsingContext() : nullptr;
+      if (bc) {
+        MOZ_ALWAYS_SUCCEEDS(bc->SetName(aValue ? aValue->String() : u""_ns));
       }
     }
   }
@@ -343,10 +312,7 @@ nsresult nsGenericHTMLFrameElement::CopyInnerTo(Element* aDest) {
   if (doc->IsStaticDocument() && mFrameLoader) {
     nsGenericHTMLFrameElement* dest =
         static_cast<nsGenericHTMLFrameElement*>(aDest);
-    RefPtr<nsFrameLoader> fl = nsFrameLoader::Create(dest, false);
-    NS_ENSURE_STATE(fl);
-    dest->mFrameLoader = fl;
-    mFrameLoader->CreateStaticClone(fl);
+    doc->AddPendingFrameStaticClone(dest, mFrameLoader);
   }
 
   return rv;

@@ -10,7 +10,7 @@
 #include "mozilla/dom/ChromeUtilsBinding.h"
 #include "mozilla/dom/Exceptions.h"
 #include "nsDOMNavigationTiming.h"  // for DOMHighResTimeStamp
-#include "nsIContentChild.h"
+#include "nsIDOMProcessChild.h"
 
 namespace mozilla {
 
@@ -29,6 +29,7 @@ struct IdleRequestOptions;
 class MozQueryInterface;
 class PrecompiledScript;
 class Promise;
+struct ProcessActorOptions;
 struct WindowActorOptions;
 
 class ChromeUtils {
@@ -206,6 +207,14 @@ class ChromeUtils {
   static void UnregisterWindowActor(const GlobalObject& aGlobal,
                                     const nsACString& aName);
 
+  static void RegisterProcessActor(const GlobalObject& aGlobal,
+                                   const nsACString& aName,
+                                   const ProcessActorOptions& aOptions,
+                                   ErrorResult& aRv);
+
+  static void UnregisterProcessActor(const GlobalObject& aGlobal,
+                                     const nsACString& aName);
+
   static bool IsClassifierBlockingErrorCode(GlobalObject& aGlobal,
                                             uint32_t aError);
 
@@ -214,7 +223,7 @@ class ChromeUtils {
                                           ErrorResult& aError);
 #endif
 
-  static nsIContentChild* GetContentChild(const GlobalObject&);
+  static nsIDOMProcessChild* GetDomProcessChild(const GlobalObject&);
 };
 
 }  // namespace dom

@@ -679,7 +679,8 @@ void ImageDocument::ResetZoomLevel() {
   }
 
   if (RefPtr<BrowsingContext> bc = GetBrowsingContext()) {
-    bc->SetFullZoom(mOriginalZoomLevel);
+    // Resetting the zoom level on a discarded browsing context has no effect.
+    Unused << bc->SetFullZoom(mOriginalZoomLevel);
   }
 }
 

@@ -13,6 +13,7 @@
 #include "mozilla/Hal.h"
 #include "mozilla/Preferences.h"
 
+#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/StaticPrefs_browser.h"
@@ -77,8 +78,8 @@ ScreenOrientation::ScreenOrientation(nsPIDOMWindowInner* aWindow,
 
   Document* doc = GetResponsibleDocument();
   BrowsingContext* bc = doc ? doc->GetBrowsingContext() : nullptr;
-  if (bc && !bc->InRDMPane()) {
-    bc->SetCurrentOrientation(mType, mAngle);
+  if (bc && !bc->IsDiscarded() && !bc->InRDMPane()) {
+    MOZ_ALWAYS_SUCCEEDS(bc->SetCurrentOrientation(mType, mAngle));
   }
 }
 
@@ -261,30 +262,24 @@ already_AddRefed<Promise> ScreenOrientation::Lock(
   return LockInternal(orientation, aRv);
 }
 
-static inline void AbortOrientationPromises(nsIDocShell* aDocShell) {
-  MOZ_ASSERT(aDocShell);
+void ScreenOrientation::AbortInProcessOrientationPromises(
+    BrowsingContext* aBrowsingContext) {
+  MOZ_ASSERT(aBrowsingContext);
 
-  Document* doc = aDocShell->GetDocument();
-  if (doc) {
-    Promise* promise = doc->GetOrientationPendingPromise();
-    if (promise) {
-      promise->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
-      doc->ClearOrientationPendingPromise();
-    }
-  }
-
-  int32_t childCount;
-  aDocShell->GetInProcessChildCount(&childCount);
-  for (int32_t i = 0; i < childCount; i++) {
-    nsCOMPtr<nsIDocShellTreeItem> child;
-    if (NS_SUCCEEDED(
-            aDocShell->GetInProcessChildAt(i, getter_AddRefs(child)))) {
-      nsCOMPtr<nsIDocShell> childShell(do_QueryInterface(child));
-      if (childShell) {
-        AbortOrientationPromises(childShell);
+  aBrowsingContext = aBrowsingContext->Top();
+  aBrowsingContext->PreOrderWalk([](BrowsingContext* aContext) {
+    nsIDocShell* docShell = aContext->GetDocShell();
+    if (docShell) {
+      Document* doc = docShell->GetDocument();
+      if (doc) {
+        Promise* promise = doc->GetOrientationPendingPromise();
+        if (promise) {
+          promise->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
+          doc->ClearOrientationPendingPromise();
+        }
       }
     }
-  }
+  });
 }
 
 already_AddRefed<Promise> ScreenOrientation::LockInternal(
@@ -333,16 +328,21 @@ already_AddRefed<Promise> ScreenOrientation::LockInternal(
     return p.forget();
   }
 
-  nsCOMPtr<nsIDocShellTreeItem> root;
-  docShell->GetInProcessSameTypeRootTreeItem(getter_AddRefs(root));
-  nsCOMPtr<nsIDocShell> rootShell(do_QueryInterface(root));
-  if (!rootShell) {
+  RefPtr<BrowsingContext> bc = docShell->GetBrowsingContext();
+  bc = bc ? bc->Top() : nullptr;
+  if (!bc) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return nullptr;
   }
 
-  rootShell->SetOrientationLock(aOrientation);
-  AbortOrientationPromises(rootShell);
+  bc->SetOrientationLock(aOrientation, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  AbortInProcessOrientationPromises(bc);
+  dom::ContentChild::GetSingleton()->SendAbortOtherOrientationPendingPromises(
+      bc);
 
   if (!doc->SetOrientationPendingPromise(p)) {
     p->MaybeReject(NS_ERROR_DOM_SECURITY_ERR);
@@ -547,7 +547,8 @@ void ScreenOrientation::Notify(const hal::ScreenConfiguration& aConfiguration) {
   }
 
   if (mType != bc->GetCurrentOrientationType()) {
-    bc->SetCurrentOrientation(mType, mAngle);
+    rv = bc->SetCurrentOrientation(mType, mAngle);
+    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "SetCurrentOrientation failed");
 
     nsCOMPtr<nsIRunnable> runnable = DispatchChangeEventAndResolvePromise();
     rv = NS_DispatchToMainThread(runnable);
@@ -636,9 +637,11 @@ ScreenOrientation::VisibleEventListener::HandleEvent(Event* aEvent) {
 
   BrowsingContext* bc = doc->GetBrowsingContext();
   if (bc && bc->GetCurrentOrientationType() !=
-      orientation->DeviceType(CallerType::System)) {
-    bc->SetCurrentOrientation(orientation->DeviceType(CallerType::System),
-                               orientation->DeviceAngle(CallerType::System));
+                orientation->DeviceType(CallerType::System)) {
+    nsresult result =
+        bc->SetCurrentOrientation(orientation->DeviceType(CallerType::System),
+                                  orientation->DeviceAngle(CallerType::System));
+    NS_ENSURE_SUCCESS(result, result);
 
     nsCOMPtr<nsIRunnable> runnable =
         orientation->DispatchChangeEventAndResolvePromise();

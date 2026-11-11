@@ -20,10 +20,11 @@
 #include "mozilla/ProcInfo.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/dom/ContentChild.h"  //1633379-
+#include "mozilla/dom/ContentChild.h"  //1653729-
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/IdleDeadline.h"
-#include "mozilla/dom/JSWindowActorService.h"
+#include "mozilla/dom/InProcessChild.h"
+#include "mozilla/dom/JSActorService.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/Promise.h"
@@ -1167,7 +1168,7 @@ void ChromeUtils::RegisterWindowActor(const GlobalObject& aGlobal,
                                       ErrorResult& aRv) {
   MOZ_ASSERT(XRE_IsParentProcess());
 
-  RefPtr<JSWindowActorService> service = JSWindowActorService::GetSingleton();
+  RefPtr<JSActorService> service = JSActorService::GetSingleton();
   service->RegisterWindowActor(aName, aOptions, aRv);
 }
 
@@ -1176,8 +1177,28 @@ void ChromeUtils::UnregisterWindowActor(const GlobalObject& aGlobal,
                                         const nsACString& aName) {
   MOZ_ASSERT(XRE_IsParentProcess());
 
-  RefPtr<JSWindowActorService> service = JSWindowActorService::GetSingleton();
+  RefPtr<JSActorService> service = JSActorService::GetSingleton();
   service->UnregisterWindowActor(aName);
+}
+
+/* static */
+void ChromeUtils::RegisterProcessActor(const GlobalObject& aGlobal,
+                                       const nsACString& aName,
+                                       const ProcessActorOptions& aOptions,
+                                       ErrorResult& aRv) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  RefPtr<JSActorService> service = JSActorService::GetSingleton();
+  service->RegisterProcessActor(aName, aOptions, aRv);
+}
+
+/* static */
+void ChromeUtils::UnregisterProcessActor(const GlobalObject& aGlobal,
+                                         const nsACString& aName) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  RefPtr<JSActorService> service = JSActorService::GetSingleton();
+  service->UnregisterProcessActor(aName);
 }
 
 /* static */
@@ -1200,8 +1221,8 @@ void ChromeUtils::PrivateNoteIntentionalCrash(const GlobalObject& aGlobal,
 #endif
 
 /* static */
-nsIContentChild* ChromeUtils::GetContentChild(const GlobalObject&) {
-  return ContentChild::GetSingleton();
+nsIDOMProcessChild* ChromeUtils::GetDomProcessChild(const GlobalObject&) {
+  return nsIDOMProcessChild::GetSingleton();
 }
 
 }  // namespace mozilla::dom

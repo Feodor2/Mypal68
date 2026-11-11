@@ -2,9 +2,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EditorBase.h"
 #include "mozilla/EventDispatcher.h"
+#include "mozilla/EventForwards.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/HTMLEditor.h"
@@ -19,7 +21,9 @@
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/BrowserBridgeChild.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/DragEvent.h"
 #include "mozilla/dom/Event.h"
@@ -56,6 +60,7 @@
 #include "nsIFrame.h"
 #include "nsFrameLoaderOwner.h"
 #include "nsIWidget.h"
+#include "nsLiteralString.h"
 #include "nsPresContext.h"
 #include "nsGkAtoms.h"
 #include "nsIFormControl.h"
@@ -1252,7 +1257,7 @@ bool EventStateManager::WalkESMTreeToHandleAccessKey(
       AccessKeyInfo accessKeyInfo(aEvent, aAccessCharCodes);
       nsContentUtils::CallOnAllRemoteChildren(
           mDocument->GetWindow(),
-          [&accessKeyInfo](BrowserParent* aBrowserParent) -> bool {
+          [&accessKeyInfo](BrowserParent* aBrowserParent) -> CallState {
             // Only forward accesskeys for the active tab.
             if (aBrowserParent->GetDocShellIsActive()) {
               // Even if there is no target for the accesskey in this process,
@@ -1264,10 +1269,10 @@ bool EventStateManager::WalkESMTreeToHandleAccessKey(
               accessKeyInfo.event->MarkAsWaitingReplyFromRemoteProcess();
               aBrowserParent->HandleAccessKey(*accessKeyInfo.event,
                                               accessKeyInfo.charCodes);
-              return true;
+              return CallState::Stop;
             }
 
-            return false;
+            return CallState::Continue;
           });
     }
   }
@@ -2134,57 +2139,24 @@ bool EventStateManager::DoDefaultDragStart(
   return true;
 }
 
-nsresult EventStateManager::GetContentViewer(nsIContentViewer** aCv) {
-  *aCv = nullptr;
-
-  nsPIDOMWindowOuter* window = mDocument->GetWindow();
-  if (!window) return NS_ERROR_FAILURE;
-  nsCOMPtr<nsPIDOMWindowOuter> rootWindow = window->GetPrivateRoot();
-  if (!rootWindow) return NS_ERROR_FAILURE;
-
-  BrowserChild* browserChild = BrowserChild::GetFrom(rootWindow);
-  if (!browserChild) {
-    nsIFocusManager* fm = nsFocusManager::GetFocusManager();
-    if (!fm) return NS_ERROR_FAILURE;
-
-    nsCOMPtr<mozIDOMWindowProxy> activeWindow;
-    fm->GetActiveWindow(getter_AddRefs(activeWindow));
-    if (rootWindow != activeWindow) return NS_OK;
-  } else {
-    if (!browserChild->ParentIsActive()) return NS_OK;
+void EventStateManager::ChangeZoom(bool aIncrease) {
+  // Send the zoom change to the top level browser so it will be handled by the
+  // front end in the same way as other zoom actions.
+  nsIDocShell* docShell = mDocument->GetDocShell();
+  if (!docShell) {
+    return;
   }
 
-  nsCOMPtr<nsPIDOMWindowOuter> contentWindow =
-      nsGlobalWindowOuter::Cast(rootWindow)->GetContent();
-  if (!contentWindow) return NS_ERROR_FAILURE;
+  BrowsingContext* bc = docShell->GetBrowsingContext();
+  if (!bc) {
+    return;
+  }
 
-  Document* doc = contentWindow->GetDoc();
-  if (!doc) return NS_ERROR_FAILURE;
-
-  nsCOMPtr<nsISupports> container = doc->GetContainer();
-  if (!container) return NS_ERROR_FAILURE;
-
-  nsCOMPtr<nsIDocShell> docshell = do_QueryInterface(container);
-  docshell->GetContentViewer(aCv);
-  if (!*aCv) return NS_ERROR_FAILURE;
-
-  return NS_OK;
-}
-
-nsresult EventStateManager::ChangeZoom(int32_t change) {
-  MOZ_ASSERT(change == 1 || change == -1, "Can only change by +/- 10%.");
-
-  // Send the zoom change as a chrome event so it will be handled
-  // by the front end actors in the same way as other zoom actions.
-  // This excludes documents hosted in non-browser containers, like
-  // in a WebExtension.
-  nsContentUtils::DispatchChromeEvent(
-      mDocument, ToSupports(mDocument),
-      (change == 1 ? NS_LITERAL_STRING("DoZoomEnlargeBy10")
-                   : NS_LITERAL_STRING("DoZoomReduceBy10")),
-      CanBubble::eYes, Cancelable::eYes);
-
-  return NS_OK;
+  if (XRE_IsParentProcess()) {
+    bc->Canonical()->DispatchWheelZoomChange(aIncrease);
+  } else if (BrowserChild* child = BrowserChild::GetFrom(docShell)) {
+    child->SendWheelZoomChange(aIncrease);
+  }
 }
 
 void EventStateManager::DoScrollHistory(int32_t direction) {
@@ -2193,10 +2165,14 @@ void EventStateManager::DoScrollHistory(int32_t direction) {
     nsCOMPtr<nsIWebNavigation> webNav(do_QueryInterface(pcContainer));
     if (webNav) {
       // positive direction to go back one step, nonpositive to go forward
+      // This is doing user-initiated history traversal, hence we want
+      // to require that history entries we navigate to have user interaction.
       if (direction > 0)
-        webNav->GoBack();
+        webNav->GoBack(
+            StaticPrefs::browser_navigation_requireUserInteraction());
       else
-        webNav->GoForward();
+        webNav->GoForward(
+            StaticPrefs::browser_navigation_requireUserInteraction());
     }
   }
 }
@@ -2206,15 +2182,10 @@ void EventStateManager::DoScrollZoom(nsIFrame* aTargetFrame,
   // Exclude content in chrome docshells.
   nsIContent* content = aTargetFrame->GetContent();
   if (content && !nsContentUtils::IsInChromeDocshell(content->OwnerDoc())) {
-    // positive adjustment to decrease zoom, negative to increase
-    int32_t change = (adjustment > 0) ? -1 : 1;
-
+    // Positive adjustment to decrease zoom, negative to increase
+    const bool increase = adjustment <= 0;
     EnsureDocument(mPresContext);
-    ChangeZoom(change);
-    nsContentUtils::DispatchChromeEvent(
-        mDocument, ToSupports(mDocument),
-        NS_LITERAL_STRING("ZoomChangeUsingMouseWheel"), CanBubble::eYes,
-        Cancelable::eYes);
+    ChangeZoom(increase);
   }
 }
 
@@ -3061,8 +3032,7 @@ void EventStateManager::PostHandleKeyboardEvent(
   switch (aKeyboardEvent->mKeyNameIndex) {
     case KEY_NAME_INDEX_ZoomIn:
     case KEY_NAME_INDEX_ZoomOut:
-      ChangeZoom(aKeyboardEvent->mKeyNameIndex == KEY_NAME_INDEX_ZoomIn ? 1
-                                                                        : -1);
+      ChangeZoom(aKeyboardEvent->mKeyNameIndex == KEY_NAME_INDEX_ZoomIn);
       aStatus = nsEventStatus_eConsumeNoDefault;
       break;
     default:

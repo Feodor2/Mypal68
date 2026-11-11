@@ -18,6 +18,7 @@ include protocol PWindowGlobal;
 include protocol PBrowserBridge;
 
 include DOMTypes;
+include WindowGlobalTypes;
 include IPCBlob;
 include IPCStream;
 include URIParams;
@@ -25,8 +26,10 @@ include PPrintingTypes;
 include PTabContext;
 include PBackgroundSharedTypes;
 
+include "mozilla/AntiTrackingIPCUtils.h";
 include "mozilla/dom/CSPMessageUtils.h";
 include "mozilla/dom/DocShellMessageUtils.h";
+include "mozilla/dom/PermissionMessageUtils.h";
 include "mozilla/dom/ReferrerInfoUtils.h";
 include "mozilla/dom/TabMessageUtils.h";
 include "mozilla/GfxMessageUtils.h";
@@ -89,10 +92,11 @@ using mozilla::dom::EffectsInfo from "mozilla/dom/TabMessageUtils.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
 using mozilla::ScrollAxis from "mozilla/PresShellForwards.h";
 using mozilla::ScrollFlags from "mozilla/PresShellForwards.h";
-using refcounted class nsITransportSecurityInfo from "nsITransportSecurityInfo.h";
 using nsContentPolicyType from "nsIContentPolicy.h";
 using struct InputFormData from "mozilla/dom/SessionStoreMessageUtils.h";
 using struct CollectedInputDataValue from "mozilla/dom/SessionStoreMessageUtils.h";
+using mozilla::ContentBlockingNotifier::StorageAccessPermissionGrantedReason from "mozilla/ContentBlockingNotifier.h";
+using mozilla::dom::EmbedderElementEventType from "mozilla/dom/TabMessageUtils.h";
 
 namespace mozilla {
 namespace dom {
@@ -102,8 +106,6 @@ struct WebProgressData
   bool isTopLevel;
   bool isLoadingDocument;
   uint32_t loadType;
-  uint64_t outerDOMWindowID;
-  uint64_t innerDOMWindowID;
 };
 
 struct RequestData
@@ -111,12 +113,6 @@ struct RequestData
   nsIURI requestURI;
   nsIURI originalRequestURI;
   nsCString matchedList;
-  // The elapsedLoadTimeMS is only set when the request has finished loading.
-  // In other words, this field is set only during and |OnStateChange| event
-  // where |aStateFlags| contains |nsIWebProgressListener::STATE_STOP| and
-  // |nsIWebProgressListener::STATE_IS_NETWORK| and
-  // |nsIWebProgressListener::STATE_IS_WINDOW|, and the document is top level.
-  uint64_t? elapsedLoadTimeMS;
 };
 
 struct WebProgressStateChangeData
@@ -143,16 +139,10 @@ struct WebProgressLocationChangeData
   nsString charset;
   nsIURI documentURI;
   nsIPrincipal contentPrincipal;
-  nsIPrincipal contentStoragePrincipal;
+  nsIPrincipal contentPartitionedPrincipal;
   nsIContentSecurityPolicy csp;
   nsIReferrerInfo referrerInfo;
   uint64_t? requestContextID;
-};
-
-struct WebProgressSecurityChangeData
-{
-  nsITransportSecurityInfo securityInfo;
-  bool isSecureContext;
 };
 
 /**
@@ -392,6 +382,12 @@ parent:
     async RequestFocus(bool canRaise);
 
     /**
+     * Sends a mouse wheel zoom change to the parent process, to be handled by
+     * the front end as needed.
+     */
+    async WheelZoomChange(bool increase);
+
+    /**
      * Indicate, based on the current state, that some commands are enabled and
      * some are disabled.
      */
@@ -561,12 +557,10 @@ parent:
                          RequestData aRequestData, nsresult aStatus,
                          nsString aMessage);
 
-    async OnSecurityChange(WebProgressData? aWebProgressData,
-                           RequestData aRequestData, uint32_t aState,
-                           WebProgressSecurityChangeData? aSecurityChangeData);
-
-    async OnContentBlockingEvent(WebProgressData? aWebProgressData,
-                                 RequestData aRequestData, uint32_t aEvent);
+    async NotifyContentBlockingEvent(uint32_t aEvent, RequestData aRequestData,
+                                     bool aBlocked, nsCString aTrackingOrigin,
+                                     nsCString[] aTrackingFullHashes,
+                                     StorageAccessPermissionGrantedReason? aReason);
 
     async NavigationFinished();
 
@@ -576,12 +570,14 @@ parent:
                              CollectedInputDataValue[] aXPathVals,
                              nsCString[] aOrigins, nsString[] aKeys,
                              nsString[] aValues, bool aIsFullStorage,
-                             uint32_t aFlushId, bool aIsFinal, uint32_t aEpoch);
+                             bool aNeedCollectSHistory, uint32_t aFlushId,
+                             bool aIsFinal, uint32_t aEpoch);
 
 child:
     async NativeSynthesisResponse(uint64_t aObserverId, nsCString aResponse);
     async FlushTabState(uint32_t aFlushId, bool aIsFinal);
     async UpdateEpoch(uint32_t aEpoch);
+    async UpdateSHistory(bool aImmediately);
 
 parent:
 
@@ -659,8 +655,7 @@ parent:
      * Called once this PBrowser's OOP subdoc no longer blocks its
      * embedding element's and embedding doc's 'load' events.
      */
-    async MaybeFireEmbedderLoadEvents(bool aIsTrusted,
-                                      bool aFireLoadAtEmbeddingElement);
+    async MaybeFireEmbedderLoadEvents(EmbedderElementEventType aFireEventAtEmbeddingElement);
 
     async ScrollRectIntoView(nsRect aRect, ScrollAxis aVertical,
                              ScrollAxis aHorizontal, ScrollFlags aScrollFlags,
@@ -682,7 +677,9 @@ child:
 
     async CompositorOptionsChanged(CompositorOptions newOptions);
 
-    async LoadURL(nsCString uri, ParentShowInfo info);
+    async LoadURL(nsCString uri,
+                  nsIPrincipal triggeringPrincipal,
+                  ParentShowInfo info);
 
     async ResumeLoad(uint64_t pendingSwitchID, ParentShowInfo info);
 
@@ -884,12 +881,6 @@ child:
     async UIResolutionChanged(float dpi, int32_t rounding, double scale);
 
     /**
-     * Tell the child that the system theme has changed, and that a repaint
-     * is necessary.
-     */
-    async ThemeChanged(LookAndFeelInt[] lookAndFeelIntCache);
-
-    /**
      * Tell the browser that its frame loader has been swapped
      * with another.
      */
@@ -904,13 +895,6 @@ child:
      */
     async HandleAccessKey(WidgetKeyboardEvent event,
                           uint32_t[] charCodes);
-
-    /**
-     * Tells the root child docShell whether or not to use
-     * global history. This is sent right after the PBrowser
-     * is bound to a frameloader element.
-     */
-    async SetUseGlobalHistory(bool aUse);
 
     /**
      * HandledWindowedPluginKeyEvent() is always called after posting a native
@@ -941,12 +925,6 @@ child:
     async UpdateNativeWindowHandle(uintptr_t aNewHandle);
 
     /**
-     * Tell the BrowserChild that it should expect a Large-Allocation load to occur.
-     * Loads which occur until this flag is cleared will not leave the process.
-     */
-    async AwaitLargeAlloc();
-
-    /**
      * Tell the BrowserChild to allow scripts in the docshell to close the window.
      */
     async AllowScriptsToClose();
@@ -956,11 +934,6 @@ child:
      * process, so it can be used by PuppetWidget.
      */
     async SetWidgetNativeData(WindowsHandle aHandle);
-
-    /**
-     * Requests the content blocking log, which is sent back in response.
-     */
-    async GetContentBlockingLog() returns(nsCString log, bool success);
 
     async WillChangeProcess() returns (bool success);
 

@@ -54,7 +54,12 @@ a11y::DocAccessibleParent* BrowserHost::GetTopLevelDocAccessible() const {
   return mRoot->GetTopLevelDocAccessible();
 }
 
-void BrowserHost::LoadURL(nsIURI* aURI) { mRoot->LoadURL(aURI); }
+void BrowserHost::LoadURL(nsIURI* aURI, nsIPrincipal* aTriggeringPrincipal) {
+  MOZ_ASSERT(aURI);
+  MOZ_ASSERT(aTriggeringPrincipal);
+
+  mRoot->LoadURL(aURI, aTriggeringPrincipal);
+}
 
 void BrowserHost::ResumeLoad(uint64_t aPendingSwitchId) {
   mRoot->ResumeLoad(aPendingSwitchId);
@@ -277,48 +282,6 @@ BrowserHost::StopApzAutoscroll(nsViewID aScrollId, uint32_t aPresShellId) {
     return NS_OK;
   }
   mRoot->StopApzAutoscroll(aScrollId, aPresShellId);
-  return NS_OK;
-}
-
-/* Promise getContentBlockingLog (); */
-NS_IMETHODIMP
-BrowserHost::GetContentBlockingLog(::mozilla::dom::Promise** aPromise) {
-  if (!mRoot) {
-    *aPromise = nullptr;
-    return NS_OK;
-  }
-  NS_ENSURE_ARG_POINTER(aPromise);
-
-  *aPromise = nullptr;
-  if (!mRoot->GetOwnerElement()) {
-    return NS_ERROR_FAILURE;
-  }
-
-  ErrorResult rv;
-  RefPtr<Promise> jsPromise = Promise::Create(
-      mRoot->GetOwnerElement()->OwnerDoc()->GetOwnerGlobal(), rv);
-  if (rv.Failed()) {
-    return NS_ERROR_FAILURE;
-  }
-
-  RefPtr<Promise> copy(jsPromise);
-  copy.forget(aPromise);
-
-  auto cblPromise = mRoot->SendGetContentBlockingLog();
-  cblPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
-      [jsPromise](Tuple<nsCString, bool>&& aResult) {
-        if (Get<1>(aResult)) {
-          NS_ConvertUTF8toUTF16 utf16(Get<0>(aResult));
-          jsPromise->MaybeResolve(std::move(utf16));
-        } else {
-          jsPromise->MaybeRejectWithUndefined();
-        }
-      },
-      [jsPromise](ResponseRejectReason&& aReason) {
-        jsPromise->MaybeRejectWithUndefined();
-      });
-
   return NS_OK;
 }
 

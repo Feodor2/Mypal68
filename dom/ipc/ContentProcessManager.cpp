@@ -5,20 +5,12 @@
 #include "ContentProcessManager.h"
 #include "ContentParent.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/BrowsingContextGroup.h"
 
 #include "mozilla/StaticPtr.h"
 #include "mozilla/ClearOnShutdown.h"
 
 #include "nsPrintfCString.h"
-
-// XXX need another bug to move this to a common header.
-#ifdef DISABLE_ASSERTS_FOR_FUZZING
-#  define ASSERT_UNLESS_FUZZING(...) \
-    do {                             \
-    } while (0)
-#else
-#  define ASSERT_UNLESS_FUZZING(...) MOZ_ASSERT(false, __VA_ARGS__)
-#endif
 
 namespace mozilla::dom {
 
@@ -59,7 +51,6 @@ ContentParent* ContentProcessManager::GetContentProcessById(
 
   ContentParent* contentParent = mContentParentMap.Get(aChildCpId);
   if (NS_WARN_IF(!contentParent)) {
-    ASSERT_UNLESS_FUZZING();
     return nullptr;
   }
   return contentParent;
@@ -76,6 +67,10 @@ bool ContentProcessManager::RegisterRemoteFrame(BrowserParent* aChildBp) {
           return false;
         }
 
+        // Ensure that this BrowserParent's BrowsingContextGroup is kept alive
+        // until the BrowserParent has been unregistered, ensuring the group
+        // isn't destroyed while this BrowserParent can still send messages.
+        aChildBp->GetBrowsingContext()->Group()->AddKeepAlive();
         entry.Insert(aChildBp);
         return true;
       });
@@ -84,7 +79,11 @@ bool ContentProcessManager::RegisterRemoteFrame(BrowserParent* aChildBp) {
 void ContentProcessManager::UnregisterRemoteFrame(const TabId& aChildTabId) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  MOZ_ALWAYS_TRUE(mBrowserParentMap.Remove(aChildTabId));
+  auto childBp = mBrowserParentMap.Extract(aChildTabId);
+  MOZ_DIAGNOSTIC_ASSERT(childBp);
+
+  // Clear the corresponding keepalive which was added in `RegisterRemoteFrame`.
+  (*childBp)->GetBrowsingContext()->Group()->RemoveKeepAlive();
 }
 
 ContentParentId ContentProcessManager::GetTabProcessId(

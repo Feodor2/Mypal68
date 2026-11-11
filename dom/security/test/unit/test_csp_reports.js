@@ -93,7 +93,7 @@ function makeTest(id, expectedJSON, useReportOnlyPolicy, callback) {
 
   dump("Created test " + id + " : " + policy + "\n\n");
 
-  principal = Services.scriptSecurityManager.createCodebasePrincipal(
+  principal = Services.scriptSecurityManager.createContentPrincipal(
     selfuri,
     {}
   );
@@ -182,9 +182,9 @@ function run_test() {
       null, // nsICSPEventListener
       NetUtil.newURI("http://blocked.test/foo.js"),
       null,
-      null,
       true,
-      null
+      null,
+      false
     );
   });
 
@@ -244,7 +244,7 @@ function run_test() {
       null,
       null,
       true,
-      null
+      false
     );
   });
 
@@ -258,7 +258,7 @@ function run_test() {
       null,
       null,
       true,
-      null
+      false
     );
   });
 
@@ -274,7 +274,7 @@ function run_test() {
       null,
       null,
       true,
-      null
+      false
     );
   });
 
@@ -292,7 +292,7 @@ function run_test() {
         null,
         null,
         true,
-        null
+        false
       );
     }
   );

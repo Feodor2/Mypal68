@@ -12,6 +12,7 @@
 #include "nsIContentSecurityPolicy.h"
 #include "nsIDocShell.h"
 #include "nsIHttpChannel.h"
+#include "nsIHttpChannelInternal.h"
 #include "nsIIOService.h"
 #include "nsIOService.h"
 #include "nsIPrincipal.h"
@@ -60,6 +61,9 @@
 #include "mozilla/dom/SerializedStackHolder.h"
 #include "mozilla/dom/workerinternals/CacheLoadHandler.h"
 #include "mozilla/dom/workerinternals/NetworkLoadHandler.h"
+#include "mozilla/dom/workerinternals/ScriptResponseHeaderProcessor.h"
+#include "mozilla/Result.h"
+#include "mozilla/ResultExtensions.h"
 #include "mozilla/UniquePtr.h"
 #include "Principal.h"
 #include "WorkerRunnable.h"
@@ -801,10 +805,17 @@ nsresult WorkerScriptLoader::LoadScript(ScriptLoadInfo& aLoadInfo) {
   // where to put the result.
   RefPtr<NetworkLoadHandler> listener = new NetworkLoadHandler(this, aLoadInfo);
 
-  // We don't care about progress so just use the simple stream loader for
-  // OnStreamComplete notification only.
+  RefPtr<ScriptResponseHeaderProcessor> headerProcessor = nullptr;
+
+  // For each debugger script, a non-debugger script load of the same script
+  // should have occured prior that processed the headers.
+  if (!IsDebuggerScript()) {
+    headerProcessor = MakeRefPtr<ScriptResponseHeaderProcessor>(
+        mWorkerPrivate, mIsMainScript);
+  }
+
   nsCOMPtr<nsIStreamLoader> loader;
-  rv = NS_NewStreamLoader(getter_AddRefs(loader), listener);
+  rv = NS_NewStreamLoader(getter_AddRefs(loader), listener, headerProcessor);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -817,6 +828,22 @@ nsresult WorkerScriptLoader::LoadScript(ScriptLoadInfo& aLoadInfo) {
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
+  }
+
+  if (StaticPrefs::browser_tabs_remote_useCrossOriginEmbedderPolicy()) {
+    nsILoadInfo::CrossOriginEmbedderPolicy respectedCOEP =
+        mWorkerPrivate->GetEmbedderPolicy();
+    if (mWorkerPrivate->IsDedicatedWorker() &&
+        respectedCOEP == nsILoadInfo::EMBEDDER_POLICY_NULL) {
+      respectedCOEP = mWorkerPrivate->GetOwnerEmbedderPolicy();
+    }
+
+    nsCOMPtr<nsILoadInfo> channelLoadInfo;
+    rv = channel->GetLoadInfo(getter_AddRefs(channelLoadInfo));
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+    channelLoadInfo->SetLoadingEmbedderPolicy(respectedCOEP);
   }
 
   if (aLoadInfo.mCacheStatus != ScriptLoadInfo::ToBeCached) {

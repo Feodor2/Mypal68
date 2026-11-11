@@ -120,6 +120,13 @@ struct ParamTraits<mozilla::ScrollAxis> {
   }
 };
 
+template <>
+struct ParamTraits<mozilla::dom::EmbedderElementEventType>
+    : public ContiguousEnumSerializer<
+          mozilla::dom::EmbedderElementEventType,
+          mozilla::dom::EmbedderElementEventType::NoEvent,
+          mozilla::dom::EmbedderElementEventType::EndGuard_> {};
+
 }  // namespace IPC
 
 #endif  // TABMESSAGE_UTILS_H

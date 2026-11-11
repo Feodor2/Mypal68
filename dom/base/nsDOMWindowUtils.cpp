@@ -47,6 +47,7 @@
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/PresShellInlines.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TextEventDispatcher.h"
@@ -537,8 +538,7 @@ nsDOMWindowUtils::SetResolutionAndScaleTo(float aResolution) {
     return NS_ERROR_FAILURE;
   }
 
-  presShell->SetResolutionAndScaleTo(aResolution,
-                                     ResolutionChangeOrigin::MainThreadRestore);
+  presShell->SetResolutionAndScaleTo(aResolution, ResolutionChangeOrigin::Test);
 
   return NS_OK;
 }
@@ -2546,6 +2546,10 @@ static nsTArray<nsIScrollableFrame*> CollectScrollableAncestors(
 
 NS_IMETHODIMP
 nsDOMWindowUtils::ZoomToFocusedInput() {
+  if (!Preferences::GetBool("apz.zoom-to-focused-input.enabled")) {
+    return NS_OK;
+  }
+
   nsIWidget* widget = GetWidget();
   if (!widget) {
     return NS_OK;
@@ -2735,7 +2739,8 @@ nsDOMWindowUtils::GetUnanimatedComputedStyle(Element* aElement,
       return NS_ERROR_INVALID_ARG;
   }
 
-  if (!GetPresShell()) {
+  RefPtr<PresShell> presShell = GetPresShell();
+  if (!presShell) {
     return NS_ERROR_FAILURE;
   }
 
@@ -2756,8 +2761,12 @@ nsDOMWindowUtils::GetUnanimatedComputedStyle(Element* aElement,
   if (!value) {
     return NS_ERROR_FAILURE;
   }
+  if (!aElement->GetComposedDoc()) {
+    return NS_ERROR_FAILURE;
+  }
   nsAutoCString result;
-  Servo_AnimationValue_Serialize(value, propertyID, &result);
+  Servo_AnimationValue_Serialize(value, propertyID,
+                                 presShell->StyleSet()->RawSet(), &result);
   CopyUTF8toUTF16(result, aResult);
   return NS_OK;
 }

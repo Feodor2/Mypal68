@@ -43,8 +43,7 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
 
   BrowsingContext* GetBrowsingContext() { return mBrowsingContext; }
 
-  // XXX(nika): We should have a load context here. (bug 1532664)
-  nsILoadContext* GetLoadContext() { return nullptr; }
+  nsILoadContext* GetLoadContext();
 
   void NavigateByKey(bool aForward, bool aForDocumentNavigation);
 
@@ -66,14 +65,12 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
 
   static BrowserBridgeChild* GetFrom(nsIContent* aContent);
 
-  BrowserBridgeChild(BrowsingContext* aBrowsingContext, TabId aId);
+  BrowserBridgeChild(BrowsingContext* aBrowsingContext, TabId aId,
+                     const LayersId& aLayersId);
 
  protected:
   friend class ContentChild;
   friend class PBrowserBridgeChild;
-
-  mozilla::ipc::IPCResult RecvSetLayersId(
-      const mozilla::layers::LayersId& aLayersId);
 
   mozilla::ipc::IPCResult RecvRequestFocus(const bool& aCanRaise);
 
@@ -84,7 +81,7 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
       const IDispatchHolder& aCOMProxy);
 
   mozilla::ipc::IPCResult RecvMaybeFireEmbedderLoadEvents(
-      bool aIsTrusted, bool aFireLoadAtEmbeddingElement);
+      EmbedderElementEventType aFireEventAtEmbeddingElement);
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvScrollRectIntoView(
@@ -92,8 +89,7 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
       const ScrollAxis& aHorizontal, const ScrollFlags& aScrollFlags,
       const int32_t& aAppUnitsPerDevPixel);
 
-  mozilla::ipc::IPCResult RecvSubFrameCrashed(
-      const MaybeDiscarded<BrowsingContext>& aContext);
+  mozilla::ipc::IPCResult RecvSubFrameCrashed();
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 

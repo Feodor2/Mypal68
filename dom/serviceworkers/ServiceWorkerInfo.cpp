@@ -10,6 +10,7 @@
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ClientState.h"
 #include "mozilla/dom/RemoteWorkerTypes.h"
+#include "mozilla/dom/WorkerPrivate.h"
 
 namespace mozilla {
 namespace dom {
@@ -46,6 +47,13 @@ static_assert(nsIServiceWorkerInfo::STATE_UNKNOWN ==
               "from nsIServiceWorkerInfo.");
 
 NS_IMPL_ISUPPORTS(ServiceWorkerInfo, nsIServiceWorkerInfo)
+
+NS_IMETHODIMP
+ServiceWorkerInfo::GetId(nsAString& aId) {
+  MOZ_ASSERT(NS_IsMainThread());
+  aId = mWorkerPrivateId;
+  return NS_OK;
+}
 
 NS_IMETHODIMP
 ServiceWorkerInfo::GetScriptSpec(nsAString& aScriptSpec) {
@@ -169,6 +177,7 @@ ServiceWorkerInfo::ServiceWorkerInfo(nsIPrincipal* aPrincipal,
       mDescriptor(GetNextID(), aRegistrationId, aRegistrationVersion,
                   aPrincipal, aScope, aScriptSpec, ServiceWorkerState::Parsed),
       mCacheName(aCacheName),
+      mWorkerPrivateId(ComputeWorkerPrivateId()),
       mImportsLoadFlags(aImportsLoadFlags),
       mCreationTime(PR_Now()),
       mCreationTimeStamp(TimeStamp::Now()),
@@ -185,6 +194,7 @@ ServiceWorkerInfo::ServiceWorkerInfo(nsIPrincipal* aPrincipal,
   mOriginAttributes = mPrincipal->OriginAttributesRef();
   MOZ_ASSERT(!mDescriptor.ScriptURL().IsEmpty());
   MOZ_ASSERT(!mCacheName.IsEmpty());
+  MOZ_ASSERT(!mWorkerPrivateId.IsEmpty());
 
   // Scripts of a service worker should always be loaded bypass service workers.
   // Otherwise, we might not be able to update a service worker correctly, if

@@ -8,6 +8,7 @@
 #include "mozilla/dom/PBrowserBridgeParent.h"
 #include "mozilla/Tuple.h"
 #include "mozilla/dom/ipc/IdType.h"
+#include "mozilla/dom/WindowGlobalTypes.h"
 
 namespace mozilla {
 
@@ -29,7 +30,8 @@ class BrowserBridgeParent : public PBrowserBridgeParent {
 
   BrowserBridgeParent();
 
-  nsresult InitWithProcess(ContentParent* aContentParent,
+  nsresult InitWithProcess(BrowserParent* aParentBrowser,
+                           ContentParent* aContentParent,
                            const WindowGlobalInit& aWindowInit,
                            uint32_t aChromeFlags, TabId aTabId);
 
@@ -60,10 +62,11 @@ class BrowserBridgeParent : public PBrowserBridgeParent {
 
   mozilla::ipc::IPCResult RecvShow(const OwnerShowInfo&);
   mozilla::ipc::IPCResult RecvScrollbarPreferenceChanged(ScrollbarPreference);
-  mozilla::ipc::IPCResult RecvLoadURL(const nsCString& aUrl);
+  mozilla::ipc::IPCResult RecvLoadURL(const nsCString& aUrl,
+                                      nsIPrincipal* aTriggeringPrincipal);
   mozilla::ipc::IPCResult RecvResumeLoad(uint64_t aPendingSwitchID);
-  mozilla::ipc::IPCResult RecvUpdateDimensions(
-      const DimensionInfo& aDimensions);
+  mozilla::ipc::IPCResult RecvUpdateDimensions(const nsIntRect& aRect,
+                                               const ScreenIntSize& aSize);
   mozilla::ipc::IPCResult RecvUpdateEffects(const EffectsInfo& aEffects);
   mozilla::ipc::IPCResult RecvRenderLayers(const bool& aEnabled,
                                            const LayersObserverEpoch& aEpoch);

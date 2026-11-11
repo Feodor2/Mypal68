@@ -14,19 +14,20 @@ function promiseU2FRegister(tab, app_id_) {
   let challenge_ = crypto.getRandomValues(new Uint8Array(16));
   challenge_ = bytesToBase64UrlSafe(challenge_);
 
-  return ContentTask.spawn(tab.linkedBrowser, [app_id_, challenge_], function([
-    app_id,
-    challenge,
-  ]) {
-    return new Promise(resolve => {
-      content.u2f.register(
-        app_id,
-        [{ version: "U2F_V2", challenge }],
-        [],
-        resolve
-      );
-    });
-  }).then(res => {
+  return SpecialPowers.spawn(
+    tab.linkedBrowser,
+    [[app_id_, challenge_]],
+    function([app_id, challenge]) {
+      return new Promise(resolve => {
+        content.u2f.register(
+          app_id,
+          [{ version: "U2F_V2", challenge }],
+          [],
+          resolve
+        );
+      });
+    }
+  ).then(res => {
     is(res.errorCode, 0, "u2f.register() succeeded");
     let data = base64ToBytesUrlSafe(res.registrationData);
     is(data[0], 0x05, "Reserved byte is correct");

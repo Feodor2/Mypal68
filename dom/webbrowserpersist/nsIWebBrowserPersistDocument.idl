@@ -14,6 +14,8 @@ interface nsIWebBrowserPersistWriteCompletion;
 interface nsIReferrerInfo;
 interface nsISHEntry;
 
+webidl BrowsingContext;
+
 native SHEntryRef(already_AddRefed<nsISHEntry>);
 
 /**
@@ -55,6 +57,7 @@ interface nsIWebBrowserPersistURIMap : nsISupports
 [scriptable, builtinclass, uuid(74aa4918-5d15-46b6-9ccf-74f9696d721d)]
 interface nsIWebBrowserPersistDocument : nsISupports
 {
+  readonly attribute boolean isClosed;
   readonly attribute boolean isPrivate;
   readonly attribute AUTF8String documentURI;
   readonly attribute AUTF8String baseURI;
@@ -145,6 +148,7 @@ interface nsIWebBrowserPersistResourceVisitor : nsISupports
   void visitResource(in nsIWebBrowserPersistDocument aDocument,
                      in AUTF8String aURI,
                      in nsContentPolicyType aContentPolicyType);
+
   /**
    * Indicates a subdocument resource; e.g., a frame or iframe.
    *
@@ -153,6 +157,16 @@ interface nsIWebBrowserPersistResourceVisitor : nsISupports
    */
   void visitDocument(in nsIWebBrowserPersistDocument aDocument,
                      in nsIWebBrowserPersistDocument aSubDocument);
+
+  /**
+   * Indicates a cross origin subdocument resource; e.g., a frame
+   * or iframe loaded in another process.
+   *
+   * @param aDocument     The document containing the reference.
+   * @param aContext      The referenced document's browsing context.
+   */
+  void visitBrowsingContext(in nsIWebBrowserPersistDocument aDocument,
+                            in BrowsingContext aContext);
 
   /**
    * Indicates that the document traversal is complete.

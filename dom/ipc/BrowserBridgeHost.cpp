@@ -35,10 +35,14 @@ nsILoadContext* BrowserBridgeHost::GetLoadContext() const {
   return mBridge->GetLoadContext();
 }
 
-void BrowserBridgeHost::LoadURL(nsIURI* aURI) {
+void BrowserBridgeHost::LoadURL(nsIURI* aURI,
+                                nsIPrincipal* aTriggeringPrincipal) {
+  MOZ_ASSERT(aURI);
+  MOZ_ASSERT(aTriggeringPrincipal);
+
   nsAutoCString spec;
   aURI->GetSpec(spec);
-  Unused << mBridge->SendLoadURL(spec);
+  Unused << mBridge->SendLoadURL(spec, aTriggeringPrincipal);
 }
 
 void BrowserBridgeHost::ResumeLoad(uint64_t aPendingSwitchId) {
@@ -63,31 +67,7 @@ bool BrowserBridgeHost::Show(const OwnerShowInfo& aShowInfo) {
 
 void BrowserBridgeHost::UpdateDimensions(const nsIntRect& aRect,
                                          const ScreenIntSize& aSize) {
-  nsCOMPtr<nsIWidget> widget = GetWidget();
-  if (!widget) {
-    NS_WARNING("No widget found in BrowserBridgeHost::UpdateDimensions");
-    return;
-  }
-
-  CSSToLayoutDeviceScale widgetScale = widget->GetDefaultScale();
-
-  LayoutDeviceIntRect devicePixelRect = ViewAs<LayoutDevicePixel>(
-      aRect, PixelCastJustification::LayoutDeviceIsScreenForTabDims);
-  LayoutDeviceIntSize devicePixelSize = ViewAs<LayoutDevicePixel>(
-      aSize, PixelCastJustification::LayoutDeviceIsScreenForTabDims);
-
-  // XXX What are clientOffset and chromeOffset used for? Are they meaningful
-  // for nested iframes with transforms?
-  LayoutDeviceIntPoint clientOffset;
-  LayoutDeviceIntPoint chromeOffset;
-
-  CSSRect unscaledRect = devicePixelRect / widgetScale;
-  CSSSize unscaledSize = devicePixelSize / widgetScale;
-  hal::ScreenOrientation orientation = hal::eScreenOrientation_Default;
-  DimensionInfo di(unscaledRect, unscaledSize, orientation, clientOffset,
-                   chromeOffset);
-
-  Unused << mBridge->SendUpdateDimensions(di);
+  Unused << mBridge->SendUpdateDimensions(aRect, aSize);
 }
 
 void BrowserBridgeHost::UpdateEffects(EffectsInfo aEffects) {

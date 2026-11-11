@@ -92,20 +92,21 @@ WorkerLoadInfoData::WorkerLoadInfoData()
       mXHRParamsAllowed(false),
       mPrincipalIsSystem(false),
       mPrincipalIsAddonOrExpandedAddon(false),
-      mWatchedByDevtools(false),
+      mWatchedByDevTools(false),
       mStorageAccess(StorageAccess::eDeny),
-      mFirstPartyStorageAccessGranted(false),
+      mUseRegularPrincipal(false),
+      mHasStorageAccessPermissionGranted(false),
       mServiceWorkersTestingInWindow(false),
       mSecureContext(eNotSet) {}
 
 nsresult WorkerLoadInfo::SetPrincipalsAndCSPOnMainThread(
-    nsIPrincipal* aPrincipal, nsIPrincipal* aStoragePrincipal,
+    nsIPrincipal* aPrincipal, nsIPrincipal* aPartitionedPrincipal,
     nsILoadGroup* aLoadGroup, nsIContentSecurityPolicy* aCsp) {
   AssertIsOnMainThread();
   MOZ_ASSERT(NS_LoadGroupMatchesPrincipal(aLoadGroup, aPrincipal));
 
   mPrincipal = aPrincipal;
-  mStoragePrincipal = aStoragePrincipal;
+  mPartitionedPrincipal = aPartitionedPrincipal;
   mPrincipalIsSystem = aPrincipal->IsSystemPrincipal();
   mPrincipalIsAddonOrExpandedAddon =
       aPrincipal->GetIsAddonOrExpandedAddonPrincipal();
@@ -130,35 +131,42 @@ nsresult WorkerLoadInfo::SetPrincipalsAndCSPOnMainThread(
   mLoadGroup = aLoadGroup;
 
   mPrincipalInfo = MakeUnique<PrincipalInfo>();
-  mStoragePrincipalInfo = MakeUnique<PrincipalInfo>();
+  mPartitionedPrincipalInfo = MakeUnique<PrincipalInfo>();
   StoragePrincipalHelper::GetRegularPrincipalOriginAttributes(
       aLoadGroup, mOriginAttributes);
 
   nsresult rv = PrincipalToPrincipalInfo(aPrincipal, mPrincipalInfo.get());
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (aPrincipal->Equals(aStoragePrincipal)) {
-    *mStoragePrincipalInfo = *mPrincipalInfo;
+  rv = nsContentUtils::GetUTFOrigin(aPrincipal, mOriginNoSuffix);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = aPrincipal->GetOrigin(mOrigin);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  if (aPrincipal->Equals(aPartitionedPrincipal)) {
+    *mPartitionedPrincipalInfo = *mPrincipalInfo;
+    mPartitionedOrigin = mOrigin;
   } else {
-    mStoragePrincipalInfo = MakeUnique<PrincipalInfo>();
-    rv = PrincipalToPrincipalInfo(aStoragePrincipal,
-                                  mStoragePrincipalInfo.get());
+    mPartitionedPrincipalInfo = MakeUnique<PrincipalInfo>();
+    rv = PrincipalToPrincipalInfo(aPartitionedPrincipal,
+                                  mPartitionedPrincipalInfo.get());
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    rv = aPartitionedPrincipal->GetOrigin(mPartitionedOrigin);
     NS_ENSURE_SUCCESS(rv, rv);
   }
-
-  rv = nsContentUtils::GetUTFOrigin(aPrincipal, mOrigin);
-  NS_ENSURE_SUCCESS(rv, rv);
 
   return NS_OK;
 }
 
 nsresult WorkerLoadInfo::GetPrincipalsAndLoadGroupFromChannel(
     nsIChannel* aChannel, nsIPrincipal** aPrincipalOut,
-    nsIPrincipal** aStoragePrincipalOut, nsILoadGroup** aLoadGroupOut) {
+    nsIPrincipal** aPartitionedPrincipalOut, nsILoadGroup** aLoadGroupOut) {
   AssertIsOnMainThread();
   MOZ_DIAGNOSTIC_ASSERT(aChannel);
   MOZ_DIAGNOSTIC_ASSERT(aPrincipalOut);
-  MOZ_DIAGNOSTIC_ASSERT(aStoragePrincipalOut);
+  MOZ_DIAGNOSTIC_ASSERT(aPartitionedPrincipalOut);
   MOZ_DIAGNOSTIC_ASSERT(aLoadGroupOut);
 
   // Initial triggering principal should be set
@@ -168,10 +176,10 @@ nsresult WorkerLoadInfo::GetPrincipalsAndLoadGroupFromChannel(
   MOZ_DIAGNOSTIC_ASSERT(ssm);
 
   nsCOMPtr<nsIPrincipal> channelPrincipal;
-  nsCOMPtr<nsIPrincipal> channelStoragePrincipal;
+  nsCOMPtr<nsIPrincipal> channelPartitionedPrincipal;
   nsresult rv = ssm->GetChannelResultPrincipals(
       aChannel, getter_AddRefs(channelPrincipal),
-      getter_AddRefs(channelStoragePrincipal));
+      getter_AddRefs(channelPartitionedPrincipal));
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Every time we call GetChannelResultPrincipal() it will return a different
@@ -185,7 +193,7 @@ nsresult WorkerLoadInfo::GetPrincipalsAndLoadGroupFromChannel(
   if (mPrincipal && mPrincipal->GetIsNullPrincipal() &&
       channelPrincipal->GetIsNullPrincipal()) {
     channelPrincipal = mPrincipal;
-    channelStoragePrincipal = mPrincipal;
+    channelPartitionedPrincipal = mPrincipal;
   }
 
   nsCOMPtr<nsILoadGroup> channelLoadGroup;
@@ -218,7 +226,7 @@ nsresult WorkerLoadInfo::GetPrincipalsAndLoadGroupFromChannel(
         // Assign the system principal to the resource:// worker only if it
         // was loaded from code using the system principal.
         channelPrincipal = mLoadingPrincipal;
-        channelStoragePrincipal = mLoadingPrincipal;
+        channelPartitionedPrincipal = mLoadingPrincipal;
       } else {
         return NS_ERROR_DOM_BAD_URI;
       }
@@ -230,7 +238,7 @@ nsresult WorkerLoadInfo::GetPrincipalsAndLoadGroupFromChannel(
   MOZ_ASSERT(NS_LoadGroupMatchesPrincipal(channelLoadGroup, channelPrincipal));
 
   channelPrincipal.forget(aPrincipalOut);
-  channelStoragePrincipal.forget(aStoragePrincipalOut);
+  channelPartitionedPrincipal.forget(aPartitionedPrincipalOut);
   channelLoadGroup.forget(aLoadGroupOut);
 
   return NS_OK;
@@ -240,10 +248,10 @@ nsresult WorkerLoadInfo::SetPrincipalsAndCSPFromChannel(nsIChannel* aChannel) {
   AssertIsOnMainThread();
 
   nsCOMPtr<nsIPrincipal> principal;
-  nsCOMPtr<nsIPrincipal> storagePrincipal;
+  nsCOMPtr<nsIPrincipal> partitionedPrincipal;
   nsCOMPtr<nsILoadGroup> loadGroup;
   nsresult rv = GetPrincipalsAndLoadGroupFromChannel(
-      aChannel, getter_AddRefs(principal), getter_AddRefs(storagePrincipal),
+      aChannel, getter_AddRefs(principal), getter_AddRefs(partitionedPrincipal),
       getter_AddRefs(loadGroup));
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -254,18 +262,18 @@ nsresult WorkerLoadInfo::SetPrincipalsAndCSPFromChannel(nsIChannel* aChannel) {
     nsCOMPtr<nsILoadInfo> loadinfo = aChannel->LoadInfo();
     csp = loadinfo->GetCsp();
   }
-  return SetPrincipalsAndCSPOnMainThread(principal, storagePrincipal, loadGroup,
-                                         csp);
+  return SetPrincipalsAndCSPOnMainThread(principal, partitionedPrincipal,
+                                         loadGroup, csp);
 }
 
 bool WorkerLoadInfo::FinalChannelPrincipalIsValid(nsIChannel* aChannel) {
   AssertIsOnMainThread();
 
   nsCOMPtr<nsIPrincipal> principal;
-  nsCOMPtr<nsIPrincipal> storagePrincipal;
+  nsCOMPtr<nsIPrincipal> partitionedPrincipal;
   nsCOMPtr<nsILoadGroup> loadGroup;
   nsresult rv = GetPrincipalsAndLoadGroupFromChannel(
-      aChannel, getter_AddRefs(principal), getter_AddRefs(storagePrincipal),
+      aChannel, getter_AddRefs(principal), getter_AddRefs(partitionedPrincipal),
       getter_AddRefs(loadGroup));
   NS_ENSURE_SUCCESS(rv, false);
 
@@ -290,9 +298,9 @@ bool WorkerLoadInfo::PrincipalIsValid() const {
   return mPrincipal && mPrincipalInfo &&
          mPrincipalInfo->type() != PrincipalInfo::T__None &&
          mPrincipalInfo->type() <= PrincipalInfo::T__Last &&
-         mStoragePrincipal && mStoragePrincipalInfo &&
-         mStoragePrincipalInfo->type() != PrincipalInfo::T__None &&
-         mStoragePrincipalInfo->type() <= PrincipalInfo::T__Last;
+         mPartitionedPrincipal && mPartitionedPrincipalInfo &&
+         mPartitionedPrincipalInfo->type() != PrincipalInfo::T__None &&
+         mPartitionedPrincipalInfo->type() <= PrincipalInfo::T__Last;
 }
 
 bool WorkerLoadInfo::PrincipalURIMatchesScriptURL() {
@@ -370,7 +378,7 @@ bool WorkerLoadInfo::ProxyReleaseMainThreadObjects(
   SwapToISupportsArray(mBaseURI, doomed);
   SwapToISupportsArray(mResolvedScriptURI, doomed);
   SwapToISupportsArray(mPrincipal, doomed);
-  SwapToISupportsArray(mStoragePrincipal, doomed);
+  SwapToISupportsArray(mPartitionedPrincipal, doomed);
   SwapToISupportsArray(mLoadingPrincipal, doomed);
   SwapToISupportsArray(mChannel, doomed);
   SwapToISupportsArray(mCSP, doomed);

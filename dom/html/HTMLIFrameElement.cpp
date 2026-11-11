@@ -151,6 +151,19 @@ nsMapRuleToAttributesFunc HTMLIFrameElement::GetAttributeMappingFunction()
   return &MapAttributesIntoRule;
 }
 
+bool HTMLIFrameElement::HasAllowFullscreenAttribute() const {
+  return GetBoolAttr(nsGkAtoms::allowfullscreen);
+}
+
+bool HTMLIFrameElement::AllowFullscreen() const {
+  if (StaticPrefs::dom_security_featurePolicy_enabled()) {
+    // The feature policy check in Document::GetFullscreenError already accounts
+    // for the allow* attributes, so we're done.
+    return true;
+  }
+  return HasAllowFullscreenAttribute();
+}
+
 nsresult HTMLIFrameElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
                                          const nsAttrValue* aValue,
                                          const nsAttrValue* aOldValue,
@@ -165,6 +178,13 @@ nsresult HTMLIFrameElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
         // Since this is called after the setter, the sandbox flags have
         // alreay been updated.
         mFrameLoader->ApplySandboxFlags(GetSandboxFlags());
+      }
+    } else if (aName == nsGkAtoms::allowfullscreen) {
+      if (mFrameLoader) {
+        if (auto* bc = mFrameLoader->GetExtantBrowsingContext()) {
+          MOZ_ALWAYS_SUCCEEDS(
+              bc->SetFullscreenAllowedByOwner(AllowFullscreen()));
+        }
       }
     }
 
@@ -252,7 +272,8 @@ void HTMLIFrameElement::MaybeStoreCrossOriginFeaturePolicy() {
     return;
   }
 
-  browsingContext->SetFeaturePolicy(mFeaturePolicy);
+  // Return value of setting synced field should be checked. See bug 1656492.
+  Unused << browsingContext->SetFeaturePolicy(mFeaturePolicy);
 }
 
 already_AddRefed<nsIPrincipal>
@@ -266,7 +287,7 @@ HTMLIFrameElement::GetFeaturePolicyDefaultOrigin() const {
 
   nsCOMPtr<nsIURI> nodeURI;
   if (GetURIAttr(nsGkAtoms::src, nullptr, getter_AddRefs(nodeURI)) && nodeURI) {
-    principal = BasePrincipal::CreateCodebasePrincipal(
+    principal = BasePrincipal::CreateContentPrincipal(
         nodeURI, BasePrincipal::Cast(NodePrincipal())->OriginAttributesRef());
   }
 
@@ -298,7 +319,7 @@ void HTMLIFrameElement::RefreshFeaturePolicy(bool aParseAllowAttribute) {
     }
   }
 
-  if (AllowFullscreen()) {
+  if (HasAllowFullscreenAttribute()) {
     mFeaturePolicy->MaybeSetAllowedPolicy(u"fullscreen"_ns);
   }
 

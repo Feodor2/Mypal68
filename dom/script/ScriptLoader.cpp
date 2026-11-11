@@ -389,9 +389,9 @@ nsresult ScriptLoader::CheckContentPolicy(Document* aDocument,
 
 /* static */
 bool ScriptLoader::IsAboutPageLoadingChromeURI(ScriptLoadRequest* aRequest) {
-  // if we are not dealing with a codebasePrincipal it can not be a
+  // if we are not dealing with a contentPrincipal it can not be a
   // Principal with a scheme of about: and there is nothing left to do
-  if (!aRequest->TriggeringPrincipal()->GetIsCodebasePrincipal()) {
+  if (!aRequest->TriggeringPrincipal()->GetIsContentPrincipal()) {
     return false;
   }
   if (!aRequest->TriggeringPrincipal()->SchemeIs("about")) {
@@ -1151,7 +1151,7 @@ bool ScriptLoader::ProcessInlineScript(nsIScriptElement* aElement,
 
     // https://wicg.github.io/import-maps/#register-an-import-map
     //
-    // Step 1. If element’s the script’s result is null, then fire an event
+    // Step 1. If element???s the script???s result is null, then fire an event
     // named error at element, and return.
     if (!importMap) {
       NS_DispatchToCurrentThread(
@@ -1160,7 +1160,7 @@ bool ScriptLoader::ProcessInlineScript(nsIScriptElement* aElement,
       return false;
     }
 
-    // Step 3. Assert: element’s the script’s type is "importmap".
+    // Step 3. Assert: element???s the script???s type is "importmap".
     MOZ_ASSERT(aElement->GetScriptIsImportMap());
 
     // Step 4 to step 9 is done in RegisterImportMap.
@@ -2146,7 +2146,8 @@ nsresult ScriptLoader::CompileOrDecodeClassicScript(
     if (aRequest->GetScriptLoadContext()->mOffThreadToken) {
       LOG(("ScriptLoadRequest (%p): Decode Bytecode & Join and Execute",
            aRequest));
-      rv = aExec.JoinDecode(&aRequest->GetScriptLoadContext()->mOffThreadToken);
+      rv = aExec.JoinOffThread(
+          &aRequest->GetScriptLoadContext()->mOffThreadToken);
     } else {
       LOG(("ScriptLoadRequest (%p): Decode Bytecode and Execute", aRequest));
       AUTO_PROFILER_MARKER_TEXT("BytecodeDecodeMainThread", JS,
@@ -2173,7 +2174,8 @@ nsresult ScriptLoader::CompileOrDecodeClassicScript(
          "Execute",
          aRequest));
     MOZ_ASSERT(aRequest->IsTextSource());
-    rv = aExec.JoinCompile(&aRequest->GetScriptLoadContext()->mOffThreadToken);
+    rv =
+        aExec.JoinOffThread(&aRequest->GetScriptLoadContext()->mOffThreadToken);
   } else {
     // Main thread parsing (inline and small scripts)
     LOG(("ScriptLoadRequest (%p): Compile And Exec", aRequest));

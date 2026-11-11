@@ -81,7 +81,7 @@ function test() {
   policy.active = true;
 
   let baseURI = Services.io.newURI(url);
-  let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+  let principal = Services.scriptSecurityManager.createContentPrincipal(
     baseURI,
     {}
   );

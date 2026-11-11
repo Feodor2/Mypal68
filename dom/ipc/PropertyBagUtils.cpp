@@ -14,6 +14,7 @@
 #include "nsVariant.h"
 
 using namespace IPC;
+using namespace mozilla::dom;
 
 namespace mozilla {
 namespace ipc {

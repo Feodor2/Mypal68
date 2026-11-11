@@ -21,7 +21,7 @@ windows.
   <script type="application/javascript"><![CDATA[
   SimpleTest.waitForExplicitFinish();
   const {BrowserTestUtils} = ChromeUtils.import("resource://testing-common/BrowserTestUtils.jsm");
-  const {ContentTask} = ChromeUtils.import("resource://testing-common/ContentTask.jsm");
+  ;
 
   const BROWSER_DOC = "window_chromeOuterWindowID.xhtml";
   const TEST_PAGE = "http://example.com";
@@ -72,7 +72,7 @@ windows.
    *        nonRemote<num>: a reference to the non-remote browser in the window
    */
   async function prepareWindow(num, page) {
-    let win = docShell.rootTreeItem.domWindow.open(BROWSER_DOC, "bug1474662-" + num, "chrome,width=200,height=200");
+    let win = window.browsingContext.topChromeWindow.open(BROWSER_DOC, "bug1474662-" + num, "chrome,width=200,height=200");
     await BrowserTestUtils.waitForEvent(win, "load");
     let remote = win.document.getElementById("remote");
     let nonRemote = win.document.getElementById("non-remote");

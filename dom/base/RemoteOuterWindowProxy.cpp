@@ -94,7 +94,7 @@ bool RemoteOuterWindowProxy::getOwnPropertyDescriptor(
   BrowsingContext* bc = GetBrowsingContext(aProxy);
   uint32_t index = GetArrayIndexFromId(aId);
   if (IsArrayIndex(index)) {
-    const BrowsingContext::Children& children = bc->GetChildren();
+    Span<RefPtr<BrowsingContext>> children = bc->Children();
     if (index < children.Length()) {
       return WrapResult(aCx, aProxy, children[index],
                         {JS::PropertyAttribute::Configurable,
@@ -121,7 +121,7 @@ bool RemoteOuterWindowProxy::getOwnPropertyDescriptor(
       return false;
     }
 
-    for (BrowsingContext* child : bc->GetChildren()) {
+    for (BrowsingContext* child : bc->Children()) {
       if (child->NameEquals(str)) {
         return WrapResult(aCx, aProxy, child,
                           {JS::PropertyAttribute::Configurable}, aDesc);
@@ -134,7 +134,7 @@ bool RemoteOuterWindowProxy::getOwnPropertyDescriptor(
 
 bool AppendIndexedPropertyNames(JSContext* aCx, BrowsingContext* aContext,
                                 JS::MutableHandleVector<jsid> aIndexedProps) {
-  int32_t length = aContext->GetChildren().Length();
+  int32_t length = aContext->Children().Length();
   if (!aIndexedProps.reserve(aIndexedProps.length() + length)) {
     return false;
   }

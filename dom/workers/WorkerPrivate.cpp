@@ -19,6 +19,7 @@
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/Result.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/CallbackDebuggerNotification.h"
@@ -48,6 +49,7 @@
 #include "mozilla/dom/WorkerBinding.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/JSExecutionManager.h"
+#include "mozilla/dom/WindowContext.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/ThreadEventQueue.h"
@@ -480,16 +482,16 @@ class ThawRunnable final : public WorkerControlRunnable {
   }
 };
 
-class PropagateFirstPartyStorageAccessGrantedRunnable final
+class PropagateStorageAccessPermissionGrantedRunnable final
     : public WorkerControlRunnable {
  public:
-  explicit PropagateFirstPartyStorageAccessGrantedRunnable(
+  explicit PropagateStorageAccessPermissionGrantedRunnable(
       WorkerPrivate* aWorkerPrivate)
       : WorkerControlRunnable(aWorkerPrivate, WorkerThreadUnchangedBusyCount) {}
 
  private:
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
-    aWorkerPrivate->PropagateFirstPartyStorageAccessGrantedInternal();
+    aWorkerPrivate->PropagateStorageAccessPermissionGrantedInternal();
     return true;
   }
 };
@@ -894,6 +896,25 @@ class CancelingRunnable final : public Runnable {
 };
 
 } /* anonymous namespace */
+
+nsString ComputeWorkerPrivateId() {
+  nsresult rv;
+  nsCOMPtr<nsIUUIDGenerator> uuidGenerator =
+      do_GetService("@mozilla.org/uuid-generator;1", &rv);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+
+  nsID uuid;
+  rv = uuidGenerator->GenerateUUIDInPlace(&uuid);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  char buffer[NSID_LENGTH];
+  uuid.ToProvidedString(buffer);
+
+  nsString id;
+  // Remove {} and the null terminator
+  id.AssignASCII(&buffer[1], NSID_LENGTH - 3);
+
+  return id;
+}
 
 class WorkerPrivate::EventTarget final : public nsISerialEventTarget {
   // This mutex protects mWorkerPrivate and must be acquired *before* the
@@ -1768,7 +1789,7 @@ void WorkerPrivate::ParentWindowResumed() {
   Unused << mMainThreadDebuggeeEventTarget->SetIsPaused(IsFrozen());
 }
 
-void WorkerPrivate::PropagateFirstPartyStorageAccessGranted() {
+void WorkerPrivate::PropagateStorageAccessPermissionGranted() {
   AssertIsOnParentThread();
 
   {
@@ -1779,8 +1800,8 @@ void WorkerPrivate::PropagateFirstPartyStorageAccessGranted() {
     }
   }
 
-  RefPtr<PropagateFirstPartyStorageAccessGrantedRunnable> runnable =
-      new PropagateFirstPartyStorageAccessGrantedRunnable(this);
+  RefPtr<PropagateStorageAccessPermissionGrantedRunnable> runnable =
+      new PropagateStorageAccessPermissionGrantedRunnable(this);
   Unused << NS_WARN_IF(!runnable->Dispatch());
 }
 
@@ -2051,10 +2072,10 @@ void WorkerPrivate::SetBaseURI(nsIURI* aBaseURI) {
 }
 
 nsresult WorkerPrivate::SetPrincipalsAndCSPOnMainThread(
-    nsIPrincipal* aPrincipal, nsIPrincipal* aStoragePrincipal,
+    nsIPrincipal* aPrincipal, nsIPrincipal* aPartitionedPrincipal,
     nsILoadGroup* aLoadGroup, nsIContentSecurityPolicy* aCsp) {
   return mLoadInfo.SetPrincipalsAndCSPOnMainThread(
-      aPrincipal, aStoragePrincipal, aLoadGroup, aCsp);
+      aPrincipal, aPartitionedPrincipal, aLoadGroup, aCsp);
 }
 
 nsresult WorkerPrivate::SetPrincipalsAndCSPFromChannel(nsIChannel* aChannel) {
@@ -2164,7 +2185,7 @@ WorkerPrivate::WorkerPrivate(WorkerPrivate* aParent,
                              WorkerKind aWorkerKind,
                              const nsAString& aWorkerName,
                              const nsACString& aServiceWorkerScope,
-                             WorkerLoadInfo& aLoadInfo)
+                             WorkerLoadInfo& aLoadInfo, nsString&& aId)
     : mMutex(),
       mCondVar(mMutex, "WorkerPrivate CondVar"),
       mParent(aParent),
@@ -2198,7 +2219,8 @@ WorkerPrivate::WorkerPrivate(WorkerPrivate* aParent,
           IsNewWorkerSecureContext(mParent, mWorkerKind, mLoadInfo)),
       mDebuggerRegistered(false),
       mDebuggerReady(true),
-      mIsInAutomation(false) {
+      mIsInAutomation(false),
+      mId(std::move(aId)) {
   MOZ_ASSERT_IF(!IsDedicatedWorker(), NS_IsMainThread());
 
   if (aParent) {
@@ -2338,7 +2360,7 @@ already_AddRefed<WorkerPrivate> WorkerPrivate::Constructor(
     JSContext* aCx, const nsAString& aScriptURL, bool aIsChromeWorker,
     WorkerKind aWorkerKind, const nsAString& aWorkerName,
     const nsACString& aServiceWorkerScope, WorkerLoadInfo* aLoadInfo,
-    ErrorResult& aRv) {
+    ErrorResult& aRv, nsString aId) {
   WorkerPrivate* parent =
       NS_IsMainThread() ? nullptr : GetCurrentThreadWorkerPrivate();
 
@@ -2390,9 +2412,9 @@ already_AddRefed<WorkerPrivate> WorkerPrivate::Constructor(
 
   MOZ_ASSERT(runtimeService);
 
-  RefPtr<WorkerPrivate> worker =
-      new WorkerPrivate(parent, aScriptURL, aIsChromeWorker, aWorkerKind,
-                        aWorkerName, aServiceWorkerScope, *aLoadInfo);
+  RefPtr<WorkerPrivate> worker = new WorkerPrivate(
+      parent, aScriptURL, aIsChromeWorker, aWorkerKind, aWorkerName,
+      aServiceWorkerScope, *aLoadInfo, std::move(aId));
 
   // Gecko contexts always have an explicitly-set default locale (set by
   // XPJSRuntime::Initialize for the main thread, set by
@@ -2416,7 +2438,7 @@ already_AddRefed<WorkerPrivate> WorkerPrivate::Constructor(
   MOZ_DIAGNOSTIC_ASSERT(worker->PrincipalIsValid());
 
   UniquePtr<SerializedStackHolder> stack;
-  if (worker->IsWatchedByDevtools()) {
+  if (worker->IsWatchedByDevTools()) {
     stack = GetCurrentStackForNetMonitor(aCx);
   }
 
@@ -2522,11 +2544,15 @@ nsresult WorkerPrivate::GetLoadInfo(JSContext* aCx, nsPIDOMWindowInner* aWindow,
     loadInfo.mFromWindow = aParent->IsFromWindow();
     loadInfo.mWindowID = aParent->WindowID();
     loadInfo.mStorageAccess = aParent->StorageAccess();
+    loadInfo.mUseRegularPrincipal = aParent->UseRegularPrincipal();
+    loadInfo.mHasStorageAccessPermissionGranted =
+        aParent->HasStorageAccessPermissionGranted();
+    loadInfo.mCookieJarSettings = aParent->CookieJarSettings();
     loadInfo.mOriginAttributes = aParent->GetOriginAttributes();
     loadInfo.mServiceWorkersTestingInWindow =
         aParent->ServiceWorkersTestingInWindow();
     loadInfo.mParentController = aParent->GlobalScope()->GetController();
-    loadInfo.mWatchedByDevtools = aParent->IsWatchedByDevtools();
+    loadInfo.mWatchedByDevTools = aParent->IsWatchedByDevTools();
   } else {
     AssertIsOnMainThread();
 
@@ -2647,16 +2673,25 @@ nsresult WorkerPrivate::GetLoadInfo(JSContext* aCx, nsPIDOMWindowInner* aWindow,
 
       loadInfo.mXHRParamsAllowed = perm == nsIPermissionManager::ALLOW_ACTION;
 
-      nsIDocShell* docShell = globalWindow->GetDocShell();
-      if (docShell) {
-        loadInfo.mWatchedByDevtools = docShell->GetWatchedByDevtools();
-      }
+      BrowsingContext* browsingContext = globalWindow->GetBrowsingContext();
+      loadInfo.mWatchedByDevTools =
+          browsingContext ? browsingContext->WatchedByDevTools() : false;
 
       loadInfo.mReferrerInfo =
           ReferrerInfo::CreateForFetch(loadInfo.mLoadingPrincipal, document);
       loadInfo.mFromWindow = true;
       loadInfo.mWindowID = globalWindow->WindowID();
       loadInfo.mStorageAccess = StorageAllowedForWindow(globalWindow);
+      loadInfo.mUseRegularPrincipal = document->UseRegularPrincipal();
+      loadInfo.mHasStorageAccessPermissionGranted =
+          document->HasStorageAccessPermissionGranted();
+
+      // This is an hack to deny the storage-access-permission for workers of
+      // sub-iframes.
+      if (loadInfo.mHasStorageAccessPermissionGranted &&
+          StorageAllowedForDocument(document) != StorageAccess::eAllow) {
+        loadInfo.mHasStorageAccessPermissionGranted = false;
+      }
       loadInfo.mCookieJarSettings = document->CookieJarSettings();
       StoragePrincipalHelper::GetRegularPrincipalOriginAttributes(
           document, loadInfo.mOriginAttributes);
@@ -2703,6 +2738,8 @@ nsresult WorkerPrivate::GetLoadInfo(JSContext* aCx, nsPIDOMWindowInner* aWindow,
       loadInfo.mFromWindow = false;
       loadInfo.mWindowID = UINT64_MAX;
       loadInfo.mStorageAccess = StorageAccess::eAllow;
+      loadInfo.mUseRegularPrincipal = true;
+      loadInfo.mHasStorageAccessPermissionGranted = false;
       loadInfo.mCookieJarSettings = mozilla::net::CookieJarSettings::Create();
       MOZ_ASSERT(loadInfo.mCookieJarSettings);
 
@@ -2733,6 +2770,19 @@ nsresult WorkerPrivate::GetLoadInfo(JSContext* aCx, nsPIDOMWindowInner* aWindow,
 
     rv = NS_GetFinalChannelURI(loadInfo.mChannel,
                                getter_AddRefs(loadInfo.mResolvedScriptURI));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // We need the correct hasStoragePermission flag for the channel here since
+    // we will do a content blocking check later when we set the storage
+    // principal for the worker. The channel here won't be opened when we do the
+    // check later, so the hasStoragePermission flag is incorrect. To address
+    // this, We copy the hasStoragePermission flag from the document if there is
+    // a window. The worker is created as the same origin of the window. So, the
+    // worker is supposed to have the same storage permission as the window as
+    // well as the hasStoragePermission flag.
+    nsCOMPtr<nsILoadInfo> channelLoadInfo = loadInfo.mChannel->LoadInfo();
+    rv = channelLoadInfo->SetHasStoragePermission(
+        loadInfo.mHasStorageAccessPermissionGranted);
     NS_ENSURE_SUCCESS(rv, rv);
 
     rv = loadInfo.SetPrincipalsAndCSPFromChannel(loadInfo.mChannel);
@@ -3599,18 +3649,19 @@ bool WorkerPrivate::ThawInternal() {
   return true;
 }
 
-void WorkerPrivate::PropagateFirstPartyStorageAccessGrantedInternal() {
+void WorkerPrivate::PropagateStorageAccessPermissionGrantedInternal() {
   auto data = mWorkerThreadAccessible.Access();
 
-  mLoadInfo.mFirstPartyStorageAccessGranted = true;
+  mLoadInfo.mUseRegularPrincipal = true;
+  mLoadInfo.mHasStorageAccessPermissionGranted = true;
 
   WorkerGlobalScope* globalScope = GlobalScope();
   if (globalScope) {
-    globalScope->FirstPartyStorageAccessGranted();
+    globalScope->StorageAccessPermissionGranted();
   }
 
   for (uint32_t index = 0; index < data->mChildWorkers.Length(); index++) {
-    data->mChildWorkers[index]->PropagateFirstPartyStorageAccessGranted();
+    data->mChildWorkers[index]->PropagateStorageAccessPermissionGranted();
   }
 }
 
@@ -5146,25 +5197,134 @@ RefPtr<GenericPromise> WorkerPrivate::SetServiceWorkerSkipWaitingFlag() {
   return promise;
 }
 
-nsAString& WorkerPrivate::Id() {
+const nsAString& WorkerPrivate::Id() {
   AssertIsOnMainThread();
 
-  if (mID.IsEmpty()) {
-    nsresult rv;
-    nsCOMPtr<nsIUUIDGenerator> uuidGenerator =
-        do_GetService("@mozilla.org/uuid-generator;1", &rv);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-
-    nsID uuid;
-    rv = uuidGenerator->GenerateUUIDInPlace(&uuid);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-    char buffer[NSID_LENGTH];
-    uuid.ToProvidedString(buffer);
-    // Remove {} and the null terminator
-    mID.AssignASCII(&buffer[1], NSID_LENGTH - 3);
+  if (mId.IsEmpty()) {
+    mId = ComputeWorkerPrivateId();
   }
 
-  return mID;
+  MOZ_ASSERT(!mId.IsEmpty());
+
+  return mId;
+}
+
+bool WorkerPrivate::CrossOriginIsolated() const {
+  AssertIsOnWorkerThread();
+  return false;
+}
+
+nsILoadInfo::CrossOriginEmbedderPolicy WorkerPrivate::GetEmbedderPolicy()
+    const {
+  if (!StaticPrefs::browser_tabs_remote_useCrossOriginEmbedderPolicy()) {
+    return nsILoadInfo::EMBEDDER_POLICY_NULL;
+  }
+
+  return mEmbedderPolicy.valueOr(nsILoadInfo::EMBEDDER_POLICY_NULL);
+}
+
+Result<Ok, nsresult> WorkerPrivate::SetEmbedderPolicy(
+    nsILoadInfo::CrossOriginEmbedderPolicy aPolicy) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(mEmbedderPolicy.isNothing());
+
+  if (!StaticPrefs::browser_tabs_remote_useCrossOriginEmbedderPolicy()) {
+    return Ok();
+  }
+
+  // If owner's emebedder policy is corp_reqired, aPolicy must also be
+  // corp_reqired. But if owner's embedder policy is null, aPolicy needs not
+  // match owner's value.
+  // https://wicg.github.io/cross-origin-embedder-policy/#cascade-vs-require
+  EnsureOwnerEmbedderPolicy();
+  if (mOwnerEmbedderPolicy.valueOr(nsILoadInfo::EMBEDDER_POLICY_NULL) !=
+      nsILoadInfo::EMBEDDER_POLICY_NULL) {
+    if (mOwnerEmbedderPolicy.valueOr(aPolicy) != aPolicy) {
+      return Err(NS_ERROR_BLOCKED_BY_POLICY);
+    }
+  }
+
+  mEmbedderPolicy.emplace(aPolicy);
+
+  return Ok();
+}
+
+void WorkerPrivate::InheritOwnerEmbedderPolicyOrNull(nsIRequest* aRequest) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(aRequest);
+
+  EnsureOwnerEmbedderPolicy();
+
+  if (mOwnerEmbedderPolicy.isSome()) {
+    nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
+    MOZ_ASSERT(channel);
+
+    nsCOMPtr<nsIURI> scriptURI;
+    MOZ_ALWAYS_SUCCEEDS(channel->GetURI(getter_AddRefs(scriptURI)));
+
+    bool isLocalScriptURI = false;
+    MOZ_ALWAYS_SUCCEEDS(NS_URIChainHasFlags(
+        scriptURI, nsIProtocolHandler::URI_IS_LOCAL_RESOURCE,
+        &isLocalScriptURI));
+
+    MOZ_RELEASE_ASSERT(isLocalScriptURI);
+  }
+
+  mEmbedderPolicy.emplace(
+      mOwnerEmbedderPolicy.valueOr(nsILoadInfo::EMBEDDER_POLICY_NULL));
+}
+
+bool WorkerPrivate::MatchEmbedderPolicy(
+    nsILoadInfo::CrossOriginEmbedderPolicy aPolicy) const {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (!StaticPrefs::browser_tabs_remote_useCrossOriginEmbedderPolicy()) {
+    return true;
+  }
+
+  return mEmbedderPolicy.value() == aPolicy;
+}
+
+nsILoadInfo::CrossOriginEmbedderPolicy WorkerPrivate::GetOwnerEmbedderPolicy()
+    const {
+  if (!StaticPrefs::browser_tabs_remote_useCrossOriginEmbedderPolicy()) {
+    return nsILoadInfo::EMBEDDER_POLICY_NULL;
+  }
+
+  return mOwnerEmbedderPolicy.valueOr(nsILoadInfo::EMBEDDER_POLICY_NULL);
+}
+
+void WorkerPrivate::EnsureOwnerEmbedderPolicy() {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(mOwnerEmbedderPolicy.isNothing());
+
+  if (GetParent()) {
+    mOwnerEmbedderPolicy.emplace(GetParent()->GetEmbedderPolicy());
+  } else if (GetWindow() && GetWindow()->GetWindowContext()) {
+    mOwnerEmbedderPolicy.emplace(
+        GetWindow()->GetWindowContext()->GetEmbedderPolicy());
+  }
+}
+
+const mozilla::ipc::PrincipalInfo&
+WorkerPrivate::GetEffectiveStoragePrincipalInfo() const {
+  AssertIsOnWorkerThread();
+
+  if (mLoadInfo.mUseRegularPrincipal) {
+    return *mLoadInfo.mPrincipalInfo;
+  }
+
+  return *mLoadInfo.mPartitionedPrincipalInfo;
+}
+
+const nsACString& WorkerPrivate::EffectiveStoragePrincipalOrigin() const {
+  AssertIsOnWorkerThread();
+
+  if (mLoadInfo.mUseRegularPrincipal) {
+    return mLoadInfo.mOrigin;
+  }
+
+  return mLoadInfo.mPartitionedOrigin;
 }
 
 NS_IMPL_ADDREF(WorkerPrivate::EventTarget)

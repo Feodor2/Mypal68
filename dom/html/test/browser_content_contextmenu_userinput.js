@@ -48,9 +48,9 @@ add_task(async function() {
         "Got context menu item"
       );
 
-      let promiseCtxMenuClick = ContentTask.spawn(
+      let promiseCtxMenuClick = SpecialPowers.spawn(
         aBrowser,
-        null,
+        [],
         async function() {
           await new Promise(resolve => {
             let windowUtils = content.windowUtils;

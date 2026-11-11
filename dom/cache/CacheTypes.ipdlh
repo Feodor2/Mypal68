@@ -24,6 +24,7 @@ using ResponseType from "mozilla/dom/ResponseBinding.h";
 using struct mozilla::void_t from "mozilla/ipc/IPCCore.h";
 using nsContentPolicyType from "nsIContentPolicy.h";
 using struct nsID from "nsID.h";
+using nsILoadInfo::CrossOriginEmbedderPolicy from "nsILoadInfo.h";
 
 namespace mozilla {
 namespace dom {
@@ -67,6 +68,8 @@ struct CacheRequest
   RequestCache requestCache;
   RequestRedirect requestRedirect;
   nsString integrity;
+  CrossOriginEmbedderPolicy loadingEmbedderPolicy;
+  PrincipalInfo? principalInfo;
 };
 
 struct CacheResponse

@@ -459,8 +459,8 @@ void RemoteLazyInputStream::StreamReady(
   nsCOMPtr<nsIInputStream> inputStream = std::move(aInputStream);
 
   // If inputStream is null, it means that the serialization went wrong or the
-  // stream is not available anymore. We keep the state as pending just to block
-  // any additional operation.
+  // stream is not available anymore. We keep the state as pending just to
+  // block any additional operation.
 
   if (!inputStream) {
     return;
@@ -630,7 +630,8 @@ RemoteLazyInputStream::AsyncFileMetadataWait(nsIFileMetadataCallback* aCallback,
     return NS_ERROR_FAILURE;
   }
 
-  // See RemoteLazyInputStream.h for more information about this state machine.
+  // See RemoteLazyInputStream.h for more information about this state
+  // machine.
 
   {
     MutexAutoLock lock(mMutex);
@@ -908,8 +909,8 @@ void RemoteLazyInputStream::LengthReady(int64_t aLength) {
       }
 
       if (mLength < mActor->Size()) {
-        // If the remote stream must be sliced, we must return here the correct
-        // value.
+        // If the remote stream must be sliced, we must return here the
+        // correct value.
         aLength = XPCOM_MIN(aLength, (int64_t)mLength);
       }
     }

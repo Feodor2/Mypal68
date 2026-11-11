@@ -24,7 +24,7 @@ struct TestExpectations {
 
 // ============================= TestDirectives ========================
 
-TEST(SecureContext, IsOriginPotentiallyTrustworthyWithCodeBasePrincipal)
+TEST(SecureContext, IsOriginPotentiallyTrustworthyWithContentPrincipal)
 {
   // boolean isOriginPotentiallyTrustworthy(in nsIPrincipal aPrincipal);
 
@@ -66,7 +66,7 @@ TEST(SecureContext, IsOriginPotentiallyTrustworthyWithCodeBasePrincipal)
     nsCOMPtr<nsIPrincipal> prin;
     nsAutoCString uri(uris[i].uri);
     rv = nsScriptSecurityManager::GetScriptSecurityManager()
-             ->CreateCodebasePrincipalFromOrigin(uri, getter_AddRefs(prin));
+             ->CreateContentPrincipalFromOrigin(uri, getter_AddRefs(prin));
     ASSERT_EQ(rv, NS_OK);
     bool isPotentiallyTrustworthy = prin->GetIsOriginPotentiallyTrustworthy();
     ASSERT_EQ(isPotentiallyTrustworthy, uris[i].expectedResult);

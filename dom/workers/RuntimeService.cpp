@@ -1878,7 +1878,7 @@ void RuntimeService::ResumeWorkersForWindow(const nsPIDOMWindowInner& aWindow) {
   }
 }
 
-void RuntimeService::PropagateFirstPartyStorageAccessGranted(
+void RuntimeService::PropagateStorageAccessPermissionGranted(
     const nsPIDOMWindowInner& aWindow) {
   AssertIsOnMainThread();
   MOZ_ASSERT_IF(aWindow.GetExtantDoc(), aWindow.GetExtantDoc()
@@ -1886,7 +1886,7 @@ void RuntimeService::PropagateFirstPartyStorageAccessGranted(
                                             ->GetRejectThirdPartyContexts());
 
   for (WorkerPrivate* const worker : GetWorkersForWindow(aWindow)) {
-    worker->PropagateFirstPartyStorageAccessGranted();
+    worker->PropagateStorageAccessPermissionGranted();
   }
 }
 
@@ -2332,7 +2332,7 @@ void ResumeWorkersForWindow(const nsPIDOMWindowInner& aWindow) {
   }
 }
 
-void PropagateFirstPartyStorageAccessGrantedToWorkers(
+void PropagateStorageAccessPermissionGrantedToWorkers(
     const nsPIDOMWindowInner& aWindow) {
   AssertIsOnMainThread();
   MOZ_ASSERT_IF(aWindow.GetExtantDoc(), aWindow.GetExtantDoc()
@@ -2341,7 +2341,7 @@ void PropagateFirstPartyStorageAccessGrantedToWorkers(
 
   RuntimeService* runtime = RuntimeService::GetService();
   if (runtime) {
-    runtime->PropagateFirstPartyStorageAccessGranted(aWindow);
+    runtime->PropagateStorageAccessPermissionGranted(aWindow);
   }
 }
 

@@ -31,6 +31,7 @@
 #include "mozilla/dom/FetchEventOpProxyChild.h"
 #include "mozilla/dom/IndexedDatabaseManager.h"
 #include "mozilla/dom/MessagePort.h"
+#include "mozilla/dom/RemoteWorkerManager.h"  // RemoteWorkerManager::IsRemoteTypeAllowed
 #include "mozilla/dom/RemoteWorkerTypes.h"
 #include "mozilla/dom/ScriptSettings.h" //MY AutoJSAP
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
@@ -159,11 +160,11 @@ class MessagePortIdentifierRunnable final : public WorkerRunnable {
 // This is used to release WeakWorkerRefs which can only have their refcount
 // modified on the owning thread (worker thread in this case). It also keeps
 // alive the associated WorkerPrivate until the WeakWorkerRef is released.
-class ReleaseWorkerRunnable final : public WorkerRunnable {
+class ReleaseWorkerRunnable final : public WorkerControlRunnable {
  public:
   ReleaseWorkerRunnable(RefPtr<WorkerPrivate>&& aWorkerPrivate,
                         RefPtr<WeakWorkerRef>&& aWeakRef)
-      : WorkerRunnable(aWorkerPrivate),
+      : WorkerControlRunnable(aWorkerPrivate, WorkerThreadUnchangedBusyCount),
         mWorkerPrivate(std::move(aWorkerPrivate)),
         mWeakRef(std::move(aWeakRef)) {
     MOZ_ASSERT(mWorkerPrivate);
@@ -319,6 +320,16 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(RemoteWorkerData&& aData) {
   // Ensure that the IndexedDatabaseManager is initialized
   Unused << NS_WARN_IF(!IndexedDatabaseManager::GetOrCreate());
 
+  auto scopeExit = MakeScopeExit([&] { TransitionStateToTerminated(); });
+
+  // Verify the the RemoteWorker should be really allowed to run in this
+  // process, and fail if it shouldn't (This shouldn't normally happen,
+  // unless the RemoteWorkerData has been tempered in the process it was
+  // sent from).
+  if (!RemoteWorkerManager::IsRemoteTypeAllowed(aData)) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
   auto principalOrErr = PrincipalInfoToPrincipal(aData.principalInfo());
   if (NS_WARN_IF(principalOrErr.isErr())) {
     return principalOrErr.unwrapErr();
@@ -332,10 +343,10 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(RemoteWorkerData&& aData) {
     return loadingPrincipalOrErr.unwrapErr();
   }
 
-  auto storagePrincipalOrErr =
-      PrincipalInfoToPrincipal(aData.storagePrincipalInfo());
-  if (NS_WARN_IF(storagePrincipalOrErr.isErr())) {
-    return storagePrincipalOrErr.unwrapErr();
+  auto partitionedPrincipalOrErr =
+      PrincipalInfoToPrincipal(aData.partitionedPrincipalInfo());
+  if (NS_WARN_IF(partitionedPrincipalOrErr.isErr())) {
+    return partitionedPrincipalOrErr.unwrapErr();
   }
 
   WorkerLoadInfo info;
@@ -343,18 +354,22 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(RemoteWorkerData&& aData) {
   info.mResolvedScriptURI = DeserializeURI(aData.resolvedScriptURL());
 
   info.mPrincipalInfo = MakeUnique<PrincipalInfo>(aData.principalInfo());
-  info.mStoragePrincipalInfo =
-      MakeUnique<PrincipalInfo>(aData.storagePrincipalInfo());
+  info.mPartitionedPrincipalInfo =
+      MakeUnique<PrincipalInfo>(aData.partitionedPrincipalInfo());
 
   info.mReferrerInfo = aData.referrerInfo();
   info.mDomain = aData.domain();
   info.mPrincipal = principal;
-  info.mStoragePrincipal = storagePrincipalOrErr.unwrap();
+  info.mPartitionedPrincipal = partitionedPrincipalOrErr.unwrap();
   info.mLoadingPrincipal = loadingPrincipalOrErr.unwrap();
   info.mStorageAccess = aData.storageAccess();
+  info.mUseRegularPrincipal = aData.useRegularPrincipal();
+  info.mHasStorageAccessPermissionGranted =
+      aData.hasStorageAccessPermissionGranted();
   info.mOriginAttributes =
       BasePrincipal::Cast(principal)->OriginAttributesRef();
-  info.mCookieJarSettings = net::CookieJarSettings::Create();
+  net::CookieJarSettings::Deserialize(aData.cookieJarSettings(),
+                                      getter_AddRefs(info.mCookieJarSettings));
 
   // Default CSP permissions for now.  These will be overrided if necessary
   // based on the script CSP headers during load in ScriptLoader.
@@ -379,8 +394,6 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(RemoteWorkerData&& aData) {
 
   nsresult rv = NS_OK;
 
-  auto scopeExit = MakeScopeExit([&] { TransitionStateToTerminated(); });
-
   if (clientInfo.isSome()) {
     Maybe<mozilla::ipc::CSPInfo> cspInfo = clientInfo.ref().GetCspInfo();
     if (cspInfo.isSome()) {
@@ -394,13 +407,18 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(RemoteWorkerData&& aData) {
   }
 
   rv = info.SetPrincipalsAndCSPOnMainThread(
-      info.mPrincipal, info.mStoragePrincipal, info.mLoadGroup, info.mCSP);
+      info.mPrincipal, info.mPartitionedPrincipal, info.mLoadGroup, info.mCSP);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
+  nsString workerPrivateId = EmptyString();
+
   if (mIsServiceWorker) {
     ServiceWorkerData& data = aData.serviceWorkerData().get_ServiceWorkerData();
+
+    MOZ_ASSERT(!data.id().IsEmpty());
+    workerPrivateId = std::move(data.id());
 
     info.mServiceWorkerCacheName = data.cacheName();
     info.mServiceWorkerDescriptor.emplace(data.descriptor());
@@ -427,7 +445,7 @@ nsresult RemoteWorkerChild::ExecWorkerOnMainThread(RemoteWorkerData&& aData) {
   RefPtr<WorkerPrivate> workerPrivate = WorkerPrivate::Constructor(
       jsapi.cx(), aData.originalScriptURL(), false,
       mIsServiceWorker ? WorkerKindService : WorkerKindShared, aData.name(),
-      VoidCString(), &info, error);
+      VoidCString(), &info, error, std::move(workerPrivateId));
 
   if (NS_WARN_IF(error.Failed())) {
     MOZ_ASSERT(!workerPrivate);
@@ -510,8 +528,17 @@ void RemoteWorkerChild::InitializeOnWorker() {
     NS_ProxyRelease(__func__, mOwningEventTarget, self.forget());
   });
 
+  // Let RemoteWorkerChild own the WorkerPrivate; RemoteWorkerChild's state
+  // transitions should guarantee the WorkerPrivate is cleaned up correctly.
+  // This also reduces some complexity around thread lifetimes guarantees that
+  // RemoteWorkerChild's state transitions rely on (e.g. the worker thread
+  // terminating unexpectedly).
+  RefPtr<StrongWorkerRef> strongRef =
+      StrongWorkerRef::Create(workerPrivate, __func__);
+
   RefPtr<WeakWorkerRef> workerRef = WeakWorkerRef::Create(
-      workerPrivate, [selfWeakRef = std::move(selfWeakRef)]() mutable {
+      workerPrivate, [selfWeakRef = std::move(selfWeakRef),
+                      strongRef = std::move(strongRef)]() mutable {
         RefPtr<RemoteWorkerChild> self(selfWeakRef);
 
         if (NS_WARN_IF(!self)) {

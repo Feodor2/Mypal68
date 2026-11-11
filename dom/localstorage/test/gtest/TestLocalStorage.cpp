@@ -26,7 +26,7 @@ struct OriginKeyTest {
   const char* mQuotaKey;
 };
 
-already_AddRefed<nsIPrincipal> GetCodebasePrincipal(const char* aSpec) {
+already_AddRefed<nsIPrincipal> GetContentPrincipal(const char* aSpec) {
   nsCOMPtr<nsIURI> uri;
   nsresult rv = NS_NewURI(getter_AddRefs(uri), nsDependentCString(aSpec));
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -36,7 +36,7 @@ already_AddRefed<nsIPrincipal> GetCodebasePrincipal(const char* aSpec) {
   OriginAttributes attrs;
 
   nsCOMPtr<nsIPrincipal> principal =
-      BasePrincipal::CreateCodebasePrincipal(uri, attrs);
+      BasePrincipal::CreateContentPrincipal(uri, attrs);
 
   return principal.forget();
 }
@@ -129,9 +129,9 @@ TEST(LocalStorage, OriginKey)
   };
 
   for (const auto& test : tests) {
-    principal = GetCodebasePrincipal(test.mSpec);
+    principal = GetContentPrincipal(test.mSpec);
     ASSERT_TRUE(principal)
-    << "GetCodebasePrincipal() should not fail";
+    << "GetContentPrincipal() should not fail";
 
     CheckGeneratedOriginKey(principal, test.mOriginKey, test.mQuotaKey);
   }

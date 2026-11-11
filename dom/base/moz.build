@@ -20,7 +20,6 @@ XPIDL_SOURCES += [
     "nsIImageLoadingContent.idl",
     "nsIMessageManager.idl",
     "nsIObjectLoadingContent.idl",
-    "nsIRemoteWindowContext.idl",
     "nsIScriptableContentIterator.idl",
     "nsIScriptChannel.idl",
     "nsISelectionController.idl",
@@ -121,6 +120,7 @@ if CONFIG["MOZ_WEBRTC"]:
     ]
 
 EXPORTS.mozilla += [
+    "CallState.h",
     "ContentIterator.h",
     "CORSMode.h",
     "FlushType.h",

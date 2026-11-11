@@ -27,6 +27,7 @@
 #include "nsPIWindowWatcher.h"
 #include "nsPrintfCString.h"
 #include "nsWindowWatcher.h"
+#include "nsOpenWindowInfo.h"
 
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -51,9 +52,9 @@ class WebProgressListener final : public nsIWebProgressListener,
   WebProgressListener(BrowsingContext* aBrowsingContext, nsIURI* aBaseURI,
                       already_AddRefed<ClientOpPromise::Private> aPromise)
       : mPromise(aPromise),
-        mBrowsingContext(aBrowsingContext),
-        mBaseURI(aBaseURI) {
-    MOZ_ASSERT(aBrowsingContext);
+        mBaseURI(aBaseURI),
+        mBrowserId(aBrowsingContext->GetBrowserId()) {
+    MOZ_ASSERT(mBrowserId != 0);
     MOZ_ASSERT(aBaseURI);
     MOZ_ASSERT(NS_IsMainThread());
   }
@@ -61,20 +62,17 @@ class WebProgressListener final : public nsIWebProgressListener,
   NS_IMETHOD
   OnStateChange(nsIWebProgress* aWebProgress, nsIRequest* aRequest,
                 uint32_t aStateFlags, nsresult aStatus) override {
-    MOZ_ASSERT(mBrowsingContext);
-
     if (!(aStateFlags & STATE_IS_WINDOW) ||
         !(aStateFlags & (STATE_STOP | STATE_TRANSFERRING))) {
       return NS_OK;
     }
 
-    // Our caller keeps a strong reference, so it is safe to remove the listener
-    // from ServiceWorkerPrivate.
-    aWebProgress->RemoveProgressListener(this);
-
     // Our browsing context may have been discarded before finishing the load,
     // this is a navigation error.
-    if (mBrowsingContext->IsDiscarded()) {
+    RefPtr<CanonicalBrowsingContext> browsingContext =
+        CanonicalBrowsingContext::Cast(
+            BrowsingContext::GetCurrentTopByBrowserId(mBrowserId));
+    if (!browsingContext || browsingContext->IsDiscarded()) {
       CopyableErrorResult rv;
       rv.ThrowInvalidStateError("Unable to open window");
       mPromise->Reject(rv, __func__);
@@ -82,8 +80,13 @@ class WebProgressListener final : public nsIWebProgressListener,
       return NS_OK;
     }
 
+    // Our caller keeps a strong reference, so it is safe to remove the listener
+    // from the BrowsingContext's nsIWebProgress.
+    nsCOMPtr<nsIWebProgress> webProgress = browsingContext->GetWebProgress();
+    webProgress->RemoveProgressListener(this);
+
     RefPtr<dom::WindowGlobalParent> wgp =
-        mBrowsingContext->Canonical()->GetCurrentWindowGlobal();
+        browsingContext->GetCurrentWindowGlobal();
     if (NS_WARN_IF(!wgp)) {
       CopyableErrorResult rv;
       rv.ThrowInvalidStateError("Unable to open window");
@@ -172,49 +175,24 @@ class WebProgressListener final : public nsIWebProgressListener,
   }
 
   RefPtr<ClientOpPromise::Private> mPromise;
-  RefPtr<BrowsingContext> mBrowsingContext;
   nsCOMPtr<nsIURI> mBaseURI;
+  uint64_t mBrowserId;
 };
 
 NS_IMPL_ISUPPORTS(WebProgressListener, nsIWebProgressListener,
                   nsISupportsWeakReference);
 
-void OpenWindow(const ClientOpenWindowArgs& aArgs, BrowsingContext** aBC,
+struct ClientOpenWindowArgsParsed {
+  nsCOMPtr<nsIURI> uri;
+  nsCOMPtr<nsIURI> baseURI;
+  nsCOMPtr<nsIPrincipal> principal;
+  nsCOMPtr<nsIContentSecurityPolicy> csp;
+};
+
+void OpenWindow(const ClientOpenWindowArgsParsed& aArgsValidated,
+                nsOpenWindowInfo* aOpenInfo, BrowsingContext** aBC,
                 ErrorResult& aRv) {
   MOZ_DIAGNOSTIC_ASSERT(aBC);
-
-  // [[1. Let url be the result of parsing url with entry settings object's API
-  //   base URL.]]
-  nsCOMPtr<nsIURI> uri;
-
-  nsCOMPtr<nsIURI> baseURI;
-  nsresult rv = NS_NewURI(getter_AddRefs(baseURI), aArgs.baseURL());
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    nsPrintfCString err("Invalid base URL \"%s\"", aArgs.baseURL().get());
-    aRv.ThrowTypeError(err);
-    return;
-  }
-
-  rv = NS_NewURI(getter_AddRefs(uri), aArgs.url(), nullptr, baseURI);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    nsPrintfCString err("Invalid URL \"%s\"", aArgs.url().get());
-    aRv.ThrowTypeError(err);
-    return;
-  }
-
-  auto principalOrErr = PrincipalInfoToPrincipal(aArgs.principalInfo());
-  if (NS_WARN_IF(principalOrErr.isErr())) {
-    nsPrintfCString err("Failed to obtain principal");
-    aRv.ThrowTypeError(err);
-    return;
-  }
-  nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
-  MOZ_DIAGNOSTIC_ASSERT(principal);
-
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  if (aArgs.cspInfo().isSome()) {
-    csp = CSPInfoToCSP(aArgs.cspInfo().ref(), nullptr);
-  }
 
   // [[6.1 Open Window]]
 
@@ -243,83 +221,62 @@ void OpenWindow(const ClientOpenWindowArgs& aArgs, BrowsingContext** aBC,
     aRv.ThrowTypeError("Unable to open window");
     return;
   }
-  // annyG: This is a hack to fix bug 1622749.
-  // We will force to open new windows in tabs so we don't crash later.
-  rv = bwin->OpenURI(uri, nullptr, nsIBrowserDOMWindow::OPEN_NEWTAB,
-                     nsIBrowserDOMWindow::OPEN_NEW, principal, csp, aBC);
+  nsresult rv = bwin->CreateContentWindow(
+      nullptr, aOpenInfo, nsIBrowserDOMWindow::OPEN_DEFAULTWINDOW,
+      nsIBrowserDOMWindow::OPEN_NEW, aArgsValidated.principal,
+      aArgsValidated.csp, aBC);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     aRv.ThrowTypeError("Unable to open window");
     return;
   }
 }
 
-void WaitForLoad(const ClientOpenWindowArgs& aArgs,
+void WaitForLoad(const ClientOpenWindowArgsParsed& aArgsValidated,
                  BrowsingContext* aBrowsingContext,
                  ClientOpPromise::Private* aPromise) {
   MOZ_DIAGNOSTIC_ASSERT(aBrowsingContext);
 
   RefPtr<ClientOpPromise::Private> promise = aPromise;
-
-  nsCOMPtr<nsIURI> baseURI;
-  nsresult rv = NS_NewURI(getter_AddRefs(baseURI), aArgs.baseURL());
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    // Shouldn't really happen, since we passed in the serialization of a URI.
+  // We can get a WebProgress off of
+  // the BrowsingContext for the <xul:browser> to listen for content
+  // events. Note that this WebProgress filters out events which don't have
+  // STATE_IS_NETWORK or STATE_IS_REDIRECTED_DOCUMENT set on them, and so this
+  // listener will only see some web progress events.
+  nsCOMPtr<nsIWebProgress> webProgress =
+      aBrowsingContext->Canonical()->GetWebProgress();
+  if (NS_WARN_IF(!webProgress)) {
     CopyableErrorResult result;
-    result.ThrowSyntaxError("Bad URL");
+    result.ThrowInvalidStateError("Unable to watch window for navigation");
     promise->Reject(result, __func__);
     return;
   }
 
-  nsCOMPtr<nsIWebProgress> webProgress;
-  if (nsIDocShell* docShell = aBrowsingContext->GetDocShell()) {
-    // We're dealing with a non-remote frame. We have access to an nsDocShell,
-    // so we can just pull the nsIWebProgress off of that.
-    webProgress = nsDocShell::Cast(docShell);
-    nsFocusManager::FocusWindow(aBrowsingContext->GetDOMWindow());
-  } else {
-    // We're dealing with a remote frame. We can get a RemoteWebProgress off of
-    // the <xul:browser> that embeds |aBrowsingContext| to listen for content
-    // events. Note that RemoteWebProgress filters out events which don't have
-    // STATE_IS_NETWORK or STATE_IS_REDIRECTED_DOCUMENT set on them, and so this
-    // listener will only see some web progress events.
-    nsCOMPtr<Element> element = aBrowsingContext->GetEmbedderElement();
-    if (NS_WARN_IF(!element)) {
-      CopyableErrorResult result;
-      result.ThrowInvalidStateError("Unable to watch window for navigation");
-      promise->Reject(result, __func__);
-      return;
-    }
+  // Add a progress listener before we start the load of the service worker URI
+  RefPtr<WebProgressListener> listener = new WebProgressListener(
+      aBrowsingContext, aArgsValidated.baseURI, do_AddRef(promise));
 
-    nsCOMPtr<nsIBrowser> browser = element->AsBrowser();
-    if (NS_WARN_IF(!browser)) {
-      CopyableErrorResult result;
-      result.ThrowInvalidStateError("Unable to watch window for navigation");
-      promise->Reject(result, __func__);
-      return;
-    }
-
-    rv = browser->GetRemoteWebProgressManager(getter_AddRefs(webProgress));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      CopyableErrorResult result;
-      result.ThrowInvalidStateError("Unable to watch window for navigation");
-      promise->Reject(result, __func__);
-      return;
-    }
-
-    if (BrowserParent* browserParent = BrowserParent::GetFrom(element)) {
-      browserParent->Activate();
-    }
-  }
-
-  RefPtr<WebProgressListener> listener =
-      new WebProgressListener(aBrowsingContext, baseURI, do_AddRef(promise));
-
-  rv = webProgress->AddProgressListener(listener,
-                                        nsIWebProgress::NOTIFY_STATE_WINDOW);
+  nsresult rv = webProgress->AddProgressListener(
+      listener, nsIWebProgress::NOTIFY_STATE_WINDOW);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     CopyableErrorResult result;
     // XXXbz Can we throw something better here?
     result.Throw(rv);
+    promise->Reject(result, __func__);
+    return;
+  }
+
+  // Load the service worker URI
+  RefPtr<nsDocShellLoadState> loadState =
+      new nsDocShellLoadState(aArgsValidated.uri);
+  loadState->SetTriggeringPrincipal(aArgsValidated.principal);
+  loadState->SetFirstParty(true);
+  loadState->SetLoadFlags(
+      nsIWebNavigation::LOAD_FLAGS_DISALLOW_INHERIT_PRINCIPAL);
+
+  rv = aBrowsingContext->LoadURI(loadState, true);
+  if (NS_FAILED(rv)) {
+    CopyableErrorResult result;
+    result.ThrowInvalidStateError("Unable to start the load of the actual URI");
     promise->Reject(result, __func__);
     return;
   }
@@ -333,14 +290,15 @@ void WaitForLoad(const ClientOpenWindowArgs& aArgs,
 
 #ifdef MOZ_WIDGET_ANDROID
 
-void GeckoViewOpenWindow(const ClientOpenWindowArgs& aArgs,
+void GeckoViewOpenWindow(const ClientOpenWindowArgsParsed& aArgsValidated,
                          ClientOpPromise::Private* aPromise) {
   RefPtr<ClientOpPromise::Private> promise = aPromise;
 
   // passes the request to open a new window to GeckoView. Allowing the
   // application to decide how to hand the open window request.
-  auto genericResult =
-      java::GeckoRuntime::ServiceWorkerOpenWindow(aArgs.baseURL(), aArgs.url());
+  nsAutoCString uri;
+  MOZ_ALWAYS_SUCCEEDS(aArgsValidated.uri->GetSpec(uri));
+  auto genericResult = java::GeckoRuntime::ServiceWorkerOpenWindow(uri);
   auto typedResult = java::GeckoResult::LocalRef(std::move(genericResult));
 
   // MozPromise containing the ID for the handling GeckoSession
@@ -350,7 +308,7 @@ void GeckoViewOpenWindow(const ClientOpenWindowArgs& aArgs,
 
   promiseResult->Then(
       GetMainThreadSerialEventTarget(), __func__,
-      [aArgs, promise](nsString sessionId) {
+      [aArgsValidated, promise](nsString sessionId) {
         nsresult rv;
         nsCOMPtr<nsIWindowWatcher> wwatch =
             do_GetService(NS_WINDOWWATCHER_CONTRACTID, &rv);
@@ -370,7 +328,7 @@ void GeckoViewOpenWindow(const ClientOpenWindowArgs& aArgs,
           return NS_ERROR_FAILURE;
         }
 
-        WaitForLoad(aArgs, browsingContext, promise);
+        WaitForLoad(aArgsValidated, browsingContext, promise);
         return NS_OK;
       },
       [promise](nsString aResult) {
@@ -388,23 +346,87 @@ RefPtr<ClientOpPromise> ClientOpenWindow(const ClientOpenWindowArgs& aArgs) {
   RefPtr<ClientOpPromise::Private> promise =
       new ClientOpPromise::Private(__func__);
 
-#ifdef MOZ_WIDGET_ANDROID
-  // If we are on Android we are GeckoView.
-  GeckoViewOpenWindow(aArgs, promise);
-  return promise.forget();
-#endif  // MOZ_WIDGET_ANDROID
-
-  RefPtr<BrowsingContext> bc;
-  ErrorResult rv;
-  OpenWindow(aArgs, getter_AddRefs(bc), rv);
-  if (NS_WARN_IF(rv.Failed())) {
-    promise->Reject(rv, __func__);
+  // [[1. Let url be the result of parsing url with entry settings object's API
+  //   base URL.]]
+  nsCOMPtr<nsIURI> baseURI;
+  nsresult rv = NS_NewURI(getter_AddRefs(baseURI), aArgs.baseURL());
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    nsPrintfCString err("Invalid base URL \"%s\"", aArgs.baseURL().get());
+    CopyableErrorResult errResult;
+    errResult.ThrowTypeError(err);
+    promise->Reject(errResult, __func__);
     return promise;
   }
 
-  MOZ_DIAGNOSTIC_ASSERT(bc);
-  WaitForLoad(aArgs, bc, promise);
+  nsCOMPtr<nsIURI> uri;
+  rv = NS_NewURI(getter_AddRefs(uri), aArgs.url(), nullptr, baseURI);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    nsPrintfCString err("Invalid URL \"%s\"", aArgs.url().get());
+    CopyableErrorResult errResult;
+    errResult.ThrowTypeError(err);
+    promise->Reject(errResult, __func__);
+    return promise;
+  }
 
+  auto principalOrErr = PrincipalInfoToPrincipal(aArgs.principalInfo());
+  if (NS_WARN_IF(principalOrErr.isErr())) {
+    CopyableErrorResult errResult;
+    errResult.ThrowTypeError("Failed to obtain principal");
+    promise->Reject(errResult, __func__);
+    return promise;
+  }
+  nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
+  MOZ_DIAGNOSTIC_ASSERT(principal);
+
+  nsCOMPtr<nsIContentSecurityPolicy> csp;
+  if (aArgs.cspInfo().isSome()) {
+    csp = CSPInfoToCSP(aArgs.cspInfo().ref(), nullptr);
+  }
+  ClientOpenWindowArgsParsed argsValidated;
+  argsValidated.uri = uri;
+  argsValidated.baseURI = baseURI;
+  argsValidated.principal = principal;
+  argsValidated.csp = csp;
+
+#ifdef MOZ_WIDGET_ANDROID
+  // If we are on Android we are GeckoView.
+  GeckoViewOpenWindow(argsValidated, promise);
+  return promise.forget();
+#endif  // MOZ_WIDGET_ANDROID
+
+  RefPtr<BrowsingContextCallbackReceivedPromise::Private>
+      browsingContextReadyPromise =
+          new BrowsingContextCallbackReceivedPromise::Private(__func__);
+  RefPtr<nsIBrowsingContextReadyCallback> callback =
+      new nsBrowsingContextReadyCallback(browsingContextReadyPromise);
+
+  RefPtr<nsOpenWindowInfo> openInfo = new nsOpenWindowInfo();
+  openInfo->mBrowsingContextReadyCallback = callback;
+  openInfo->mOriginAttributes = principal->OriginAttributesRef();
+  openInfo->mIsRemote = true;
+
+  RefPtr<BrowsingContext> bc;
+  ErrorResult errResult;
+  OpenWindow(argsValidated, openInfo, getter_AddRefs(bc), errResult);
+  if (NS_WARN_IF(errResult.Failed())) {
+    promise->Reject(errResult, __func__);
+    return promise;
+  }
+
+  browsingContextReadyPromise->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [argsValidated, promise](const RefPtr<BrowsingContext>& aBC) {
+        WaitForLoad(argsValidated, aBC, promise);
+      },
+      [promise]() {
+        // in case of failure, reject the original promise
+        CopyableErrorResult result;
+        result.ThrowTypeError("Unable to open window");
+        promise->Reject(result, __func__);
+      });
+  if (bc) {
+    browsingContextReadyPromise->Resolve(bc, __func__);
+  }
   return promise;
 }
 

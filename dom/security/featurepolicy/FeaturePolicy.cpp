@@ -163,7 +163,7 @@ bool FeaturePolicy::AllowsFeature(const nsAString& aFeatureName,
     if (NS_FAILED(rv)) {
       return false;
     }
-    origin = BasePrincipal::CreateCodebasePrincipal(
+    origin = BasePrincipal::CreateContentPrincipal(
         uri, BasePrincipal::Cast(mDefaultOrigin)->OriginAttributesRef());
   } else {
     origin = mDefaultOrigin;
@@ -301,7 +301,7 @@ void FeaturePolicy::GetAllowlistForFeature(const nsAString& aFeatureName,
 void FeaturePolicy::MaybeSetAllowedPolicy(const nsAString& aFeatureName) {
   MOZ_ASSERT(FeaturePolicyUtils::IsSupportedFeature(aFeatureName) ||
              FeaturePolicyUtils::IsExperimentalFeature(aFeatureName));
-  // Skip if feature is in experimental pharse
+  // Skip if feature is in experimental phase
   if (!StaticPrefs::dom_security_featurePolicy_experimental_enabled() &&
       FeaturePolicyUtils::IsExperimentalFeature(aFeatureName)) {
     return;

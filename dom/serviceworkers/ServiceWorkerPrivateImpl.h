@@ -85,6 +85,8 @@ class ServiceWorkerPrivateImpl final : public ServiceWorkerPrivate::Inner,
                           const nsAString& aClientId,
                           const nsAString& aResultingClientId) override;
 
+  nsresult SpawnWorkerIfNeeded() override;
+
   void TerminateWorker() override;
 
   void UpdateState(ServiceWorkerState aState) override;
@@ -107,8 +109,6 @@ class ServiceWorkerPrivateImpl final : public ServiceWorkerPrivate::Inner,
   // Refreshes only the parts of mRemoteWorkerData that may change over time.
   void RefreshRemoteWorkerData(
       const RefPtr<ServiceWorkerRegistrationInfo>& aRegistration);
-
-  nsresult SpawnWorkerIfNeeded();
 
   nsresult SendPushEventInternal(
       RefPtr<ServiceWorkerRegistrationInfo>&& aRegistration,

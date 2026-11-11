@@ -237,6 +237,8 @@ class WorkerGlobalScope : public WorkerGlobalScopeBase {
   // WindowOrWorkerGlobalScope WebIDL implementation
   void GetOrigin(nsAString& aOrigin) const;
 
+  bool CrossOriginIsolated() const;
+
   MOZ_CAN_RUN_SCRIPT
   int32_t SetTimeout(JSContext* aCx, Function& aHandler, int32_t aTimeout,
                      const Sequence<JS::Value>& aArguments, ErrorResult& aRv);
@@ -291,7 +293,7 @@ class WorkerGlobalScope : public WorkerGlobalScopeBase {
 
   uint64_t WindowID() const;
 
-  void FirstPartyStorageAccessGranted();
+  void StorageAccessPermissionGranted();
 
  protected:
   ~WorkerGlobalScope();

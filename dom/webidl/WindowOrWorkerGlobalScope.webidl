@@ -13,6 +13,7 @@
 [Exposed=(Window,Worker)]
 interface mixin WindowOrWorkerGlobalScope {
   [Replaceable] readonly attribute USVString origin;
+  readonly attribute boolean crossOriginIsolated;
 
   [Throws, NeedsCallerType]
   undefined reportError(any e);

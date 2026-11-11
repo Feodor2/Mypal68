@@ -246,11 +246,12 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   virtual nsresult DoSendAsyncMessage(const nsAString& aMessage,
                                       StructuredCloneData& aData) override;
 
-  bool DoUpdateZoomConstraints(
-      const uint32_t& aPresShellId, const ViewID& aViewId,
-      const Maybe<ZoomConstraints>& aConstraints);
+  bool DoUpdateZoomConstraints(const uint32_t& aPresShellId,
+                               const ViewID& aViewId,
+                               const Maybe<ZoomConstraints>& aConstraints);
 
   mozilla::ipc::IPCResult RecvLoadURL(const nsCString& aURI,
+                                      nsIPrincipal* aTriggeringPrincipal,
                                       const ParentShowInfo&);
 
   mozilla::ipc::IPCResult RecvResumeLoad(const uint64_t& aPendingSwitchID,
@@ -353,6 +354,8 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
                                             const bool& aIsFinal);
 
   mozilla::ipc::IPCResult RecvUpdateEpoch(const uint32_t& aEpoch);
+
+  mozilla::ipc::IPCResult RecvUpdateSHistory(const bool& aImmediately);
 
   mozilla::ipc::IPCResult RecvNativeSynthesisResponse(
       const uint64_t& aObserverId, const nsCString& aResponse);
@@ -493,13 +496,8 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
                                                   const int32_t& aRounding,
                                                   const double& aScale);
 
-  mozilla::ipc::IPCResult RecvThemeChanged(
-      nsTArray<LookAndFeelInt>&& aLookAndFeelIntCache);
-
   mozilla::ipc::IPCResult RecvHandleAccessKey(const WidgetKeyboardEvent& aEvent,
                                               nsTArray<uint32_t>&& aCharCodes);
-
-  mozilla::ipc::IPCResult RecvSetUseGlobalHistory(const bool& aUse);
 
   mozilla::ipc::IPCResult RecvHandledWindowedPluginKeyEvent(
       const mozilla::NativeEventData& aKeyEventData, const bool& aIsConsumed);
@@ -590,11 +588,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   uintptr_t GetNativeWindowHandle() const { return mNativeWindowHandle; }
 #endif
 
-  // These methods return `true` if this BrowserChild is currently awaiting a
-  // Large-Allocation header.
-  bool StopAwaitingLargeAlloc();
-  bool IsAwaitingLargeAlloc();
-
   BrowsingContext* GetBrowsingContext() const { return mBrowsingContext; }
 
 #if defined(ACCESSIBILITY)
@@ -650,6 +643,17 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   bool UpdateSessionStore(uint32_t aFlushId, bool aIsFinal = false);
 
+  // Notify the content blocking event in the parent process. This sends an IPC
+  // message to the BrowserParent in the parent. The BrowserParent will find the
+  // top-level WindowGlobalParent and notify the event from it.
+  void NotifyContentBlockingEvent(
+      uint32_t aEvent, nsIChannel* aChannel, bool aBlocked,
+      const nsACString& aTrackingOrigin,
+      const nsTArray<nsCString>& aTrackingFullHashes,
+      const Maybe<
+          ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
+          aReason);
+
  protected:
   virtual ~BrowserChild();
 
@@ -677,15 +681,10 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
 
   mozilla::ipc::IPCResult RecvStopIMEStateManagement();
 
-  mozilla::ipc::IPCResult RecvAwaitLargeAlloc();
-
   mozilla::ipc::IPCResult RecvAllowScriptsToClose();
 
   mozilla::ipc::IPCResult RecvSetWidgetNativeData(
       const WindowsHandle& aWidgetNativeData);
-
-  mozilla::ipc::IPCResult RecvGetContentBlockingLog(
-      GetContentBlockingLogResolver&& aResolve);
 
  private:
   void ProcessUpdateFrame(const mozilla::layers::RepaintRequest& aRequest);
@@ -810,7 +809,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   CSSSize mUnscaledInnerSize;
   bool mDidSetRealShowInfo;
   bool mDidLoadURLInit;
-  bool mAwaitingLA;
 
   bool mSkipKeyPress;
 

@@ -9293,7 +9293,7 @@ Result<Ok, nsCString> PrincipalVerifier::CheckPrincipalInfoValidity(
       }
 
       nsCOMPtr<nsIPrincipal> principal =
-          BasePrincipal::CreateCodebasePrincipal(uri, info.attrs());
+          BasePrincipal::CreateContentPrincipal(uri, info.attrs());
       if (NS_WARN_IF(!principal)) {
         return Err("CreateContentPrincipal failed"_ns);
       }

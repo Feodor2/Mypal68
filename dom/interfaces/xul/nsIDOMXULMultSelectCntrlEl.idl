@@ -16,7 +16,7 @@ interface nsIDOMXULMultiSelectControlElement : nsIDOMXULSelectControlElement
   attribute long currentIndex;
 
   readonly attribute NodeList selectedItems;
-  
+
   void addItemToSelection(in nsIDOMXULSelectControlItemElement item);
   void removeItemFromSelection(in nsIDOMXULSelectControlItemElement item);
   void toggleItemSelection(in nsIDOMXULSelectControlItemElement item);

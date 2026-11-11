@@ -120,23 +120,8 @@ TextControlElement::FocusTristate TextControlElement::FocusState() {
     return FocusTristate::eUnfocusable;
   }
 
-  // If the window is not active, do not allow the focus to bring the
-  // window to the front.  We update the focus controller, but do
-  // nothing else.
-  if (nsPIDOMWindowOuter* win = doc->GetWindow()) {
-    nsCOMPtr<nsPIDOMWindowOuter> rootWindow = win->GetPrivateRoot();
-
-    nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
-    if (fm && rootWindow) {
-      nsCOMPtr<mozIDOMWindowProxy> activeWindow;
-      fm->GetActiveWindow(getter_AddRefs(activeWindow));
-      if (activeWindow == rootWindow) {
-        return FocusTristate::eActiveWindow;
-      }
-    }
-  }
-
-  return FocusTristate::eInactiveWindow;
+  return IsInActiveTab(doc) ? FocusTristate::eActiveWindow
+                            : FocusTristate::eInactiveWindow;
 }
 
 using ValueChangeKind = TextControlElement::ValueChangeKind;

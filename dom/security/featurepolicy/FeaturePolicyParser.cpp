@@ -124,7 +124,7 @@ bool FeaturePolicyParser::ParseString(const nsAString& aPolicy,
           continue;
         }
 
-        nsCOMPtr<nsIPrincipal> origin = BasePrincipal::CreateCodebasePrincipal(
+        nsCOMPtr<nsIPrincipal> origin = BasePrincipal::CreateContentPrincipal(
             uri, BasePrincipal::Cast(aSelfOrigin)->OriginAttributesRef());
         if (NS_WARN_IF(!origin)) {
           ReportToConsoleInvalidAllowValue(aDocument, curVal);

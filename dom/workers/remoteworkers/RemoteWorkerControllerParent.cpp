@@ -15,7 +15,6 @@
 #include "mozilla/Unused.h"
 #include "mozilla/dom/FetchEventOpParent.h"
 #include "mozilla/dom/ServiceWorkerOpPromise.h"
-#include "mozilla/dom/ServiceWorkerShutdownState.h"
 #include "mozilla/ipc/BackgroundParent.h"
 
 namespace mozilla {
@@ -79,7 +78,22 @@ IPCResult RemoteWorkerControllerParent::RecvPFetchEventOpConstructor(
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aActor);
 
-  (static_cast<FetchEventOpParent*>(aActor))->Initialize(aArgs);
+  RefPtr<FetchEventOpParent> realFetchOp =
+      static_cast<FetchEventOpParent*>(aActor);
+  mRemoteWorkerController->ExecServiceWorkerFetchEventOp(aArgs, realFetchOp)
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [fetchOp = std::move(realFetchOp)](
+              ServiceWorkerFetchEventOpPromise::ResolveOrRejectValue&&
+                  aResult) {
+            if (NS_WARN_IF(aResult.IsReject())) {
+              MOZ_ASSERT(NS_FAILED(aResult.RejectValue()));
+              Unused << fetchOp->Send__delete__(fetchOp, aResult.RejectValue());
+              return;
+            }
+
+            Unused << fetchOp->Send__delete__(fetchOp, aResult.ResolveValue());
+          });
 
   return IPC_OK();
 }
@@ -99,8 +113,6 @@ IPCResult RemoteWorkerControllerParent::RecvExecServiceWorkerOp(
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(mIPCActive);
   MOZ_ASSERT(mRemoteWorkerController);
-
-  MaybeReportServiceWorkerShutdownProgress(aArgs);
 
   mRemoteWorkerController->ExecServiceWorkerOp(std::move(aArgs))
       ->Then(GetCurrentSerialEventTarget(), __func__,

@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PContent;
-include protocol PSHEntry;
 include protocol PWebBrowserPersistResources;
 include protocol PWebBrowserPersistSerialize;
 include protocol PFileDescriptorSet;
@@ -19,8 +18,9 @@ using refcounted class nsIReferrerInfo from "nsIReferrerInfo.h";
 
 namespace mozilla {
 
+// FIXME When session history lives in the parent we need to figure out how to
+//       point the parent process at the right entry to get the cache key.
 union SessionHistoryEntryOrCacheKey {
-  nullable PSHEntry;
   uint32_t;
 };
 

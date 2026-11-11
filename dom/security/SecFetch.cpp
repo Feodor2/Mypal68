@@ -329,10 +329,10 @@ void mozilla::dom::SecFetch::AddSecFetchUser(nsIHttpChannel* aHTTPChannel) {
 
   // sec-fetch-user only applies if the request is user triggered.
   // requests triggered by an external application are considerd user triggered.
-  /*if (!loadInfo->GetLoadTriggeredFromExternal() &&
+  if (!loadInfo->GetLoadTriggeredFromExternal() &&
       !loadInfo->GetHasValidUserGestureActivation()) {
     return;
-  }*/
+  }
 
   nsAutoCString user("?1");
   nsresult rv =

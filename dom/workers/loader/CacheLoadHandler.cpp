@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CacheLoadHandler.h"
-//#include "ScriptResponseHeaderProcessor.h"  // ScriptResponseHeaderProcessor
+#include "ScriptResponseHeaderProcessor.h"  // ScriptResponseHeaderProcessor
 
 #include "nsIPrincipal.h"
 
@@ -367,6 +367,20 @@ void CacheLoadHandler::ResolvedCallback(JSContext* aCx,
   headers->Get("referrer-policy"_ns, mReferrerPolicyHeaderValue,
                IgnoreErrors());
 
+  nsAutoCString coepHeader;
+  headers->Get("cross-origin-embedder-policy"_ns, coepHeader, IgnoreErrors());
+
+  nsILoadInfo::CrossOriginEmbedderPolicy coep =
+      NS_GetCrossOriginEmbedderPolicyFromHeader(coepHeader);
+
+  rv = ScriptResponseHeaderProcessor::ProcessCrossOriginEmbedderPolicyHeader(
+      mLoader->mWorkerPrivate, coep, mLoader->IsMainScript());
+
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    Fail(rv);
+    return;
+  }
+
   nsCOMPtr<nsIInputStream> inputStream;
   response->GetBody(getter_AddRefs(inputStream));
   mChannelInfo = response->GetChannelInfo();
@@ -520,8 +534,8 @@ nsresult CacheLoadHandler::DataReceivedFromCache(
     // referrer logic depends on the WorkerPrivate principal having a URL
     // that matches the worker script URL.  If bug 1340694 is ever fixed
     // this can be removed.
-    // XXX: force the storagePrincipal to be equal to the response one. This
-    // is OK for now because we don't want to expose storagePrincipal
+    // XXX: force the partitionedPrincipal to be equal to the response one.
+    // This is OK for now because we don't want to expose partitionedPrincipal
     // functionality in ServiceWorkers yet.
     rv = mWorkerPrivate->SetPrincipalsAndCSPOnMainThread(
         responsePrincipal, responsePrincipal, loadGroup, nullptr);

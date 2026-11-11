@@ -87,8 +87,6 @@ class DocumentOrShadowRoot : public RadioGroupManager {
 
   StyleSheetList* StyleSheets();
 
-  void GetAdoptedStyleSheets(nsTArray<RefPtr<StyleSheet>>&) const;
-
   void RemoveStyleSheet(StyleSheet&);
 
   Element* GetElementById(const nsAString& aElementId);

@@ -22,6 +22,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/BitSet.h"
+#include "mozilla/CallState.h"
 #include "mozilla/ContentBlockingLog.h"  //MY
 #include "mozilla/CORSMode.h"
 #include "mozilla/EventStates.h"
@@ -132,6 +133,7 @@ class nsDOMCaretPosition;
 class nsDOMNavigationTiming;
 class nsDocShell;
 class nsFrameLoader;
+class nsFrameLoaderOwner;
 class nsGenericHTMLElement;
 class nsGlobalWindowInner;
 class nsHTMLCSSStyleSheet;
@@ -315,10 +317,24 @@ enum class DeprecatedOperations : uint16_t {
 
 // Document states
 
-// RTL locale: specific to the XUL localedir attribute
-#define NS_DOCUMENT_STATE_RTL_LOCALE NS_DEFINE_EVENT_STATE_MACRO(0)
 // Window activation status
-#define NS_DOCUMENT_STATE_WINDOW_INACTIVE NS_DEFINE_EVENT_STATE_MACRO(1)
+#define NS_DOCUMENT_STATE_WINDOW_INACTIVE NS_DEFINE_EVENT_STATE_MACRO(0)
+// RTL locale: specific to the XUL localedir attribute.
+#define NS_DOCUMENT_STATE_RTL_LOCALE NS_DEFINE_EVENT_STATE_MACRO(1)
+// LTR locale: specific to the XUL localedir attribute. This is mutually
+// exclusive with the RTL bit, but the style system invalidation code is simpler
+// if we differentiate between the two states.
+#define NS_DOCUMENT_STATE_LTR_LOCALE NS_DEFINE_EVENT_STATE_MACRO(2)
+// Lightweight-theme status.
+#define NS_DOCUMENT_STATE_LWTHEME NS_DEFINE_EVENT_STATE_MACRO(3)
+#define NS_DOCUMENT_STATE_LWTHEME_BRIGHTTEXT NS_DEFINE_EVENT_STATE_MACRO(4)
+#define NS_DOCUMENT_STATE_LWTHEME_DARKTEXT NS_DEFINE_EVENT_STATE_MACRO(5)
+
+#define NS_DOCUMENT_STATE_ALL_LOCALEDIR_BITS \
+  (NS_DOCUMENT_STATE_RTL_LOCALE | NS_DOCUMENT_STATE_LTR_LOCALE)
+#define NS_DOCUMENT_STATE_ALL_LWTHEME_BITS                            \
+  (NS_DOCUMENT_STATE_LWTHEME | NS_DOCUMENT_STATE_LWTHEME_BRIGHTTEXT | \
+   NS_DOCUMENT_STATE_LWTHEME_DARKTEXT)
 
 class DocHeaderData {
  public:
@@ -333,7 +349,7 @@ class DocHeaderData {
 };
 
 class ExternalResourceMap {
-  using SubDocEnumFunc = FunctionRef<bool(Document&)>;
+  using SubDocEnumFunc = FunctionRef<CallState(Document&)>;
 
  public:
   /**
@@ -611,13 +627,11 @@ class Document : public nsINode,
     return EffectiveStoragePrincipal();
   }
 
-  // You should probably not be using this function, since it performs no
-  // checks to ensure that the intrinsic storage principal should really be
-  // used here.  It is only designed to be used in very specific circumstances,
-  // such as when inheriting the document/storage principal.
-  nsIPrincipal* IntrinsicStoragePrincipal() final {
-    return mIntrinsicStoragePrincipal;
-  }
+  // You should probably not be using this function, since it performs no checks
+  // to ensure that the partitioned principal should really be used here.  It is
+  // only designed to be used in very specific circumstances, such as when
+  // inheriting the document/storage principal.
+  nsIPrincipal* PartitionedPrincipal() final { return mPartitionedPrincipal; }
 
   void ClearActiveStoragePrincipal() { mActiveStoragePrincipal = nullptr; }
 
@@ -867,7 +881,8 @@ class Document : public nsINode,
    * Set the principals responsible for this document.  Chances are, you do not
    * want to be using this.
    */
-  void SetPrincipals(nsIPrincipal* aPrincipal, nsIPrincipal* aStoragePrincipal);
+  void SetPrincipals(nsIPrincipal* aPrincipal,
+                     nsIPrincipal* aPartitionedPrincipal);
 
   /**
    * Get the list of ancestor principals for a document.  This is the same as
@@ -1058,60 +1073,6 @@ class Document : public nsINode,
   void SetBidiOptions(uint32_t aBidiOptions) { mBidiOptions = aBidiOptions; }
 
   /**
-   * Get the has mixed active content loaded flag for this document.
-   */
-  bool GetHasMixedActiveContentLoaded() { return mHasMixedActiveContentLoaded; }
-
-  /**
-   * Set the has mixed active content loaded flag for this document.
-   */
-  void SetHasMixedActiveContentLoaded(bool aHasMixedActiveContentLoaded) {
-    mHasMixedActiveContentLoaded = aHasMixedActiveContentLoaded;
-  }
-
-  /**
-   * Get mixed active content blocked flag for this document.
-   */
-  bool GetHasMixedActiveContentBlocked() {
-    return mHasMixedActiveContentBlocked;
-  }
-
-  /**
-   * Set the mixed active content blocked flag for this document.
-   */
-  void SetHasMixedActiveContentBlocked(bool aHasMixedActiveContentBlocked) {
-    mHasMixedActiveContentBlocked = aHasMixedActiveContentBlocked;
-  }
-
-  /**
-   * Get the has mixed display content loaded flag for this document.
-   */
-  bool GetHasMixedDisplayContentLoaded() {
-    return mHasMixedDisplayContentLoaded;
-  }
-
-  /**
-   * Set the has mixed display content loaded flag for this document.
-   */
-  void SetHasMixedDisplayContentLoaded(bool aHasMixedDisplayContentLoaded) {
-    mHasMixedDisplayContentLoaded = aHasMixedDisplayContentLoaded;
-  }
-
-  /**
-   * Get mixed display content blocked flag for this document.
-   */
-  bool GetHasMixedDisplayContentBlocked() {
-    return mHasMixedDisplayContentBlocked;
-  }
-
-  /**
-   * Set the mixed display content blocked flag for this document.
-   */
-  void SetHasMixedDisplayContentBlocked(bool aHasMixedDisplayContentBlocked) {
-    mHasMixedDisplayContentBlocked = aHasMixedDisplayContentBlocked;
-  }
-
-  /**
    * Set CSP flag for this document.
    */
   void SetHasCSP(bool aHasCSP) { mHasCSP = aHasCSP; }
@@ -1139,144 +1100,26 @@ class Document : public nsINode,
   }
 
   /**
-   * Get the content blocking log.
+   * Return a promise which resolves to the content blocking events.
    */
-  ContentBlockingLog* GetContentBlockingLog() { return &mContentBlockingLog; }
-
-  /**
-   * Get tracking content blocked flag for this document.
-   */
-  bool GetHasTrackingContentBlocked() {
-    return mContentBlockingLog.HasBlockedAnyOfType(
-        nsIWebProgressListener::STATE_BLOCKED_TRACKING_CONTENT);
-  }
-
-  /**
-   * Get all cookies blocked flag for this document.
-   */
-  bool GetHasAllCookiesBlocked() {
-    return mContentBlockingLog.HasBlockedAnyOfType(
-        nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL);
-  }
-
-  /**
-   * Get tracking cookies blocked flag for this document.
-   */
-  bool GetHasTrackingCookiesBlocked() {
-    return mContentBlockingLog.HasBlockedAnyOfType(
-        nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER);
-  }
-
-  /**
-   * Get third-party cookies blocked flag for this document.
-   */
-  bool GetHasForeignCookiesBlocked() {
-    return mContentBlockingLog.HasBlockedAnyOfType(
-        nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN);
-  }
-
-  /**
-   * Get cookies blocked by site permission flag for this document.
-   */
-  bool GetHasCookiesBlockedByPermission() {
-    return mContentBlockingLog.HasBlockedAnyOfType(
-        nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION);
-  }
-
-  /**
-   * Set the tracking content blocked flag for this document.
-   */
-  void SetHasTrackingContentBlocked(bool aHasTrackingContentBlocked,
-                                    const nsACString& aOriginBlocked) {
-    RecordContentBlockingLog(
-        aOriginBlocked, nsIWebProgressListener::STATE_BLOCKED_TRACKING_CONTENT,
-        aHasTrackingContentBlocked);
-  }
-
-  /**
-   * Set the all cookies blocked flag for this document.
-   */
-  void SetHasAllCookiesBlocked(bool aHasAllCookiesBlocked,
-                               const nsACString& aOriginBlocked) {
-    RecordContentBlockingLog(aOriginBlocked,
-                             nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL,
-                             aHasAllCookiesBlocked);
-  }
-
-  /**
-   * Set the tracking cookies blocked flag for this document.
-   */
-  void SetHasTrackingCookiesBlocked(
-      bool aHasTrackingCookiesBlocked, const nsACString& aOriginBlocked,
-      const Maybe<ContentBlockingNotifier::StorageAccessGrantedReason>& aReason,
-      const nsTArray<nsCString>& aTrackingFullHashes) {
-    RecordContentBlockingLog(
-        aOriginBlocked, nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER,
-        aHasTrackingCookiesBlocked, aReason, aTrackingFullHashes);
-  }
-
-  /**
-   * Set the third-party cookies blocked flag for this document.
-   */
-  void SetHasForeignCookiesBlocked(bool aHasForeignCookiesBlocked,
-                                   const nsACString& aOriginBlocked) {
-    RecordContentBlockingLog(
-        aOriginBlocked, nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN,
-        aHasForeignCookiesBlocked);
-  }
-
-  /**
-   * Set the cookies blocked by site permission flag for this document.
-   */
-  void SetHasCookiesBlockedByPermission(bool aHasCookiesBlockedByPermission,
-                                        const nsACString& aOriginBlocked) {
-    RecordContentBlockingLog(
-        aOriginBlocked,
-        nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION,
-        aHasCookiesBlockedByPermission);
-  }
-
-  /**
-   * Set the cookies loaded flag for this document.
-   */
-  void SetHasCookiesLoaded(bool aHasCookiesLoaded,
-                           const nsACString& aOriginLoaded) {
-    RecordContentBlockingLog(aOriginLoaded,
-                             nsIWebProgressListener::STATE_COOKIES_LOADED,
-                             aHasCookiesLoaded);
-  }
-
-  /**
-   * Get cookies loaded flag for this document.
-   */
-  bool GetHasCookiesLoaded() {
-    return mContentBlockingLog.HasBlockedAnyOfType(
-        nsIWebProgressListener::STATE_COOKIES_LOADED);
-  }
-
-  /**
-   * Get tracking content loaded flag for this document.
-   */
-  bool GetHasTrackingContentLoaded() {
-    return mContentBlockingLog.HasBlockedAnyOfType(
-        nsIWebProgressListener::STATE_LOADED_TRACKING_CONTENT);
-  }
-
-  /**
-   * Set the tracking content loaded flag for this document.
-   */
-  void SetHasTrackingContentLoaded(bool aHasTrackingContentLoaded,
-                                   const nsACString& aOriginBlocked) {
-    RecordContentBlockingLog(
-        aOriginBlocked, nsIWebProgressListener::STATE_LOADED_TRACKING_CONTENT,
-        aHasTrackingContentLoaded);
-  }
+  typedef MozPromise<uint32_t, bool, true> GetContentBlockingEventsPromise;
+  MOZ_MUST_USE RefPtr<GetContentBlockingEventsPromise>
+  GetContentBlockingEvents();
 
   /**
    * Get the sandbox flags for this document.
    * @see nsSandboxFlags.h for the possible flags
    */
   uint32_t GetSandboxFlags() const { return mSandboxFlags; }
+
+  Maybe<nsILoadInfo::CrossOriginEmbedderPolicy> GetEmbedderPolicy() const {
+    return mEmbedderPolicy;
+  }
+
+  void SetEmbedderPolicy(
+      const Maybe<nsILoadInfo::CrossOriginEmbedderPolicy>& aCOEP) {
+    mEmbedderPolicy = aCOEP;
+  }
 
   /**
    * Get string representation of sandbox flags (null if no flags are set)
@@ -1419,6 +1262,8 @@ class Document : public nsINode,
 
   already_AddRefed<Promise> HasStorageAccess(ErrorResult& aRv);
   already_AddRefed<Promise> RequestStorageAccess(ErrorResult& aRv);
+
+  bool UseRegularPrincipal() const;
 
   /**
    * Gets the event target to dispatch key events to if there is no focused
@@ -1569,8 +1414,8 @@ class Document : public nsINode,
   // Returns the cookie jar settings for this and sub contexts.
   nsICookieJarSettings* CookieJarSettings();
 
-  // Returns whether this document has the storage permission.
-  bool HasStoragePermission() { return mHasStoragePermission; }
+  // Returns whether this document has the storage access permission.
+  bool HasStorageAccessPermissionGranted();
 
   // Increments the document generation.
   inline void Changed() { ++mGeneration; }
@@ -1661,10 +1506,13 @@ class Document : public nsINode,
 
   PreloadService& Preloads() { return mPreloadService; }
 
+  bool HasThirdPartyChannel();
+
  protected:
   friend class nsUnblockOnloadEvent;
 
   nsresult InitCSP(nsIChannel* aChannel);
+  nsresult InitCOEP(nsIChannel* aChannel);
 
   nsresult InitFeaturePolicy(nsIChannel* aChannel);
 
@@ -1982,6 +1830,13 @@ class Document : public nsINode,
                             : nullptr;
   }
 
+  /**
+   * Return WindowContext associated with the inner window.
+   */
+  WindowContext* GetWindowContext() const {
+    return GetInnerWindow() ? GetInnerWindow()->GetWindowContext() : nullptr;
+  }
+
   bool IsTopLevelWindowInactive() const;
 
   /**
@@ -2025,6 +1880,13 @@ class Document : public nsINode,
   void RequestFullscreen(UniquePtr<FullscreenRequest> aRequest,
                          bool applyFullScreenDirectly = false);
 
+ private:
+  void RequestFullscreenInContentProcess(UniquePtr<FullscreenRequest> aRequest,
+                                         bool applyFullScreenDirectly);
+  void RequestFullscreenInParentProcess(UniquePtr<FullscreenRequest> aRequest,
+                                        bool applyFullScreenDirectly);
+
+ public:
   // Removes all the elements with fullscreen flag set from the top layer, and
   // clears their fullscreen flag.
   void CleanupFullscreenState();
@@ -2189,6 +2051,8 @@ class Document : public nsINode,
   void NotifyLoading(bool aNewParentIsLoading, const ReadyState& aCurrentState,
                      ReadyState aNewState);
 
+  void NotifyAbortedLoad();
+
   // notify that a content node changed state.  This must happen under
   // a scriptblocker but NOT within a begin/end update.
   void ContentStateChanged(nsIContent* aContent, EventStates aStateMask);
@@ -2198,7 +2062,7 @@ class Document : public nsINode,
   // implementation of Document::GetDocumentState.
   //
   // aNotify controls whether we notify our DocumentStatesChanged observers.
-  void UpdateDocumentStates(EventStates aStateMask, bool aNotify);
+  void UpdateDocumentStates(EventStates aMaybeChangedStates, bool aNotify);
 
   void ResetDocumentDirection();
 
@@ -2255,13 +2119,13 @@ class Document : public nsINode,
   virtual void Reset(nsIChannel* aChannel, nsILoadGroup* aLoadGroup);
 
   /**
-   * Reset this document to aURI, aLoadGroup, aPrincipal and aStoragePrincipal.
-   * aURI must not be null.  If aPrincipal is null, a codebase principal based
-   * on aURI will be used.
+   * Reset this document to aURI, aLoadGroup, aPrincipal and
+   * aPartitionedPrincipal.  aURI must not be null.  If aPrincipal is null, a
+   * content principal based on aURI will be used.
    */
   virtual void ResetToURI(nsIURI* aURI, nsILoadGroup* aLoadGroup,
                           nsIPrincipal* aPrincipal,
-                          nsIPrincipal* aStoragePrincipal);
+                          nsIPrincipal* aPartitionedPrincipal);
 
   /**
    * Set the container (docshell) for this document. Virtual so that
@@ -2394,10 +2258,11 @@ class Document : public nsINode,
 
   /**
    * Enumerate all subdocuments.
-   * The enumerator callback should return true to continue enumerating, or
-   * false to stop.  This will never get passed a null aDocument.
+   * The enumerator callback should return CallState::Continue to continue
+   * enumerating, or CallState::Stop to stop.  This will never get passed a null
+   * aDocument.
    */
-  using SubDocEnumFunc = FunctionRef<bool(Document&)>;
+  using SubDocEnumFunc = FunctionRef<CallState(Document&)>;
   void EnumerateSubDocuments(SubDocEnumFunc aCallback);
 
   /**
@@ -2708,8 +2573,9 @@ class Document : public nsINode,
 
   /**
    * Enumerate the external resource documents associated with this document.
-   * The enumerator callback should return true to continue enumerating, or
-   * false to stop.  This callback will never get passed a null aDocument.
+   * The enumerator callback should return CallState::Continue to continue
+   * enumerating, or CallState::Stop to stop.  This callback will never get
+   * passed a null aDocument.
    */
   void EnumerateExternalResources(SubDocEnumFunc aCallback);
 
@@ -2926,6 +2792,10 @@ class Document : public nsINode,
    */
   Document* GetTemplateContentsOwner();
 
+  Document* GetTemplateContentsOwnerIfExists() const {
+    return mTemplateContentsOwner.get();
+  }
+
   bool IsTemplateContentsOwner() const {
     // Template contents owner documents are the template contents owner of
     // themselves.
@@ -3058,14 +2928,6 @@ class Document : public nsINode,
    */
   void MaybePreconnect(nsIURI* uri, CORSMode aCORSMode);
 
-  enum DocumentTheme {
-    Doc_Theme_Uninitialized,  // not determined yet
-    Doc_Theme_None,
-    Doc_Theme_Neutral,
-    Doc_Theme_Dark,
-    Doc_Theme_Bright
-  };
-
   /**
    * Set the document's pending state object (as serialized using structured
    * clone).
@@ -3080,15 +2942,18 @@ class Document : public nsINode,
     SetStateObject(aDocument->mStateObjectContainer);
   }
 
+  enum class DocumentTheme { None, Neutral, Dark, Bright };
+
   /**
-   * Returns Doc_Theme_None if there is no lightweight theme specified,
-   * Doc_Theme_Dark for a dark theme, Doc_Theme_Bright for a light theme, and
-   * Doc_Theme_Neutral for any other theme. This is used to determine the state
-   * of the pseudoclasses :-moz-lwtheme and :-moz-lwtheme-text.
+   * Returns DocumentTheme::None if there is no lightweight theme specified,
+   * Dark for a dark theme, Bright for a light theme, and Neutral for any other
+   * theme. This is used to determine the state of the pseudoclasses
+   * :-moz-lwtheme and :-moz-lwtheme-*text.
    */
-  DocumentTheme GetDocumentLWTheme();
-  DocumentTheme ThreadSafeGetDocumentLWTheme() const;
-  void ResetDocumentLWTheme() { mDocLWTheme = Doc_Theme_Uninitialized; }
+  DocumentTheme GetDocumentLWTheme() const;
+  void ResetDocumentLWTheme() {
+    UpdateDocumentStates(NS_DOCUMENT_STATE_ALL_LWTHEME_BITS, true);
+  }
 
   // Whether we're a media document or not.
   enum class MediaDocumentKind {
@@ -3337,6 +3202,8 @@ class Document : public nsINode,
   // Skip GetContentType, because our NS_IMETHOD version above works fine here.
   // GetDoctype defined above
   Element* GetDocumentElement() const { return GetRootElement(); }
+
+  WindowContext* GetTopLevelWindowContext() const;
 
   Document* GetTopLevelContentDocument();
   const Document* GetTopLevelContentDocument() const;
@@ -3868,11 +3735,14 @@ class Document : public nsINode,
 
   void DoCacheAllKnownLangPrefs();
   void RecomputeLanguageFromCharset();
+  bool GetSHEntryHasUserInteraction();
 
  public:
   void SetMayNeedFontPrefsUpdate() { mMayNeedFontPrefsUpdate = true; }
 
   bool MayNeedFontPrefsUpdate() { return mMayNeedFontPrefsUpdate; }
+
+  void SetSHEntryHasUserInteraction(bool aHasInteraction);
 
   already_AddRefed<nsAtom> GetContentLanguageAsAtomForStyle() const;
   already_AddRefed<nsAtom> GetLanguageForStyle() const;
@@ -3958,7 +3828,6 @@ class Document : public nsINode,
 
   // Sets flags for media autoplay telemetry.
   void SetDocTreeHadAudibleMedia();
-  void SetDocTreeHadPlayRevoked();
 
   dom::XPathEvaluator* XPathEvaluator();
 
@@ -3981,7 +3850,22 @@ class Document : public nsINode,
 
   static bool HasRecentlyStartedForegroundLoads();
 
-  static bool AutomaticStorageAccessCanBeGranted(nsIPrincipal* aPrincipal);
+  static bool AutomaticStorageAccessPermissionCanBeGranted(
+      nsIPrincipal* aPrincipal);
+
+  // Subframes need to be static cloned after the main document has been
+  // embedded within a script global. A `PendingFrameStaticClone` is a static
+  // clone which has not yet been performed.
+  //
+  // The getter returns a direct reference to an internal array which is
+  // manipulated from within printing code.
+  struct PendingFrameStaticClone {
+    RefPtr<nsFrameLoaderOwner> mElement;
+    RefPtr<nsFrameLoader> mStaticCloneOf;
+  };
+  nsTArray<PendingFrameStaticClone> TakePendingFrameStaticClones();
+  void AddPendingFrameStaticClone(nsFrameLoaderOwner* aElement,
+                                  nsFrameLoader* aStaticCloneOf);
 
  protected:
   void DoUpdateSVGUseElementShadowTrees();
@@ -4225,15 +4109,6 @@ class Document : public nsINode,
       nsTHashMap<nsStringCaseInsensitiveHashKey, InternalCommandData>;
   static InternalCommandDataHashtable* sInternalCommandDataHashtable;
 
-  void RecordContentBlockingLog(
-      const nsACString& aOrigin, uint32_t aType, bool aBlocked,
-      const Maybe<ContentBlockingNotifier::StorageAccessGrantedReason>&
-          aReason = Nothing(),
-      const nsTArray<nsCString>& aTrackingFullHashes = nsTArray<nsCString>()) {
-    mContentBlockingLog.RecordLog(aOrigin, aType, aBlocked, aReason,
-                                  aTrackingFullHashes);
-  }
-
   mutable std::bitset<static_cast<size_t>(
       DeprecatedOperations::eDeprecatedOperationCount)>
       mDeprecationWarnedAbout;
@@ -4303,9 +4178,10 @@ class Document : public nsINode,
 
   void MaybeResolveReadyForIdle();
 
-  typedef MozPromise<bool, bool, true> AutomaticStorageAccessGrantPromise;
-  MOZ_MUST_USE RefPtr<AutomaticStorageAccessGrantPromise>
-  AutomaticStorageAccessCanBeGranted();
+  typedef MozPromise<bool, bool, true>
+      AutomaticStorageAccessPermissionGrantPromise;
+  MOZ_MUST_USE RefPtr<AutomaticStorageAccessPermissionGrantPromise>
+  AutomaticStorageAccessPermissionCanBeGranted();
 
   static void AddToplevelLoadingDocument(Document* aDoc);
   static void RemoveToplevelLoadingDocument(Document* aDoc);
@@ -4417,7 +4293,7 @@ class Document : public nsINode,
   // focus has never occurred then mLastFocusTime.IsNull() will be true.
   TimeStamp mLastFocusTime;
 
-  EventStates mDocumentState;
+  EventStates mDocumentState{NS_DOCUMENT_STATE_LTR_LOCALE};
 
   RefPtr<Promise> mReadyForIdle;
 
@@ -4531,22 +4407,6 @@ class Document : public nsINode,
   // True if an nsIAnimationObserver is perhaps attached to a node in the
   // document.
   bool mMayHaveAnimationObservers : 1;
-
-  // True if a document has loaded Mixed Active Script (see
-  // nsMixedContentBlocker.cpp)
-  bool mHasMixedActiveContentLoaded : 1;
-
-  // True if a document has blocked Mixed Active Script (see
-  // nsMixedContentBlocker.cpp)
-  bool mHasMixedActiveContentBlocked : 1;
-
-  // True if a document has loaded Mixed Display/Passive Content (see
-  // nsMixedContentBlocker.cpp)
-  bool mHasMixedDisplayContentLoaded : 1;
-
-  // True if a document has blocked Mixed Display/Passive Content (see
-  // nsMixedContentBlocker.cpp)
-  bool mHasMixedDisplayContentBlocked : 1;
 
   // True if a document load has a CSP attached.
   bool mHasCSP : 1;
@@ -4666,16 +4526,6 @@ class Document : public nsINode,
 
   bool mHasReportedShadowDOMUsage : 1;
 
-  // True if this document contained, either directly or in a subdocument,
-  // an HTMLMediaElement that played audibly. This should only be set on
-  // top level content documents.
-  bool mDocTreeHadAudibleMedia : 1;
-  // True if this document contained, either directly or in a subdocument,
-  // an HTMLMediaElement that was playing inaudibly and became audible and we
-  // paused the HTMLMediaElement because it wasn't allowed to autoplay audibly.
-  // This should only be set on top level content documents.
-  bool mDocTreeHadPlayRevoked : 1;
-
   // Whether an event triggered by the refresh driver was delayed because this
   // document has suppressed events.
   bool mHasDelayedRefreshEvent : 1;
@@ -4717,6 +4567,13 @@ class Document : public nsINode,
 
   // While we're handling an execCommand call, set to true.
   bool mIsRunningExecCommand : 1;
+
+  // True if we should change the readystate to complete after we fire
+  // DOMContentLoaded. This happens when we abort a load and
+  // nsDocumentViewer::EndLoad runs while we still have things blocking
+  // DOMContentLoaded. We wait for those to complete, and then update the
+  // readystate when they finish.
+  bool mSetCompleteAfterDOMContentLoaded : 1;
 
   uint8_t mPendingFullscreenRequests;
 
@@ -4785,6 +4642,10 @@ class Document : public nsINode,
   // These are set at load time and are immutable - see nsSandboxFlags.h for the
   // possible flags.
   uint32_t mSandboxFlags;
+
+  // The embedder policy obtained from parsing the HTTP response header or from
+  // our opener if this is the initial about:blank document.
+  Maybe<nsILoadInfo::CrossOriginEmbedderPolicy> mEmbedderPolicy;
 
   nsCString mContentLanguage;
 
@@ -4935,11 +4796,6 @@ class Document : public nsINode,
   // existing in the set means the corresponding script isn't a tracking script.
   nsTHashSet<nsCString> mTrackingScripts;
 
-  // The log of all content blocking actions taken on this document.  This is
-  // only stored on top-level documents and includes the activity log for all of
-  // the nested subdocuments as well.
-  ContentBlockingLog mContentBlockingLog;
-
   // List of ancestor principals.  This is set at the point a document
   // is connected to a docshell and not mutated thereafter.
   nsTArray<nsCOMPtr<nsIPrincipal>> mAncestorPrincipals;
@@ -5044,6 +4900,8 @@ class Document : public nsINode,
   nsTArray<nsCOMPtr<nsIRunnable>> mFrameLoaderFinalizers;
   RefPtr<nsRunnableMethod<Document>> mFrameLoaderRunner;
 
+  nsTArray<PendingFrameStaticClone> mPendingFrameStaticClones;
+
   // The layout history state that should be used by nodes in this
   // document.  We only actually store a pointer to it when:
   // 1)  We have no script global object.
@@ -5118,10 +4976,6 @@ class Document : public nsINode,
 
   RefPtr<HTMLAllCollection> mAll;
 
-  // document lightweight theme for use with :-moz-lwtheme,
-  // :-moz-lwtheme-brighttext and :-moz-lwtheme-darktext
-  DocumentTheme mDocLWTheme;
-
   // Pres shell resolution saved before entering fullscreen mode.
   float mSavedResolution;
 
@@ -5139,8 +4993,9 @@ class Document : public nsINode,
   int32_t mCachedTabSizeGeneration;
   nsTabSizes mCachedTabSizes;
 
-  // The principal to use for the storage area of this document.
-  nsCOMPtr<nsIPrincipal> mIntrinsicStoragePrincipal;
+  // This is equal to document's principal but with an isolation key. See
+  // StoragePrincipalHelper.h to know more.
+  nsCOMPtr<nsIPrincipal> mPartitionedPrincipal;
 
   // The cached storage principal for this document.
   // This is mutable so that we can keep EffectiveStoragePrincipal() const
@@ -5248,6 +5103,8 @@ class MOZ_RAII IgnoreOpensDuringUnload final {
  private:
   Document* mDoc;
 };
+
+bool IsInActiveTab(Document* aDoc);
 
 }  // namespace dom
 }  // namespace mozilla

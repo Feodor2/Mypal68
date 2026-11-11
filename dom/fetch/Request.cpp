@@ -17,6 +17,7 @@
 #include "mozilla/dom/URL.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
+#include "mozilla/dom/WindowContext.h"
 #include "mozilla/Unused.h"
 
 #include "mozilla/dom/ReadableStreamDefaultReader.h"
@@ -427,6 +428,8 @@ SafeRefPtr<Request> Request::Constructor(nsIGlobalObject* aGlobal,
   }
 
   UniquePtr<mozilla::ipc::PrincipalInfo> principalInfo;
+  nsILoadInfo::CrossOriginEmbedderPolicy coep =
+      nsILoadInfo::EMBEDDER_POLICY_NULL;
 
   if (NS_IsMainThread()) {
     nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(aGlobal);
@@ -444,6 +447,9 @@ SafeRefPtr<Request> Request::Constructor(nsIGlobalObject* aGlobal,
           return nullptr;
         }
       }
+      if (window->GetWindowContext()) {
+        coep = window->GetWindowContext()->GetEmbedderPolicy();
+      }
     }
   } else {
     WorkerPrivate* worker = GetCurrentThreadWorkerPrivate();
@@ -452,10 +458,17 @@ SafeRefPtr<Request> Request::Constructor(nsIGlobalObject* aGlobal,
       request->SetEnvironmentReferrerPolicy(worker->GetReferrerPolicy());
       principalInfo =
           MakeUnique<mozilla::ipc::PrincipalInfo>(worker->GetPrincipalInfo());
+      coep = worker->GetEmbedderPolicy();
+      // For dedicated worker, the response must respect the owner's COEP.
+      if (coep == nsILoadInfo::EMBEDDER_POLICY_NULL &&
+          worker->IsDedicatedWorker()) {
+        coep = worker->GetOwnerEmbedderPolicy();
+      }
     }
   }
 
   request->SetPrincipalInfo(std::move(principalInfo));
+  request->SetEmbedderPolicy(coep);
 
   if (mode != RequestMode::EndGuard_) {
     request->SetMode(mode);

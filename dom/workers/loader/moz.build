@@ -14,11 +14,13 @@ EXPORTS.mozilla.dom += [
 EXPORTS.mozilla.dom.workerinternals += [
     "CacheLoadHandler.h",
     "NetworkLoadHandler.h",
+    "ScriptResponseHeaderProcessor.h",
 ]
 
 UNIFIED_SOURCES += [
     "CacheLoadHandler.cpp",
     "NetworkLoadHandler.cpp",
+    "ScriptResponseHeaderProcessor.cpp",
 ]
 
 include("/ipc/chromium/chromium-config.mozbuild")

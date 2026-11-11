@@ -37,6 +37,7 @@
 #include "mozilla/dom/StorageEvent.h"
 #include "mozilla/dom/StorageEventBinding.h"
 #include "mozilla/dom/UnionTypes.h"
+#include "mozilla/CallState.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/OwningNonNull.h"
@@ -273,7 +274,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   virtual nsIPrincipal* GetEffectiveStoragePrincipal() override;
 
-  virtual nsIPrincipal* IntrinsicStoragePrincipal() override;
+  virtual nsIPrincipal* PartitionedPrincipal() override;
 
   // nsIDOMWindow
   NS_DECL_NSIDOMWINDOW
@@ -311,8 +312,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   void GetEventTargetParent(mozilla::EventChainPreVisitor& aVisitor) override;
 
   nsresult PostHandleEvent(mozilla::EventChainPostVisitor& aVisitor) override;
-
-  void ClearActiveStoragePrincipal();
 
   void Suspend();
   void Resume();
@@ -957,6 +956,9 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   virtual bool IsInSyncOperation() override;
 
+  // https://whatpr.org/html/4734/structured-data.html#cross-origin-isolated
+  bool CrossOriginIsolated() const;
+
  protected:
   // Web IDL helpers
 
@@ -1043,36 +1045,25 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   bool IsPopupSpamWindow();
 
  private:
-  // A type that methods called by CallOnChildren can return.  If Stop
-  // is returned then CallOnChildren will stop calling further children.
-  // If Continue is returned then CallOnChildren will keep calling further
-  // children.
-  enum class CallState {
-    Continue,
-    Stop,
-  };
-
   // Call the given method on the immediate children of this window.  The
   // CallState returned by the last child method invocation is returned or
   // CallState::Continue if the method returns void.
   template <typename Method, typename... Args>
-  CallState CallOnChildren(Method aMethod, Args&... aArgs);
+  mozilla::CallState CallOnInProcessChildren(Method aMethod, Args&... aArgs);
 
   // Helper to convert a void returning child method into an implicit
   // CallState::Continue value.
   template <typename Return, typename Method, typename... Args>
-  typename std::enable_if<std::is_void<Return>::value,
-                          nsGlobalWindowInner::CallState>::type
+  typename std::enable_if<std::is_void<Return>::value, mozilla::CallState>::type
   CallChild(nsGlobalWindowInner* aWindow, Method aMethod, Args&... aArgs) {
     (aWindow->*aMethod)(aArgs...);
-    return nsGlobalWindowInner::CallState::Continue;
+    return mozilla::CallState::Continue;
   }
 
   // Helper that passes through the CallState value from a child method.
   template <typename Return, typename Method, typename... Args>
-  typename std::enable_if<
-      std::is_same<Return, nsGlobalWindowInner::CallState>::value,
-      nsGlobalWindowInner::CallState>::type
+  typename std::enable_if<std::is_same<Return, mozilla::CallState>::value,
+                          mozilla::CallState>::type
   CallChild(nsGlobalWindowInner* aWindow, Method aMethod, Args&... aArgs) {
     return (aWindow->*aMethod)(aArgs...);
   }
@@ -1080,8 +1071,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   void FreezeInternal();
   void ThawInternal();
 
-  CallState ShouldReportForServiceWorkerScopeInternal(const nsACString& aScope,
-                                                      bool* aResultOut);
+  mozilla::CallState ShouldReportForServiceWorkerScopeInternal(
+      const nsACString& aScope, bool* aResultOut);
 
  public:
   // Timeout Functions
@@ -1118,8 +1109,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   void ScrollTo(const mozilla::CSSIntPoint& aScroll,
                 const mozilla::dom::ScrollOptions& aOptions);
 
-  bool IsFrame();
-
   already_AddRefed<nsIWidget> GetMainWidget();
   nsIWidget* GetNearestWidget() const;
 
@@ -1150,7 +1139,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   // This method is called if this window loads a 3rd party tracking resource
   // and the storage is just been granted. The window can reset the partitioned
   // storage objects and switch to the first party cookie jar.
-  void StorageAccessGranted();
+  void StorageAccessPermissionGranted();
 
  protected:
   static void NotifyDOMWindowDestroyed(nsGlobalWindowInner* aWindow);
@@ -1226,7 +1215,9 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   bool MaybeCallDocumentFlushedResolvers(bool aUntilExhaustion);
 
   // Try to fire the "load" event on our content embedder if we're an iframe.
-  void FireFrameLoadEvent(bool aIsTrusted);
+  void FireFrameLoadEvent();
+
+  void UpdateAutoplayPermission();
 
  public:
   // Dispatch a runnable related to the global.
@@ -1358,7 +1349,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   // FreeInnerObjects has been called.
   nsCOMPtr<nsIPrincipal> mDocumentPrincipal;
   nsCOMPtr<nsIPrincipal> mDocumentStoragePrincipal;
-  nsCOMPtr<nsIPrincipal> mDocumentIntrinsicStoragePrincipal;
+  nsCOMPtr<nsIPrincipal> mDocumentPartitionedPrincipal;
   nsCOMPtr<nsIContentSecurityPolicy> mDocumentCsp;
 
   RefPtr<mozilla::dom::DebuggerNotificationManager>
@@ -1519,10 +1510,6 @@ inline bool nsGlobalWindowInner::IsPopupSpamWindow() {
   }
 
   return GetOuterWindowInternal()->mIsPopupSpam;
-}
-
-inline bool nsGlobalWindowInner::IsFrame() {
-  return GetInProcessParentInternal() != nullptr;
 }
 
 #endif /* nsGlobalWindowInner_h___ */

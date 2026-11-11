@@ -52,6 +52,9 @@ class CacheOpParent final : public PCacheOpParent,
   already_AddRefed<nsIInputStream> DeserializeCacheStream(
       const Maybe<CacheReadStream>& aMaybeStream);
 
+  void ProcessCrossOriginResourcePolicyHeader(
+      ErrorResult& aRv, const nsTArray<SavedResponse>& aResponses);
+
   mozilla::ipc::PBackgroundParent* mIpcManager;
   const CacheId mCacheId;
   const Namespace mNamespace;

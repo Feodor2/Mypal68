@@ -6,7 +6,6 @@
 #define mozilla_dom_HTMLIFrameElement_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/FeaturePolicy.h"
 #include "nsGenericHTMLFrameElement.h"
 #include "nsDOMTokenList.h"
 
@@ -69,12 +68,19 @@ class HTMLIFrameElement final : public nsGenericHTMLFrameElement {
     }
     return mSandbox;
   }
-  bool AllowFullscreen() const {
+
+  bool AllowFullscreenForBindings() const {
     return GetBoolAttr(nsGkAtoms::allowfullscreen);
   }
-  void SetAllowFullscreen(bool aAllow, ErrorResult& aError) {
+
+  void SetAllowFullscreenForBindings(bool aAllow, ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::allowfullscreen, aAllow, aError);
   }
+
+  bool AllowFullscreen() const;
+
+  bool HasAllowFullscreenAttribute() const;
+
   void GetWidth(DOMString& aWidth) { GetHTMLAttr(nsGkAtoms::width, aWidth); }
   void SetWidth(const nsAString& aWidth, ErrorResult& aError) {
     SetHTMLAttr(nsGkAtoms::width, aWidth, aError);

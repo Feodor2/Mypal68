@@ -21,7 +21,6 @@
 #include "mozilla/dom/ProgressEvent.h"
 #include "mozilla/dom/StreamBlobImpl.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
-#include "mozilla/dom/UnionConversions.h"
 #include "mozilla/dom/URLSearchParams.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/WorkerRef.h"
@@ -1705,7 +1704,7 @@ void XMLHttpRequestWorker::Open(const nsACString& aMethod,
   mProxy->mOuterEventStreamId++;
 
   UniquePtr<SerializedStackHolder> stack;
-  if (mWorkerPrivate->IsWatchedByDevtools()) {
+  if (mWorkerPrivate->IsWatchedByDevTools()) {
     if (JSContext* cx = nsContentUtils::GetCurrentJSContext()) {
       stack = GetCurrentStackForNetMonitor(cx);
     }

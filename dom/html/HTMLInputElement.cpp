@@ -5910,10 +5910,6 @@ EventStates HTMLInputElement::IntrinsicState() const {
     state |= NS_EVENT_STATE_PLACEHOLDERSHOWN;
   }
 
-  if (mForm && !mForm->GetValidity() && IsSubmitControl()) {
-    state |= NS_EVENT_STATE_MOZ_SUBMITINVALID;
-  }
-
   return state;
 }
 

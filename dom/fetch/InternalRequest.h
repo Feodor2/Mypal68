@@ -14,6 +14,7 @@
 
 #include "nsIChannelEventSink.h"
 #include "nsIInputStream.h"
+#include "nsILoadInfo.h"  //MY
 #include "nsISupportsImpl.h"
 #ifdef DEBUG
 #  include "nsIURLParser.h"
@@ -25,7 +26,6 @@ namespace mozilla {
 
 namespace ipc {
 class PrincipalInfo;
-class AutoIPCStream;
 }  // namespace ipc
 
 namespace dom {
@@ -92,10 +92,6 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
                   const nsAString& aIntegrity);
 
   explicit InternalRequest(const IPCInternalRequest& aIPCRequest);
-
-  template <typename M>
-  void ToIPC(IPCInternalRequest* aIPCRequest, M* aManager,
-             UniquePtr<mozilla::ipc::AutoIPCStream>& aAutoStream);
 
   SafeRefPtr<InternalRequest> Clone();
 
@@ -342,6 +338,14 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
 
   InternalRequest(const InternalRequest& aOther) = delete;
 
+  void SetEmbedderPolicy(nsILoadInfo::CrossOriginEmbedderPolicy aPolicy) {
+    mEmbedderPolicy = aPolicy;
+  }
+
+  nsILoadInfo::CrossOriginEmbedderPolicy GetEmbedderPolicy() const {
+    return mEmbedderPolicy;
+  }
+
  private:
   struct ConstructorGuard {};
 
@@ -411,6 +415,8 @@ class InternalRequest final : public AtomicSafeRefCounted<InternalRequest> {
   // It is illegal to pass such a Request object to a fetch() method unless
   // if the caller has chrome privileges.
   bool mContentPolicyTypeOverridden = false;
+  nsILoadInfo::CrossOriginEmbedderPolicy mEmbedderPolicy =
+      nsILoadInfo::EMBEDDER_POLICY_NULL;
 
   UniquePtr<mozilla::ipc::PrincipalInfo> mPrincipalInfo;
 };

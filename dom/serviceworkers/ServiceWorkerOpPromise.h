@@ -29,6 +29,9 @@ using FetchEventRespondWithPromise =
 using ServiceWorkerOpPromise =
     MozPromise<ServiceWorkerOpResult, nsresult, true>;
 
+using ServiceWorkerFetchEventOpPromise =
+    MozPromise<ServiceWorkerFetchEventOpResult, nsresult, true>;
+
 }  // namespace dom
 }  // namespace mozilla
 

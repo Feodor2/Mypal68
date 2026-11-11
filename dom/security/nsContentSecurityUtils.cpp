@@ -53,7 +53,7 @@ static already_AddRefed<nsIPrincipal> MakeHTTPPrincipalHTTPS(
   mozilla::OriginAttributes OA =
       BasePrincipal::Cast(aPrincipal)->OriginAttributesRef();
 
-  principal = BasePrincipal::CreateCodebasePrincipal(newURI, OA);
+  principal = BasePrincipal::CreateContentPrincipal(newURI, OA);
   return principal.forget();
 }
 
@@ -495,9 +495,11 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
   // object-src 'none'"/>
 
   // Check if we should skip the assertion
-  if (Preferences::GetBool("csp.skip_about_page_has_csp_assert")) {
+#ifdef DEBUG
+  if (StaticPrefs::dom_security_skip_about_page_has_csp_assert()) {
     return;
   }
+#endif
 
   // Check if we are loading an about: URI at all
   nsCOMPtr<nsIURI> documentURI = aDocument->GetDocumentURI();
@@ -533,10 +535,12 @@ void nsContentSecurityUtils::AssertAboutPageHasCSP(Document* aDocument) {
 
   // Check if we should skip the allowlist and assert right away. Please note
   // that this pref can and should only be set for automated testing.
-  if (Preferences::GetBool("csp.skip_about_page_csp_allowlist_and_assert")) {
+#ifdef DEBUG
+  if (StaticPrefs::dom_security_skip_about_page_csp_allowlist_and_assert()) {
     NS_ASSERTION(foundDefaultSrc, "about: page must have a CSP");
     return;
   }
+#endif
 
   nsAutoCString aboutSpec;
   documentURI->GetSpec(aboutSpec);

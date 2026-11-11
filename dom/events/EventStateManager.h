@@ -883,8 +883,7 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
 
   void DoScrollHistory(int32_t direction);
   void DoScrollZoom(nsIFrame* aTargetFrame, int32_t adjustment);
-  nsresult GetContentViewer(nsIContentViewer** aCv);
-  nsresult ChangeZoom(int32_t change);
+  void ChangeZoom(bool aIncrease);
 
   /**
    * DeltaAccumulator class manages delta values for dispatching DOMMouseScroll

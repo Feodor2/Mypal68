@@ -247,14 +247,14 @@ struct ServiceWorkerManager::RegistrationDataPerPrincipal final {
     bool IsSameOrigin(const nsACString& aMatchingScope,
                       const nsACString& aClientUrl) const {
       RefPtr<BasePrincipal> scopePrincipal =
-          BasePrincipal::CreateCodebasePrincipal(aMatchingScope);
+          BasePrincipal::CreateContentPrincipal(aMatchingScope);
 
       if (NS_WARN_IF(!scopePrincipal)) {
         return false;
       }
 
       RefPtr<BasePrincipal> clientPrincipal =
-          BasePrincipal::CreateCodebasePrincipal(aClientUrl);
+          BasePrincipal::CreateContentPrincipal(aClientUrl);
 
       if (NS_WARN_IF(!clientPrincipal)) {
         return false;
@@ -286,7 +286,7 @@ nsresult PopulateRegistrationData(
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(aRegistration);
 
-  if (NS_WARN_IF(!BasePrincipal::Cast(aPrincipal)->IsCodebasePrincipal())) {
+  if (NS_WARN_IF(!BasePrincipal::Cast(aPrincipal)->IsContentPrincipal())) {
     return NS_ERROR_FAILURE;
   }
 
@@ -342,26 +342,10 @@ class TeardownRunnable final : public Runnable {
   RefPtr<ServiceWorkerManagerChild> mActor;
 };
 
-bool ServiceWorkersAreCrossProcess() {
-  return ServiceWorkerParentInterceptEnabled() && XRE_IsE10sParentProcess();
-}
-
-const char* GetStartShutdownTopic() {
-  if (ServiceWorkersAreCrossProcess()) {
-    return "profile-change-teardown";
-  }
-
-  return NS_XPCOM_SHUTDOWN_OBSERVER_ID;
-}
-
 constexpr char kFinishShutdownTopic[] = "profile-before-change-qm";
 
 already_AddRefed<nsIAsyncShutdownClient> GetAsyncShutdownBarrier() {
   AssertIsOnMainThread();
-
-  if (!ServiceWorkersAreCrossProcess()) {
-    return nullptr;
-  }
 
   nsCOMPtr<nsIAsyncShutdownService> svc = services::GetAsyncShutdownService();
   MOZ_ASSERT(svc);
@@ -379,7 +363,7 @@ Result<nsCOMPtr<nsIPrincipal>, nsresult> ScopeToPrincipal(
   MOZ_ASSERT(aScopeURI);
 
   nsCOMPtr<nsIPrincipal> principal =
-      BasePrincipal::CreateCodebasePrincipal(aScopeURI, aOriginAttributes);
+      BasePrincipal::CreateContentPrincipal(aScopeURI, aOriginAttributes);
   if (NS_WARN_IF(!principal)) {
     return Err(NS_ERROR_FAILURE);
   }
@@ -419,10 +403,6 @@ ServiceWorkerManager::~ServiceWorkerManager() {
   // The map will assert if it is not empty when destroyed.
   mRegistrationInfos.Clear();
 
-  if (!ServiceWorkersAreCrossProcess()) {
-    MOZ_ASSERT(!mActor);
-  }
-
   // This can happen if the browser is started up in ProfileManager mode, in
   // which case XPCOM will startup and shutdown, but there won't be any
   // profile-* topic notifications. The shutdown blocker expects to be in a
@@ -438,11 +418,6 @@ void ServiceWorkerManager::BlockShutdownOn(GenericNonExclusivePromise* aPromise,
                                            uint32_t aShutdownStateId) {
   AssertIsOnMainThread();
 
-  // This may be called when in non-e10s mode with parent-intercept enabled.
-  if (!ServiceWorkersAreCrossProcess()) {
-    return;
-  }
-
   MOZ_ASSERT(mShutdownBlocker);
   MOZ_ASSERT(aPromise);
 
@@ -450,28 +425,32 @@ void ServiceWorkerManager::BlockShutdownOn(GenericNonExclusivePromise* aPromise,
 }
 
 void ServiceWorkerManager::Init(ServiceWorkerRegistrar* aRegistrar) {
+  // ServiceWorkers now only support parent intercept.  In parent intercept
+  // mode, only the parent process ServiceWorkerManager has any state or does
+  // anything.
+  //
+  // It is our goal to completely eliminate support for content process
+  // ServiceWorkerManager instances and make getting a SWM instance trigger a
+  // fatal assertion.  But until we've reached that point, we make
+  // initialization a no-op so that content process ServiceWorkerManager
+  // instances will simply have no state and no registrations.
+  if (!XRE_IsParentProcess()) {
+    return;
+  }
+
   nsCOMPtr<nsIAsyncShutdownClient> shutdownBarrier = GetAsyncShutdownBarrier();
 
   if (shutdownBarrier) {
-    mShutdownBlocker =
-        ServiceWorkerShutdownBlocker::CreateAndRegisterOn(shutdownBarrier);
+    mShutdownBlocker = ServiceWorkerShutdownBlocker::CreateAndRegisterOn(
+        *shutdownBarrier, *this);
     MOZ_ASSERT(mShutdownBlocker);
   }
 
-  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-  if (obs) {
-    DebugOnly<nsresult> rv;
-    rv = obs->AddObserver(this, GetStartShutdownTopic(), false /* ownsWeak */);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-  }
+  MOZ_DIAGNOSTIC_ASSERT(aRegistrar);
 
-  if (XRE_IsParentProcess()) {
-    MOZ_DIAGNOSTIC_ASSERT(aRegistrar);
-
-    nsTArray<ServiceWorkerRegistrationData> data;
-    aRegistrar->GetRegistrations(data);
-    LoadRegistrations(data);
-  }
+  nsTArray<ServiceWorkerRegistrationData> data;
+  aRegistrar->GetRegistrations(data);
+  LoadRegistrations(data);
 
   PBackgroundChild* actorChild = BackgroundChild::GetOrCreateForCurrentThread();
   if (NS_WARN_IF(!actorChild)) {
@@ -634,12 +613,8 @@ void ServiceWorkerManager::MaybeStartShutdown() {
 
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (obs) {
-    obs->RemoveObserver(this, GetStartShutdownTopic());
-
-    if (ServiceWorkersAreCrossProcess()) {
-      obs->AddObserver(this, kFinishShutdownTopic, false);
-      return;
-    }
+    obs->AddObserver(this, kFinishShutdownTopic, false);
+    return;
   }
 
   MaybeFinishShutdown();
@@ -1031,7 +1006,7 @@ class GetRegistrationsRunnable final : public Runnable {
 
     nsTArray<ServiceWorkerRegistrationDescriptor> array;
 
-    if (NS_WARN_IF(!BasePrincipal::Cast(principal)->IsCodebasePrincipal())) {
+    if (NS_WARN_IF(!BasePrincipal::Cast(principal)->IsContentPrincipal())) {
       return NS_OK;
     }
 
@@ -1794,7 +1769,7 @@ nsresult ServiceWorkerManager::PrincipalToScopeKey(nsIPrincipal* aPrincipal,
                                                    nsACString& aKey) {
   MOZ_ASSERT(aPrincipal);
 
-  if (!BasePrincipal::Cast(aPrincipal)->IsCodebasePrincipal()) {
+  if (!BasePrincipal::Cast(aPrincipal)->IsContentPrincipal()) {
     return NS_ERROR_FAILURE;
   }
 
@@ -2179,7 +2154,7 @@ void ServiceWorkerManager::DispatchFetchEvent(nsIInterceptedChannel* aChannel,
     }
 
     // non-subresource request means the URI contains the principal
-    nsCOMPtr<nsIPrincipal> principal = BasePrincipal::CreateCodebasePrincipal(
+    nsCOMPtr<nsIPrincipal> principal = BasePrincipal::CreateContentPrincipal(
         uri, loadInfo->GetOriginAttributes());
 
     RefPtr<ServiceWorkerRegistrationInfo> registration =
@@ -3012,11 +2987,6 @@ ServiceWorkerManager::RemoveListener(
 NS_IMETHODIMP
 ServiceWorkerManager::Observe(nsISupports* aSubject, const char* aTopic,
                               const char16_t* aData) {
-  if (strcmp(aTopic, GetStartShutdownTopic()) == 0) {
-    MaybeStartShutdown();
-    return NS_OK;
-  }
-
   if (strcmp(aTopic, kFinishShutdownTopic) == 0) {
     MaybeFinishShutdown();
     return NS_OK;

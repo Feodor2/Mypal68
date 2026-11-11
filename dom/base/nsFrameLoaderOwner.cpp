@@ -38,9 +38,15 @@ mozilla::dom::BrowsingContext* nsFrameLoaderOwner::GetBrowsingContext() {
   return nullptr;
 }
 
+mozilla::dom::BrowsingContext* nsFrameLoaderOwner::GetExtantBrowsingContext() {
+  if (mFrameLoader) {
+    return mFrameLoader->GetExtantBrowsingContext();
+  }
+  return nullptr;
+}
+
 bool nsFrameLoaderOwner::UseRemoteSubframes() {
   RefPtr<Element> owner = do_QueryObject(this);
-  MOZ_ASSERT(this);
 
   nsILoadContext* loadContext = owner->OwnerDoc()->GetLoadContext();
   MOZ_DIAGNOSTIC_ASSERT(loadContext);
@@ -48,28 +54,40 @@ bool nsFrameLoaderOwner::UseRemoteSubframes() {
   return loadContext->UseRemoteSubframes();
 }
 
-bool nsFrameLoaderOwner::ShouldPreserveBrowsingContext(
-    const mozilla::dom::RemotenessOptions& aOptions) {
-  if (aOptions.mReplaceBrowsingContext) {
-    return false;
+nsFrameLoaderOwner::ChangeRemotenessContextType
+nsFrameLoaderOwner::ShouldPreserveBrowsingContext(
+    bool aIsRemote, bool aReplaceBrowsingContext) {
+  if (aReplaceBrowsingContext) {
+    return ChangeRemotenessContextType::DONT_PRESERVE;
   }
 
-  // Don't preserve contexts if this is a chrome (parent process) window
-  // that is changing from remote to local.
-  if (XRE_IsParentProcess() && aOptions.mRemoteType.IsVoid()) {
-    return false;
+  if (XRE_IsParentProcess()) {
+    // Don't preserve for remote => parent loads.
+    if (!aIsRemote) {
+      return ChangeRemotenessContextType::DONT_PRESERVE;
+    }
+
+    // Don't preserve for parent => remote loads.
+    if (mFrameLoader && !mFrameLoader->IsRemoteFrame()) {
+      return ChangeRemotenessContextType::DONT_PRESERVE;
+    }
   }
 
   // We will preserve our browsing context if either fission is enabled, or the
   // `preserve_browsing_contexts` pref is active.
-  return UseRemoteSubframes() ||
-         StaticPrefs::fission_preserve_browsing_contexts();
+  if (UseRemoteSubframes() ||
+      StaticPrefs::fission_preserve_browsing_contexts()) {
+    return ChangeRemotenessContextType::PRESERVE;
+  }
+  return ChangeRemotenessContextType::DONT_PRESERVE;
 }
 
 void nsFrameLoaderOwner::ChangeRemotenessCommon(
-    bool aPreserveContext, bool aSwitchingInProgressLoad,
-    const nsACString& aRemoteType, std::function<void()>& aFrameLoaderInit,
-    mozilla::ErrorResult& aRv) {
+    const ChangeRemotenessContextType& aContextType,
+    bool aSwitchingInProgressLoad, bool aIsRemote, BrowsingContextGroup* aGroup,
+    std::function<void()>& aFrameLoaderInit, mozilla::ErrorResult& aRv) {
+  MOZ_ASSERT_IF(aGroup, aContextType != ChangeRemotenessContextType::PRESERVE);
+
   RefPtr<mozilla::dom::BrowsingContext> bc;
   bool networkCreated = false;
 
@@ -98,8 +116,8 @@ void nsFrameLoaderOwner::ChangeRemotenessCommon(
     // If we already have a Frameloader, destroy it, possibly preserving its
     // browsing context.
     if (mFrameLoader) {
-      if (aPreserveContext) {
-        bc = mFrameLoader->GetBrowsingContext();
+      bc = mFrameLoader->GetExtantBrowsingContext();
+      if (aContextType == ChangeRemotenessContextType::PRESERVE) {
         mFrameLoader->SetWillChangeProcess();
       }
 
@@ -110,8 +128,9 @@ void nsFrameLoaderOwner::ChangeRemotenessCommon(
       mFrameLoader = nullptr;
     }
 
-    mFrameLoader =
-        nsFrameLoader::Recreate(owner, bc, aRemoteType, networkCreated);
+    mFrameLoader = nsFrameLoader::Recreate(
+        owner, bc, aGroup, aIsRemote, networkCreated,
+        aContextType == ChangeRemotenessContextType::PRESERVE);
     if (NS_WARN_IF(!mFrameLoader)) {
       aRv.Throw(NS_ERROR_FAILURE);
       return;
@@ -169,37 +188,24 @@ void nsFrameLoaderOwner::ChangeRemotenessCommon(
 
 void nsFrameLoaderOwner::ChangeRemoteness(
     const mozilla::dom::RemotenessOptions& aOptions, mozilla::ErrorResult& rv) {
-  std::function<void()> frameLoaderInit = [&] {
-    if (aOptions.mError.WasPassed()) {
-      RefPtr<nsFrameLoader> frameLoader = mFrameLoader;
-      nsresult error = static_cast<nsresult>(aOptions.mError.Value());
-      nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
-          "nsFrameLoaderOwner::DisplayLoadError", [frameLoader, error]() {
-            nsCOMPtr<nsIURI> uri;
-            nsresult rv = NS_NewURI(getter_AddRefs(uri), "about:blank");
-            if (NS_WARN_IF(NS_FAILED(rv))) {
-              return;
-            }
+  bool isRemote = !aOptions.mRemoteType.IsEmpty();
 
-            RefPtr<nsDocShell> docShell =
-                frameLoader->GetDocShell(IgnoreErrors());
-            if (NS_WARN_IF(!docShell)) {
-              return;
-            }
-            bool displayed = false;
-            docShell->DisplayLoadError(error, uri, u"about:blank", nullptr,
-                                       &displayed);
-          }));
-    } else if (aOptions.mPendingSwitchID.WasPassed()) {
+  std::function<void()> frameLoaderInit = [&] {
+    if (isRemote) {
+      mFrameLoader->ConfigRemoteProcess(aOptions.mRemoteType, nullptr);
+    }
+
+    if (aOptions.mPendingSwitchID.WasPassed()) {
       mFrameLoader->ResumeLoad(aOptions.mPendingSwitchID.Value());
     } else {
       mFrameLoader->LoadFrame(false);
     }
   };
 
-  ChangeRemotenessCommon(ShouldPreserveBrowsingContext(aOptions),
-                         aOptions.mSwitchingInProgressLoad,
-                         aOptions.mRemoteType, frameLoaderInit, rv);
+  auto shouldPreserve = ShouldPreserveBrowsingContext(
+      isRemote, /* replaceBrowsingContext */ false);
+  ChangeRemotenessCommon(shouldPreserve, aOptions.mSwitchingInProgressLoad,
+                         isRemote, /* group */ nullptr, frameLoaderInit, rv);
 }
 
 void nsFrameLoaderOwner::ChangeRemotenessWithBridge(BrowserBridgeChild* aBridge,
@@ -217,9 +223,66 @@ void nsFrameLoaderOwner::ChangeRemotenessWithBridge(BrowserBridgeChild* aBridge,
     mFrameLoader->mRemoteBrowser = host;
   };
 
-  // NOTE: We always use the DEFAULT_REMOTE_TYPE here, because we don't actually
-  // know the real remote type, and don't need to, as we're a content process.
-  ChangeRemotenessCommon(
-      /* preserve */ true, /* switching in progress load */ true,
-      DEFAULT_REMOTE_TYPE, frameLoaderInit, rv);
+  ChangeRemotenessCommon(ChangeRemotenessContextType::PRESERVE,
+                         /* inProgress */ true,
+                         /* isRemote */ true, /* group */ nullptr,
+                         frameLoaderInit, rv);
+}
+
+void nsFrameLoaderOwner::ChangeRemotenessToProcess(
+    ContentParent* aContentParent, bool aReplaceBrowsingContext,
+    BrowsingContextGroup* aGroup, mozilla::ErrorResult& rv) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT_IF(aGroup, aReplaceBrowsingContext);
+  bool isRemote = aContentParent != nullptr;
+
+  std::function<void()> frameLoaderInit = [&] {
+    if (isRemote) {
+      mFrameLoader->ConfigRemoteProcess(aContentParent->GetRemoteType(),
+                                        aContentParent);
+    }
+
+    // FIXME(bug 1644779): We'd like to stop triggering a load here, as this
+    // reads the attributes, such as `src`, on the <browser> element, and could
+    // start another load which will be clobbered shortly.
+    //
+    // This is OK for now, as we're mimicing the existing process switching
+    // behaviour, and <browser> elements created by tabbrowser don't have the
+    // `src` attribute specified.
+    mFrameLoader->LoadFrame(false);
+  };
+
+  auto shouldPreserve =
+      ShouldPreserveBrowsingContext(isRemote, aReplaceBrowsingContext);
+  ChangeRemotenessCommon(shouldPreserve, /* inProgress */ true, isRemote,
+                         aGroup, frameLoaderInit, rv);
+}
+
+void nsFrameLoaderOwner::SubframeCrashed() {
+  MOZ_ASSERT(XRE_IsContentProcess());
+
+  std::function<void()> frameLoaderInit = [&] {
+    RefPtr<nsFrameLoader> frameLoader = mFrameLoader;
+    nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+        "nsFrameLoaderOwner::SubframeCrashed", [frameLoader]() {
+          nsCOMPtr<nsIURI> uri;
+          nsresult rv = NS_NewURI(getter_AddRefs(uri), "about:blank");
+          if (NS_WARN_IF(NS_FAILED(rv))) {
+            return;
+          }
+
+          RefPtr<nsDocShell> docShell =
+              frameLoader->GetDocShell(IgnoreErrors());
+          if (NS_WARN_IF(!docShell)) {
+            return;
+          }
+          bool displayed = false;
+          docShell->DisplayLoadError(NS_ERROR_FRAME_CRASHED, uri,
+                                     u"about:blank", nullptr, &displayed);
+        }));
+  };
+
+  ChangeRemotenessCommon(ChangeRemotenessContextType::PRESERVE,
+                         /* inProgress */ false, /* isRemote */ false,
+                         /* group */ nullptr, frameLoaderInit, IgnoreErrors());
 }

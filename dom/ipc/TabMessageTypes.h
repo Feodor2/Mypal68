@@ -15,6 +15,13 @@ struct RemoteDOMEvent {
   RefPtr<Event> mEvent;
 };
 
+enum class EmbedderElementEventType {
+  NoEvent,
+  LoadEvent,
+  ErrorEvent,
+  EndGuard_,
+};
+
 }  // namespace mozilla::dom
 
 #endif  // TABMESSAGE_TYPES_H

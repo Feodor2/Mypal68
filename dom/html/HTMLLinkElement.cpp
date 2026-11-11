@@ -571,7 +571,7 @@ void HTMLLinkElement::
   }
 
   nsAutoString rel;
-  if (!GetAttr(kNameSpaceID_None, nsGkAtoms::rel, rel)) {
+  if (!GetAttr(nsGkAtoms::rel, rel)) {
     return;
   }
 
@@ -638,7 +638,7 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
   }
 
   nsAutoString rel;
-  if (!GetAttr(kNameSpaceID_None, nsGkAtoms::rel, rel)) {
+  if (!GetAttr(nsGkAtoms::rel, rel)) {
     return;
   }
 

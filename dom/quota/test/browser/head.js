@@ -109,37 +109,32 @@ function dismissNotification(popup, win) {
 }
 
 function waitForMessage(aMessage, browser) {
-  return new Promise((resolve, reject) => {
-    // When contentScript runs, "this" is a ContentFrameMessageManager (so that's where
-    // addEventListener will add the listener), but the non-bubbling "message" event is
-    // sent to the Window involved, so we need a capturing listener.
-    function contentScript() {
-      addEventListener(
-        "message",
-        function(event) {
-          sendAsyncMessage("testLocal:persisted", { persisted: event.data });
-        },
-        { once: true, capture: true },
-        true
-      );
-    }
-
-    let script = "data:,(" + contentScript.toString() + ")();";
-
-    let mm = browser.selectedBrowser.messageManager;
-
-    mm.addMessageListener("testLocal:persisted", function listener(msg) {
-      mm.removeMessageListener("testLocal:persisted", listener);
-      mm.removeDelayedFrameScript(script);
-      is(msg.data.persisted, aMessage, "received " + aMessage);
-      if (msg.data.persisted == aMessage) {
-        resolve();
-      } else {
-        reject();
+  // We cannot capture aMessage inside the checkFn, so we override the
+  // checkFn.toSource to tunnel aMessage instead.
+  let checkFn = function() {};
+  checkFn.toSource = function() {
+    return `function checkFn(event) {
+      let message = ${aMessage.toSource()};
+      if (event.data == message) {
+        return true;
       }
-    });
+      throw new Error(
+       \`Unexpected result: \$\{event.data\}, expected \$\{message\}\`
+      );
+    }`;
+  };
 
-    mm.loadFrameScript(script, true);
+  return BrowserTestUtils.waitForContentEvent(
+    browser.selectedBrowser,
+    "message",
+    /* capture */ true,
+    checkFn,
+    /* wantsUntrusted */ true
+  ).then(() => {
+    // An assertion in checkFn wouldn't be recorded as part of the test, so we
+    // use this assertion to confirm that we've successfully received the
+    // message (we'll only reach this point if that's the case).
+    ok(true, "Received message: " + aMessage);
   });
 }
 
@@ -150,7 +145,7 @@ function removePermission(url, permission) {
   let ssm = Cc["@mozilla.org/scriptsecuritymanager;1"].getService(
     Ci.nsIScriptSecurityManager
   );
-  let principal = ssm.createCodebasePrincipal(uri, {});
+  let principal = ssm.createContentPrincipal(uri, {});
 
   Cc["@mozilla.org/permissionmanager;1"]
     .getService(Ci.nsIPermissionManager)
@@ -164,7 +159,7 @@ function getPermission(url, permission) {
   let ssm = Cc["@mozilla.org/scriptsecuritymanager;1"].getService(
     Ci.nsIScriptSecurityManager
   );
-  let principal = ssm.createCodebasePrincipal(uri, {});
+  let principal = ssm.createContentPrincipal(uri, {});
 
   return Cc["@mozilla.org/permissionmanager;1"]
     .getService(Ci.nsIPermissionManager)

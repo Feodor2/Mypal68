@@ -68,6 +68,7 @@
 #include "nsRFPService.h"
 #include "nsStringStream.h"
 #include "nsComponentManagerUtils.h"
+#include "nsICookieManager.h"
 #include "nsICookieService.h"
 #include "nsIHttpChannel.h"
 #ifdef ENABLE_MARIONETTE
@@ -369,6 +370,19 @@ void Navigator::GetLanguages(nsTArray<nsString>& aLanguages) {
 
 void Navigator::GetPlatform(nsAString& aPlatform, CallerType aCallerType,
                             ErrorResult& aRv) const {
+  if (mWindow) {
+    BrowsingContext* bc = mWindow->GetBrowsingContext();
+    nsString customPlatform;
+    if (bc) {
+      bc->GetCustomPlatform(customPlatform);
+
+      if (!customPlatform.IsEmpty()) {
+        aPlatform = customPlatform;
+        return;
+      }
+    }
+  }
+
   nsCOMPtr<Document> doc = mWindow->GetExtantDoc();
 
   nsresult rv = GetPlatform(
@@ -477,7 +491,7 @@ StorageManager* Navigator::Storage() {
 }
 
 bool Navigator::CookieEnabled() {
-  bool cookieEnabled = (StaticPrefs::network_cookie_cookieBehavior() !=
+  bool cookieEnabled = (nsICookieManager::GetCookieBehavior() !=
                         nsICookieService::BEHAVIOR_REJECT);
 
   // Check whether an exception overrides the global cookie behavior
@@ -1500,6 +1514,10 @@ already_AddRefed<nsPIDOMWindowInner> Navigator::GetWindowFromGlobal(
     JSObject* aGlobal) {
   nsCOMPtr<nsPIDOMWindowInner> win = xpc::WindowOrNull(aGlobal);
   return win.forget();
+}
+
+void Navigator::ClearPlatformCache() {
+  Navigator_Binding::ClearCachedPlatformValue(this);
 }
 
 nsresult Navigator::GetPlatform(nsAString& aPlatform,

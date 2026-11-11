@@ -119,10 +119,10 @@ static void BlockedContentSourceToString(
 NS_IMETHODIMP
 nsCSPContext::ShouldLoad(nsContentPolicyType aContentType,
                          nsICSPEventListener* aCSPEventListener,
-                         nsIURI* aContentLocation, nsISupports* aRequestContext,
+                         nsIURI* aContentLocation,
                          nsIURI* aOriginalURIIfRedirect,
                          bool aSendViolationReports, const nsAString& aNonce,
-                         int16_t* outDecision) {
+                         bool aParserCreated, int16_t* outDecision) {
   if (CSPCONTEXTLOGENABLED()) {
     CSPCONTEXTLOG(("nsCSPContext::ShouldLoad, aContentLocation: %s",
                    aContentLocation->GetSpecOrDefault().get()));
@@ -147,14 +147,6 @@ nsCSPContext::ShouldLoad(nsContentPolicyType aContentType,
     return NS_OK;
   }
 
-  bool parserCreated = false;
-  if (!nsContentUtils::IsPreloadType(aContentType)) {
-    nsCOMPtr<nsIScriptElement> script = do_QueryInterface(aRequestContext);
-    if (script && script->GetParserCreated() != mozilla::dom::NOT_FROM_PARSER) {
-      parserCreated = true;
-    }
-  }
-
   bool permitted = permitsInternal(
       dir,
       nullptr,  // aTriggeringElement
@@ -162,7 +154,7 @@ nsCSPContext::ShouldLoad(nsContentPolicyType aContentType,
       false,  // allow fallback to default-src
       aSendViolationReports,
       true,  // send blocked URI in violation reports
-      parserCreated);
+      aParserCreated);
 
   *outDecision =
       permitted ? nsIContentPolicy::ACCEPT : nsIContentPolicy::REJECT_SERVER;
@@ -1540,7 +1532,7 @@ nsCSPContext::PermitsAncestry(nsILoadInfo* aLoadInfo,
   nsCOMPtr<nsIURI> uriClone;
 
   while (ctx) {
-    nsCOMPtr<nsIURI> currentURI;
+    nsCOMPtr<nsIPrincipal> currentPrincipal;
     // Generally permitsAncestry is consulted from within the
     // DocumentLoadListener in the parent process. For loads of type object
     // and embed it's called from the Document in the content process.
@@ -1549,28 +1541,37 @@ nsCSPContext::PermitsAncestry(nsILoadInfo* aLoadInfo,
     if (XRE_IsParentProcess()) {
       WindowGlobalParent* window = ctx->Canonical()->GetCurrentWindowGlobal();
       if (window) {
-        currentURI = window->GetDocumentURI();
+        // Using the URI of the Principal and not the document because e.g.
+        // about:blank inherits the principal and hence the URI of the
+        // document does not reflect the security context of the document.
+        currentPrincipal = window->DocumentPrincipal();
       }
     } else if (nsPIDOMWindowOuter* windowOuter = ctx->GetDOMWindow()) {
-      currentURI = windowOuter->GetDocumentURI();
+      currentPrincipal = nsGlobalWindowOuter::Cast(windowOuter)->GetPrincipal();
     }
 
-    if (currentURI) {
-      nsAutoCString spec;
-      currentURI->GetSpec(spec);
-      // delete the userpass from the URI.
-      rv = NS_MutateURI(currentURI)
-               .SetRef(""_ns)
-               .SetUserPass(""_ns)
-               .Finalize(uriClone);
+    if (currentPrincipal) {
+      nsCOMPtr<nsIURI> currentURI;
+      auto* currentBasePrincipal = BasePrincipal::Cast(currentPrincipal);
+      currentBasePrincipal->GetURI(getter_AddRefs(currentURI));
 
-      // If setUserPass fails for some reason, just return a clone of the
-      // current URI
-      if (NS_FAILED(rv)) {
-        rv = NS_GetURIWithoutRef(currentURI, getter_AddRefs(uriClone));
-        NS_ENSURE_SUCCESS(rv, rv);
+      if (currentURI) {
+        nsAutoCString spec;
+        currentURI->GetSpec(spec);
+        // delete the userpass from the URI.
+        rv = NS_MutateURI(currentURI)
+                 .SetRef(""_ns)
+                 .SetUserPass(""_ns)
+                 .Finalize(uriClone);
+
+        // If setUserPass fails for some reason, just return a clone of the
+        // current URI
+        if (NS_FAILED(rv)) {
+          rv = NS_GetURIWithoutRef(currentURI, getter_AddRefs(uriClone));
+          NS_ENSURE_SUCCESS(rv, rv);
+        }
+        ancestorsArray.AppendElement(uriClone);
       }
-      ancestorsArray.AppendElement(uriClone);
     }
     ctx = ctx->GetParent();
   }

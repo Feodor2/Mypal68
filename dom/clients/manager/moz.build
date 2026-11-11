@@ -11,6 +11,7 @@ EXPORTS.mozilla.dom += [
     "ClientManager.h",
     "ClientManagerActors.h",
     "ClientManagerService.h",
+    "ClientOpenWindowUtils.h",
     "ClientOpPromise.h",
     "ClientSource.h",
     "ClientState.h",

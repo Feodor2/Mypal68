@@ -177,6 +177,11 @@ interface nsIDocShell : nsIDocShellTreeItem
   attribute EventTarget chromeEventHandler;
 
   /**
+   * This allows chrome to set a custom User agent on a specific docshell
+   */
+  attribute AString customUserAgent;
+
+  /**
    * Whether CSS error reporting is enabled.
    */
   attribute boolean cssErrorReportingEnabled;
@@ -347,12 +352,6 @@ interface nsIDocShell : nsIDocShellTreeItem
   attribute nsILayoutHistoryState layoutHistoryState;
 
   /**
-   * The SecureBrowserUI object for this docshell.  This is set by XUL
-   * <browser> or nsWebBrowser for their root docshell.
-   */
-  attribute nsISecureBrowserUI securityUI;
-
-  /**
    * Object used to delegate URI loading to an upper context.
    * Currently only set for GeckoView to allow handling of load requests
    * at the application level.
@@ -393,6 +392,8 @@ interface nsIDocShell : nsIDocShellTreeItem
   void finishRestore();
 
   void clearCachedUserAgent();
+
+  void clearCachedPlatform();
 
   /* Track whether we're currently restoring a document presentation. */
   readonly attribute boolean restoringDocument;
@@ -458,51 +459,6 @@ interface nsIDocShell : nsIDocShellTreeItem
    * transition. This is set just before the pagehide/unload events fire.
    */
   readonly attribute boolean isInUnload;
-
-  /**
-   * This attribute determines whether Mixed Active Content is loaded on the
-   * document. When it is true, mixed active content was not blocked and has
-   * loaded (or is about to load) on the page. When it is false, mixed active content
-   * has not loaded on the page, either because there was no mixed active content
-   * requests on the page or such requests were blocked by nsMixedContentBlocker.
-   * This boolean is set to true in nsMixedContentBlocker if Mixed Active Content
-   * is allowed (either explicitly on the page by the user or when the about:config
-   * setting security.mixed_content.block_active_content is set to false).
-   */
-  [infallible] readonly attribute boolean hasMixedActiveContentLoaded;
-
-   /**
-   * This attribute determines whether a document has Mixed Active Content
-   * that has been blocked from loading. When it is true, there is definitely
-   * mixed active content on a page that has been blocked by
-   * nsMixedContentBlocker.  When it is false, there may or may not be mixed
-   * active content on a page, but if there is, it will load. Note that if the
-   * about:config setting security.mixed_content.block_active_content is set
-   * false, this boolean will be false, since blocking active content has been
-   * disabled.
-   */
-  [infallible] readonly attribute boolean hasMixedActiveContentBlocked;
-
-  /**
-   * This attribute determines whether Mixed Display Content is loaded on the
-   * document. When it is true, mixed display content was not blocked and has
-   * loaded (or is about to load) on the page. Similar behavior to
-   * hasMixedActiveContentLoaded.
-   */
-  [infallible] readonly attribute boolean hasMixedDisplayContentLoaded;
-
-   /**
-   * This attribute determines whether a document has Mixed Display Content
-   * that has been blocked from loading. Similar behavior to
-   * hasMixedActiveContentBlocked.
-   */
-  [infallible] readonly attribute boolean hasMixedDisplayContentBlocked;
-
-   /**
-   * This attribute determines whether a document has Tracking Content
-   * that has been blocked from loading.
-   */
-  [infallible] readonly attribute boolean hasTrackingContentBlocked;
 
   /**
    * Disconnects this docshell's editor from its window, and stores the
@@ -582,11 +538,12 @@ interface nsIDocShell : nsIDocShellTreeItem
   /**
    * Create a new about:blank document and content viewer.
    * @param aPrincipal the principal to use for the new document.
-   * @param aStoragePrincipal the storage principal to use for the new document.
+   * @param aPartitionedPrincipal the partitioned principal to use for the new
+   *        document.
    * @param aCsp the CSP to use for the new document.
    */
   void createAboutBlankContentViewer(in nsIPrincipal aPrincipal,
-                                     in nsIPrincipal aStoragePrincipal,
+                                     in nsIPrincipal aPartitionedPrincipal,
                                      [optional] in nsIContentSecurityPolicy aCSP);
 
   /**
@@ -596,13 +553,6 @@ interface nsIDocShell : nsIDocShellTreeItem
    * Upon setting, sets the forced encoding for compatibility with legacy callers.
    */
   attribute ACString charset;
-
-  /**
-   * Called when the user chose an encoding override from the character
-   * encoding menu. Separate from the setter for the charset property to avoid
-   * extensions adding noise to the data.
-   */
-  void gatherCharsetMenuTelemetry();
 
   /**
    * In a child docshell, this is the charset of the parent docshell
@@ -722,38 +672,12 @@ interface nsIDocShell : nsIDocShellTreeItem
   attribute nsIChannel mixedContentChannel;
 
   /**
-   * Checks whether the channel associated with the root docShell is equal to
-   * mMixedContentChannel. If they are the same, allowMixedContent is set to true.
-   * Checks if the root document has a secure connection. If it is, sets
-   * rootHasSecureConnection to true. If the docShell is the root doc shell,
-   * isRootDocShell is set to true.
-   */
-  void GetAllowMixedContentAndConnectionData(out boolean rootHasSecureConnection, out boolean allowMixedContent, out boolean isRootDocShell);
-
-
-  /**
    * Are plugins allowed in the current document loaded in this docshell ?
    * (if there is one). This depends on whether plugins are allowed by this
    * docshell itself or if the document is sandboxed and hence plugins should
    * not be allowed.
    */
   [noscript, notxpcom] bool pluginsAllowedInCurrentDoc();
-
-
-  /**
-   * Attribute that determines whether fullscreen is allowed to be entered for
-   * this subtree of the docshell tree. This is true when all iframes containing
-   * this docshell have their "allowfullscreen" attribute set to "true".
-   * fullscreenAllowed is only writable at content boundaries, where it is used
-   * to propagate the value of the cross process parent's iframe's
-   * "allowfullscreen" attribute to the child process. Setting
-   * fullscreenAllowed on docshells which aren't content boundaries throws an
-   * exception.
-   */
-  [infallible] readonly attribute boolean fullscreenAllowed;
-
-  [notxpcom] uint32_t orientationLock();
-  [notxpcom] void setOrientationLock(in uint32_t orientationLock);
 
   [noscript, infallible] attribute boolean affectPrivateSessionLifetime;
 
@@ -792,11 +716,6 @@ interface nsIDocShell : nsIDocShellTreeItem
                        in long aChildOffset,
                        in unsigned long aLoadType,
                        in boolean aCloneChilden);
-
-  /**
-   * Whether this docshell should save entries in global history.
-   */
-  attribute boolean useGlobalHistory;
 
   /**
    * Removes nsISHEntry objects related to this docshell from session history.
@@ -864,8 +783,6 @@ interface nsIDocShell : nsIDocShellTreeItem
                                                                   in jsval asyncStack,
                                                                   in string asyncCause);
   [noscript,notxpcom,nostdcall] void notifyJSRunToCompletionStop();
-
-  [noscript] void GetOSHEId(out uint32_t aSHEntryId);
 
   /**
    * This attribute determines whether a document which is not about:blank has
@@ -955,12 +872,6 @@ interface nsIDocShell : nsIDocShellTreeItem
   [infallible] attribute nsIDocShell_MetaViewportOverride metaViewportOverride;
 
   /**
-   * Returns `true` if this docshell was created due to a Large-Allocation
-   * header, and has not seen the initiating load yet.
-   */
-  [infallible] readonly attribute boolean awaitingLargeAlloc;
-
-  /**
    * Attribute that determines whether tracking protection is enabled.
    */
   attribute boolean useTrackingProtection;
@@ -990,12 +901,6 @@ interface nsIDocShell : nsIDocShellTreeItem
   void setColorMatrix(in Array<float> aMatrix);
 
   Array<float> getColorMatrix();
-
-  /**
-   * Initialize session history for this docshell. The docshell must be the root
-   * docshell.
-   */
-  void initSessionHistory();
 
 %{C++
   /**
@@ -1029,27 +934,18 @@ interface nsIDocShell : nsIDocShellTreeItem
    */
   [infallible] readonly attribute ContentFrameMessageManager messageManager;
 
-  /**
-   * Asynchronously retrieve a JSON string representing a log of the
-   * content blocking events happened so far in the current tab from the
-   * content process.
-   *
-   * This returns a Promise which resolves to a string on success, and is
-   * rejected on failure.  For documentation on the string format, please
-   * see nsISecureBrowserUI.contentBlockingLogJSON.
+   /**
+   * This returns a Promise which resolves to a boolean. True when the
+   * document has Tracking Content that has been blocked from loading, false
+   * otherwise.
    */
-  Promise getContentBlockingLog();
+  Promise getHasTrackingContentBlocked();
 
   /**
    * Return whether this docshell is "attempting to navigate" in the
    * sense that's relevant to document.open.
    */
   [notxpcom, nostdcall] readonly attribute boolean isAttemptingToNavigate;
-
-  /**
-   * Whether developer tools are watching activity in this docshell.
-   */
-  [infallible] attribute boolean watchedByDevtools;
 
   /*
    * Whether or not this docshell is executing a nsIWebNavigation navigation
@@ -1068,4 +964,14 @@ interface nsIDocShell : nsIDocShellTreeItem
    * @see nsISHEntry synchronizeLayoutHistoryState().
    */
   void synchronizeLayoutHistoryState();
+
+  /**
+   * This attempts to save any applicable layout history state (like
+   * scroll position) in the nsISHEntry. This is normally done
+   * automatically when transitioning from page to page in the
+   * same process. We expose this function to support transitioning
+   * from page to page across processes as a workaround for bug 1630234
+   * until session history state is moved into the parent process.
+   */
+  void persistLayoutHistoryState();
 };

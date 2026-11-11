@@ -14,11 +14,10 @@ webidl BrowsingContext;
 #include "nsTArrayForwardDeclare.h"
 #include "mozilla/Maybe.h"
 struct EntriesAndBrowsingContextData;
-using mozilla::Maybe;  //MY
 %}
 
 [ref] native nsDocshellIDArray(nsTArray<nsID>);
-native MaybeInt32(Maybe<int32_t>);
+native MaybeInt32(mozilla::Maybe<int32_t>);
 /**
  * An interface to the primary properties of the Session History
  * component. In an embedded browser environment, the nsIWebBrowser
@@ -127,6 +126,13 @@ interface nsISHistory: nsISupports
   void gotoIndex(in long aIndex);
 
   /**
+   * If an element exists at the particular index and
+   * whether it has user interaction.
+   */
+  [noscript,notxpcom]
+  boolean hasUserInteractionAtIndex(in long aIndex);
+
+  /**
    * Called to obtain the index to a given history entry.
    *
    * @param aEntry            The entry to obtain the index of.
@@ -149,13 +155,6 @@ interface nsISHistory: nsISupports
    *                          appear in the session history list.
    */
   void addEntry(in nsISHEntry aEntry, in boolean aPersist);
-
-  /**
-   * Clear the reference to the toplevel browsing context object that this
-   * SHistory object belongs to.
-   */
-  [noscript, notxpcom]
-  void ClearRootBrowsingContext();
 
   /**
    * Update the index maintained by sessionHistory
@@ -279,4 +278,6 @@ interface nsISHistory: nsISupports
 
   [noscript] void AddChildSHEntryHelper(in nsISHEntry aCloneRef, in nsISHEntry aNewEntry,
                                         in BrowsingContext aBC, in bool aCloneChildren);
+
+  [noscript, notxpcom] boolean isEmptyOrHasEntriesForSingleTopLevelPage();
 };

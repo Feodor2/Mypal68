@@ -62,10 +62,11 @@ namespace dom {
 class ClientInfo;
 class ClientSource;
 class EventTarget;
+class SessionHistoryInfo;
 }  // namespace dom
 namespace net {
 class LoadInfo;
-class DocumentChannelRedirect;
+class DocumentLoadListener;
 }  // namespace net
 }  // namespace mozilla
 
@@ -258,32 +259,16 @@ class nsDocShell final : public nsDocLoader,
    * through an event.
    *
    * @param aContent the content object used for triggering the link.
-   * @param aURI a URI obect that defines the destination for the link
-   * @param aTargetSpec indicates where the link is targeted (may be an empty
-   *        string)
-   * @param aFileName non-null when the link should be downloaded as the given
-   * file
-   * @param aPostDataStream the POST data to send
-   * @param aHeadersDataStream ??? (only used for plugins)
+   * @param aDocShellLoadState the extended load info for this load.
    * @param aNoOpenerImplied if the link implies "noopener"
-   * @param aDocShell (out-param) the DocShell that the request was opened on
-   * @param aRequest the request that was opened
    * @param aTriggeringPrincipal, if not passed explicitly we fall back to
    *        the document's principal.
-   * @param aCsp, the CSP to be used for the load, that is the CSP of the
-   *        entity responsible for causing the load to occur. Most likely
-   *        this is the CSP of the document that started the load. In case
-   *        aCsp was not passed explicitly we fall back to using
-   *        aContent's document's CSP if that document holds any.
    */
-  nsresult OnLinkClickSync(
-      nsIContent* aContent, nsIURI* aURI, const nsAString& aTargetSpec,
-      const nsAString& aFileName, nsIInputStream* aPostDataStream = nullptr,
-      nsIInputStream* aHeadersDataStream = nullptr,
-      bool aNoOpenerImplied = false, nsIDocShell** aDocShell = nullptr,
-      nsIRequest** aRequest = nullptr, bool aIsUserTriggered = false,
-      nsIPrincipal* aTriggeringPrincipal = nullptr,
-      nsIContentSecurityPolicy* aCsp = nullptr);
+  nsresult OnLinkClickSync(nsIContent* aContent,
+                           nsDocShellLoadState* aLoadState,
+                           bool aNoOpenerImplied,
+                           nsIPrincipal* aTriggeringPrincipal);
+
   /**
    * Process a mouse-over a link.
    *
@@ -304,7 +289,6 @@ class nsDocShell final : public nsDocLoader,
   NS_IMETHOD GetAssociatedWindow(mozIDOMWindowProxy**) override;
   NS_IMETHOD GetTopWindow(mozIDOMWindowProxy**) override;
   NS_IMETHOD GetTopFrameElement(mozilla::dom::Element**) override;
-  NS_IMETHOD GetNestedFrameId(uint64_t*) override;
   NS_IMETHOD GetIsContent(bool*) override;
   NS_IMETHOD GetUsePrivateBrowsing(bool*) override;
   NS_IMETHOD SetUsePrivateBrowsing(bool) override;
@@ -453,6 +437,8 @@ class nsDocShell final : public nsDocLoader,
     return static_cast<nsDocShell*>(aDocShell);
   }
 
+  static bool CanLoadInParentProcess(nsIURI* aURI);
+
   // Returns true if the current load is a force reload (started by holding
   // shift while triggering reload)
   bool IsForceReloading();
@@ -468,8 +454,7 @@ class nsDocShell final : public nsDocLoader,
    * onLinkClickSync, which is triggered during form submission.
    */
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  nsresult InternalLoad(nsDocShellLoadState* aLoadState,
-                        nsIDocShell** aDocShell, nsIRequest** aRequest);
+  nsresult InternalLoad(nsDocShellLoadState* aLoadState);
 
   // Clear the document's storage access flag if needed.
   void MaybeClearStorageAccessFlag();
@@ -503,11 +488,32 @@ class nsDocShell final : public nsDocLoader,
       nsLoadFlags aLoadFlags, uint32_t aCacheKey, nsresult& rv,
       nsIChannel** aChannel);
 
+  static already_AddRefed<nsIURI> AttemptURIFixup(
+      nsIChannel* aChannel, nsresult aStatus,
+      const mozilla::Maybe<nsCString>& aOriginalURIString, uint32_t aLoadType,
+      bool aIsTopFrame, bool aAllowKeywordFixup,
+      bool aNotifyKeywordSearchLoading = false,
+      nsIInputStream** aNewPostData = nullptr);
+
+  // Takes aStatus and filters out results that should not display
+  // an error page.
+  // If this returns a failed result, then we should display an error
+  // page with that result.
+  // aSkippedUnknownProtocolNavigation will be set to true if we chose
+  // to skip displaying an error page for an NS_ERROR_UNKNOWN_PROTOCOL
+  // navigation.
+  static nsresult FilterStatusForErrorPage(
+      nsresult aStatus, nsIChannel* aChannel, uint32_t aLoadType,
+      bool aIsTopFrame, bool aUseErrorPages, bool aIsInitialDocument,
+      bool* aSkippedUnknownProtocolNavigation = nullptr);
+
   // Notify consumers of a search being loaded through the observer service:
   static void MaybeNotifyKeywordSearchLoading(const nsString& aProvider,
                                               const nsString& aKeyword);
 
   nsDocShell* GetInProcessChildAt(int32_t aIndex);
+
+  static bool ShouldAddURIVisit(nsIChannel* aChannel);
 
   /**
    * Helper function that finds the last URI and its transition flags for a
@@ -532,12 +538,17 @@ class nsDocShell final : public nsDocLoader,
   static uint32_t ComputeURILoaderFlags(
       mozilla::dom::BrowsingContext* aBrowsingContext, uint32_t aLoadType);
 
+  void SetLoadingSessionHistoryInfo(
+      const mozilla::dom::SessionHistoryInfo& aInfo);
+
  private:  // member functions
   friend class nsDSURIContentListener;
   friend class FramingChecker;
   friend class OnLinkClickEvent;
   friend class nsIDocShell;
   friend class mozilla::dom::BrowsingContext;
+  friend class mozilla::net::DocumentLoadListener;
+  friend class nsGlobalWindowOuter;
 
   // It is necessary to allow adding a timeline marker wherever a docshell
   // instance is available. This operation happens frequently and needs to
@@ -596,8 +607,10 @@ class nsDocShell final : public nsDocLoader,
   // passed in, the about:blank principal will end up being used.
   // aCSP, if any, will be used for the new about:blank load.
   nsresult CreateAboutBlankContentViewer(
-      nsIPrincipal* aPrincipal, nsIPrincipal* aStoragePrincipal,
+      nsIPrincipal* aPrincipal, nsIPrincipal* aPartitionedPrincipal,
       nsIContentSecurityPolicy* aCSP, nsIURI* aBaseURI,
+      const mozilla::Maybe<nsILoadInfo::CrossOriginEmbedderPolicy>& aCOEP =
+          mozilla::Nothing(),
       bool aTryToSaveOldPresentation = true, bool aCheckPermitUnload = true,
       mozilla::dom::WindowGlobalChild* aActor = nullptr);
 
@@ -636,15 +649,11 @@ class nsDocShell final : public nsDocLoader,
   nsresult AddToSessionHistory(nsIURI* aURI, nsIChannel* aChannel,
                                nsIPrincipal* aTriggeringPrincipal,
                                nsIPrincipal* aPrincipalToInherit,
-                               nsIPrincipal* aStoragePrincipalToInherit,
+                               nsIPrincipal* aPartitionedPrincipalToInherit,
                                nsIContentSecurityPolicy* aCsp,
                                bool aCloneChildren, nsISHEntry** aNewEntry);
 
   nsresult AddChildSHEntryToParent(nsISHEntry* aNewEntry, int32_t aChildOffset,
-                                   bool aCloneChildren);
-
-  nsresult AddChildSHEntryInternal(nsISHEntry* aCloneRef, nsISHEntry* aNewEntry,
-                                   int32_t aChildOffset, uint32_t aLoadType,
                                    bool aCloneChildren);
 
   // Call this method to swap in a new history entry to m[OL]SHE, rather than
@@ -658,6 +667,15 @@ class nsDocShell final : public nsDocLoader,
   // the same as in docshell
   void SetHistoryEntryAndUpdateBC(const mozilla::Maybe<nsISHEntry*>& aLSHE,
                                   const mozilla::Maybe<nsISHEntry*>& aOSHE);
+
+  mozilla::dom::ChildSHistory* GetSessionHistory() {
+    return mBrowsingContext->GetChildSessionHistory();
+  }
+
+  static nsresult ReloadDocument(
+      nsDocShell* aDocShell, mozilla::dom::Document* aDocument,
+      uint32_t aLoadType, mozilla::dom::BrowsingContext* aBrowsingContext,
+      nsIURI* aCurrentURI, nsIReferrerInfo* aReferrerInfo);
 
   //
   // URI Load
@@ -676,18 +694,17 @@ class nsDocShell final : public nsDocLoader,
   // originalURI on the channel that does the load. If OriginalURI is null, URI
   // will be set as the originalURI. If LoadReplace is true, LOAD_REPLACE flag
   // will be set on the nsIChannel.
-  nsresult DoURILoad(nsDocShellLoadState* aLoadState, nsIDocShell** aDocShell,
-                     nsIRequest** aRequest);
+  nsresult DoURILoad(nsDocShellLoadState* aLoadState, nsIRequest** aRequest);
 
   static nsresult AddHeadersToChannel(nsIInputStream* aHeadersData,
                                       nsIChannel* aChannel);
 
-  nsresult DoChannelLoad(nsIChannel* aChannel, nsIURILoader* aURILoader,
-                         bool aBypassClassifier);
-
   nsresult OpenInitializedChannel(nsIChannel* aChannel,
                                   nsIURILoader* aURILoader,
                                   uint32_t aOpenFlags);
+  nsresult OpenRedirectedChannel(nsDocShellLoadState* aLoadState);
+
+  void UpdateMixedContentChannelForNewLoad(nsIChannel* aChannel);
 
   MOZ_CAN_RUN_SCRIPT
   nsresult ScrollToAnchor(bool aCurHasRef, bool aNewHasRef,
@@ -710,9 +727,10 @@ class nsDocShell final : public nsDocLoader,
   bool OnNewURI(nsIURI* aURI, nsIChannel* aChannel,
                 nsIPrincipal* aTriggeringPrincipal,
                 nsIPrincipal* aPrincipalToInherit,
-                nsIPrincipal* aStoragePrincipalToInehrit, uint32_t aLoadType,
-                nsIContentSecurityPolicy* aCsp, bool aFireOnLocationChange,
-                bool aAddToGlobalHistory, bool aCloneSHChildren);
+                nsIPrincipal* aPartitionedPrincipalToInehrit,
+                uint32_t aLoadType, nsIContentSecurityPolicy* aCsp,
+                bool aFireOnLocationChange, bool aAddToGlobalHistory,
+                bool aCloneSHChildren);
 
   // Helper method that is called when a new document (including any
   // sub-documents - ie. frames) has been completely loaded.
@@ -750,10 +768,11 @@ class nsDocShell final : public nsDocLoader,
   // If that fails too, we force creation of a content viewer and use the
   // resulting principal. If aConsiderCurrentDocument is false, we just look
   // at the parent.
-  // If aConsiderStoragePrincipal is true, we consider the storage principal
-  // instead of the node principal.
-  nsIPrincipal* GetInheritedPrincipal(bool aConsiderCurrentDocument,
-                                      bool aConsiderStoragePrincipal = false);
+  // If aConsiderPartitionedPrincipal is true, we consider the partitioned
+  // principal instead of the node principal.
+  nsIPrincipal* GetInheritedPrincipal(
+      bool aConsiderCurrentDocument,
+      bool aConsiderPartitionedPrincipal = false);
 
   /**
    * Helper function that caches a URI and a transition for saving later.
@@ -765,8 +784,8 @@ class nsDocShell final : public nsDocLoader,
    * @param aChannelRedirectFlags
    *        The nsIChannelEventSink redirect flags to save for later
    */
-  void SaveLastVisit(nsIChannel* aChannel, nsIURI* aURI,
-                     uint32_t aChannelRedirectFlags);
+  static void SaveLastVisit(nsIChannel* aChannel, nsIURI* aURI,
+                            uint32_t aChannelRedirectFlags);
 
   /**
    * Helper function for adding a URI visit using IHistory.
@@ -796,25 +815,15 @@ class nsDocShell final : public nsDocLoader,
                    uint32_t aResponseStatus = 0);
 
   /**
-   * Helper function that will add the redirect chain found in aRedirects using
-   * IHistory (see AddURI and SaveLastVisit above for details)
-   *
-   * @param aChannel
-   *        Channel that will have these properties saved
-   * @param aURI
-   *        The URI that was just visited
-   * @param aChannelRedirectFlags
-   *        For redirects, the redirect flags from nsIChannelEventSink
-   *        (0 otherwise)
-   * @param aRedirects
-   *        The redirect chain collected by the DocumentChannelParent
+   * Internal helper funtion
    */
-  void SavePreviousRedirectsAndLastVisit(
-      nsIChannel* aChannel, nsIURI* aURI, uint32_t aChannelRedirectFlags,
-      const nsTArray<mozilla::net::DocumentChannelRedirect>& aRedirects);
+  static void InternalAddURIVisit(
+      nsIURI* aURI, nsIURI* aPreviousURI, uint32_t aChannelRedirectFlags,
+      uint32_t aResponseStatus, mozilla::dom::BrowsingContext* aBrowsingContext,
+      nsIWidget* aWidget, uint32_t aLoadType);
 
-  already_AddRefed<nsIURIFixupInfo> KeywordToURI(const nsACString& aKeyword,
-                                                 nsIInputStream** aPostData);
+  static already_AddRefed<nsIURIFixupInfo> KeywordToURI(
+      const nsACString& aKeyword, nsIInputStream** aPostData);
 
   // Sets the current document's current state object to the given SHEntry's
   // state object. The current state object is eventually given to the page
@@ -930,7 +939,7 @@ class nsDocShell final : public nsDocLoader,
    * passing the return value of MaybeInitTiming(): if it's possible to reset
    * the Timing, this method will do it.
    */
-  MOZ_MUST_USE bool MaybeInitTiming();
+  [[nodiscard]] bool MaybeInitTiming();
   void MaybeResetInitTiming(bool aReset);
 
   // Convenience method for getting our parent docshell. Can return null
@@ -951,8 +960,10 @@ class nsDocShell final : public nsDocLoader,
   void ReattachEditorToWindow(nsISHEntry* aSHEntry);
   void RecomputeCanExecuteScripts();
   void ClearFrameHistory(nsISHEntry* aEntry);
+  // Determine if this type of load should update history.
+  static bool ShouldUpdateGlobalHistory(uint32_t aLoadType);
   void UpdateGlobalHistoryTitle(nsIURI* aURI);
-  bool IsFrame() { return mBrowsingContext->GetParent(); }
+  bool IsFrame() { return mBrowsingContext->IsFrame(); }
   bool CanSetOriginAttributes();
   bool ShouldBlockLoadingForBackButton();
   bool ShouldDiscardLayoutState(nsIHttpChannel* aChannel);
@@ -973,8 +984,9 @@ class nsDocShell final : public nsDocLoader,
                  mozilla::dom::WindowGlobalChild* aWindowActor = nullptr);
   nsPresContext* GetEldestPresContext();
   nsresult CheckLoadingPermissions();
-  nsresult PersistLayoutHistoryState();
   nsresult LoadHistoryEntry(nsISHEntry* aEntry, uint32_t aLoadType);
+  nsresult LoadHistoryEntry(nsDocShellLoadState* aLoadState, uint32_t aLoadType,
+                            bool aReloadingActiveEntry);
   nsresult GetHttpChannel(nsIChannel* aChannel, nsIHttpChannel** aReturn);
   nsresult ConfirmRepost(bool* aRepost);
   nsresult GetPromptAndStringBundle(nsIPrompt** aPrompt,
@@ -996,14 +1008,22 @@ class nsDocShell final : public nsDocLoader,
 
   // If we are passed a named target during InternalLoad, this method handles
   // moving the load to the browsing context the target name resolves to.
-  nsresult PerformRetargeting(nsDocShellLoadState* aLoadState,
-                              nsIDocShell** aDocShell, nsIRequest** aRequest);
+  nsresult PerformRetargeting(nsDocShellLoadState* aLoadState);
 
   // Returns one of nsIContentPolicy::TYPE_DOCUMENT,
   // nsIContentPolicy::TYPE_INTERNAL_IFRAME, or
   // nsIContentPolicy::TYPE_INTERNAL_FRAME depending on who is responsible for
   // this docshell.
   nsContentPolicyType DetermineContentType();
+
+  // If this is an iframe, and the embedder is OOP, then notifes the
+  // embedder that loading has finished and we shouldn't be blocking
+  // load of the embedder. Only called when we fail to load, as we wait
+  // for the load event of our Document before notifying success.
+  //
+  // If aFireFrameErrorEvent is true, then fires an error event at the
+  // embedder element, for both in-process and OOP embedders.
+  void UnblockEmbedderLoadEventForFailure(bool aFireFrameErrorEvent = false);
 
   struct SameDocumentNavigationState {
     nsAutoCString mCurrentHash;
@@ -1027,6 +1047,10 @@ class nsDocShell final : public nsDocLoader,
 
   // Called when the Private Browsing state of a nsDocShell changes.
   void NotifyPrivateBrowsingChanged();
+
+  // Internal helpers for BrowsingContext to pass update values to nsIDocShell's
+  // LoadGroup.
+  void SetLoadGroupDefaultLoadFlags(nsLoadFlags aLoadFlags);
 
  private:  // data members
   nsID mHistoryID;
@@ -1089,6 +1113,10 @@ class nsDocShell final : public nsDocLoader,
   // parent has loaded does. (This isn't the only purpose of mLSHE.)
   nsCOMPtr<nsISHEntry> mLSHE;
 
+  // These are only set when fission.sessionHistoryInParent is set.
+  mozilla::UniquePtr<mozilla::dom::SessionHistoryInfo> mActiveEntry;
+  mozilla::UniquePtr<mozilla::dom::SessionHistoryInfo> mLoadingEntry;
+
   // Holds a weak pointer to a RestorePresentationEvent object if any that
   // holds a weak pointer back to us. We use this pointer to possibly revoke
   // the event whenever necessary.
@@ -1096,9 +1124,6 @@ class nsDocShell final : public nsDocLoader,
 
   // Editor data, if this document is designMode or contentEditable.
   mozilla::UniquePtr<nsDocShellEditorData> mEditorData;
-
-  // Secure browser UI object
-  nsCOMPtr<nsISecureBrowserUI> mSecurityUI;
 
   // The URI we're currently loading. This is only relevant during the
   // firing of a pagehide/unload. The caller of FirePageHideNotification()
@@ -1141,8 +1166,6 @@ class nsDocShell final : public nsDocLoader,
 
   eCharsetReloadState mCharsetReloadState;
 
-  mozilla::hal::ScreenOrientation mOrientationLock;
-
   int32_t mParentCharsetSource;
   mozilla::CSSIntSize mFrameMargins;
 
@@ -1162,7 +1185,6 @@ class nsDocShell final : public nsDocLoader,
   BusyFlags mBusyFlags;
   AppType mAppType;
   uint32_t mLoadType;
-  uint32_t mDefaultLoadFlags;
   uint32_t mFailedLoadType;
 
   // This represents the CSS display-mode we are currently using. This is mostly
@@ -1181,25 +1203,6 @@ class nsDocShell final : public nsDocLoader,
   // Possible values are defined as constants in nsIDocShell.idl.
   MetaViewportOverride mMetaViewportOverride;
 
-  // mFullscreenAllowed stores how we determine whether fullscreen is allowed
-  // when GetFullscreenAllowed() is called. Fullscreen is allowed in a
-  // docshell when all containing iframes have the allowfullscreen
-  // attribute set to true. When mFullscreenAllowed is CHECK_ATTRIBUTES
-  // we check this docshell's containing frame for the allowfullscreen
-  // attribute, and recurse onto the parent docshell to ensure all containing
-  // frames also have the allowfullscreen attribute. If we find an ancestor
-  // docshell with mFullscreenAllowed not equal to CHECK_ATTRIBUTES, we've
-  // reached a content boundary, and mFullscreenAllowed denotes whether the
-  // parent across the content boundary has allowfullscreen=true in all its
-  // containing iframes. mFullscreenAllowed defaults to CHECK_ATTRIBUTES and
-  // is set otherwise when docshells which are content boundaries are created.
-  enum FullscreenAllowedState : uint8_t {
-    CHECK_ATTRIBUTES,
-    PARENT_ALLOWS,
-    PARENT_PROHIBITS
-  };
-  FullscreenAllowedState mFullscreenAllowed;
-
   // The following two fields cannot be declared as bit fields
   // because of uses with AutoRestore.
   bool mCreatingDocument;  // (should be) debugging only
@@ -1215,14 +1218,12 @@ class nsDocShell final : public nsDocLoader,
   bool mAllowMedia : 1;
   bool mAllowDNSPrefetch : 1;
   bool mAllowWindowControl : 1;
-  bool mUseErrorPages : 1;
   bool mCSSErrorReportingEnabled : 1;
   bool mAllowAuth : 1;
   bool mAllowKeywordFixup : 1;
   bool mIsOffScreenBrowser : 1;
   bool mDisableMetaRefreshWhenInactive : 1;
   bool mIsAppTab : 1;
-  bool mUseGlobalHistory : 1;
   bool mDeviceSizeIsPageSize : 1;
   bool mWindowDraggingAllowed : 1;
   bool mInFrameSwap : 1;
@@ -1273,9 +1274,6 @@ class nsDocShell final : public nsDocLoader,
   // If mWillChangeProcess is set to true, then when the docshell is destroyed,
   // we prepare the browsing context to change process.
   bool mWillChangeProcess : 1;
-
-  // Set when activity in this docshell is being watched by the developer tools.
-  bool mWatchedByDevtools : 1;
 
   // This flag indicates whether or not the DocShell is currently executing an
   // nsIWebNavigation navigation method.

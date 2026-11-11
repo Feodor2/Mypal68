@@ -5,19 +5,49 @@
 #ifndef mozilla_dom_WindowContext_h
 #define mozilla_dom_WindowContext_h
 
+#include "mozilla/Span.h"
 #include "mozilla/dom/MaybeDiscarded.h"
 #include "mozilla/dom/SyncedContext.h"
-#include "mozilla/net/NeckoChannelParams.h"
 
 namespace mozilla {
 namespace dom {
 
+class WindowGlobalChild;
 class WindowGlobalParent;
+class WindowGlobalInit;
+class BrowsingContextGroup;
 
 #define MOZ_EACH_WC_FIELD(FIELD)                                       \
-  FIELD(OuterWindowId, uint64_t)                                       \
-  FIELD(CookieJarSettings, Maybe<mozilla::net::CookieJarSettingsArgs>) \
-  FIELD(HasStoragePermission, bool)
+  /* Whether the SHEntry associated with the current top-level         \
+   * window has already seen user interaction.                         \
+   * As such, this will be reset to false when a new SHEntry is        \
+   * created without changing the WC (e.g. when using pushState or     \
+   * sub-frame navigation)                                             \
+   * This flag is set for optimization purposes, to avoid              \
+   * having to get the top SHEntry and update it on every              \
+   * user interaction.                                                 \
+   * This is only meaningful on the top-level WC. */                   \
+  FIELD(SHEntryHasUserInteraction, bool)                               \
+  FIELD(CookieBehavior, Maybe<uint32_t>)                               \
+  FIELD(IsOnContentBlockingAllowList, bool)                            \
+  /* Whether the given window hierarchy is third party. See            \
+   * ThirdPartyUtil::IsThirdPartyWindow for details */                 \
+  FIELD(IsThirdPartyWindow, bool)                                      \
+  /* Whether this window's channel has been marked as a third-party    \
+   * tracking resource */                                              \
+  FIELD(IsThirdPartyTrackingResourceWindow, bool)                      \
+  FIELD(IsSecureContext, bool)                                         \
+  /* Mixed-Content: If the corresponding documentURI is https,         \
+   * then this flag is true. */                                        \
+  FIELD(IsSecure, bool)                                                \
+  /* Whether the user has overriden the mixed content blocker to allow \
+   * mixed content loads to happen */                                  \
+  FIELD(AllowMixedContent, bool)                                       \
+  FIELD(EmbedderPolicy, nsILoadInfo::CrossOriginEmbedderPolicy)        \
+  /* True if this document tree contained an HTMLMediaElement that     \
+   * played audibly. This should only be set on top level context. */  \
+  FIELD(DocTreeHadAudibleMedia, bool)                                  \
+  FIELD(AutoplayPermission, uint32_t)
 
 class WindowContext : public nsISupports, public nsWrapperCache {
   MOZ_DECL_SYNCED_CONTEXT(WindowContext, MOZ_EACH_WC_FIELD)
@@ -33,8 +63,19 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   BrowsingContextGroup* Group() const;
   uint64_t Id() const { return InnerWindowId(); }
   uint64_t InnerWindowId() const { return mInnerWindowId; }
-  uint64_t OuterWindowId() const { return GetOuterWindowId(); }
+  uint64_t OuterWindowId() const { return mOuterWindowId; }
   bool IsDiscarded() const { return mIsDiscarded; }
+
+  bool IsCached() const;
+
+  bool IsInProcess() { return mInProcess; }
+
+  // Get the parent WindowContext of this WindowContext, taking the BFCache into
+  // account. This will not cross chrome/content <browser> boundaries.
+  WindowContext* GetParentWindowContext();
+  WindowContext* TopWindowContext();
+
+  Span<RefPtr<BrowsingContext>> Children() { return mChildren; }
 
   // Cast this object to it's parent-process canonical form.
   WindowGlobalParent* Canonical();
@@ -47,45 +88,75 @@ class WindowContext : public nsISupports, public nsWrapperCache {
 
   struct IPCInitializer {
     uint64_t mInnerWindowId;
+    uint64_t mOuterWindowId;
     uint64_t mBrowsingContextId;
 
-    FieldTuple mFields;
+    FieldValues mFields;
   };
-  IPCInitializer GetIPCInitializer() {
-    return {mInnerWindowId, mBrowsingContext->Id(), mFields.Fields()};
-  }
+  IPCInitializer GetIPCInitializer();
 
-  static already_AddRefed<WindowContext> Create(WindowGlobalChild* aWindow);
   static void CreateFromIPC(IPCInitializer&& aInit);
+
+  // Add new mixed content security state flags.
+  // These should be some of the four nsIWebProgressListener
+  // 'MIXED' state flags, and should only be called on the
+  // top window context.
+  void AddMixedContentSecurityState(uint32_t aStateFlags);
 
  protected:
   WindowContext(BrowsingContext* aBrowsingContext, uint64_t aInnerWindowId,
-                FieldTuple&& aFields);
+                uint64_t aOuterWindowId, bool aInProcess,
+                FieldValues&& aFields);
   virtual ~WindowContext();
 
-  void Init();
+  virtual void Init();
 
  private:
+  friend class BrowsingContext;
+  friend class WindowGlobalChild;
+  friend class WindowGlobalActor;
+
+  void AppendChildBrowsingContext(BrowsingContext* aBrowsingContext);
+  void RemoveChildBrowsingContext(BrowsingContext* aBrowsingContext);
+
   // Send a given `BaseTransaction` object to the correct remote.
   void SendCommitTransaction(ContentParent* aParent,
                              const BaseTransaction& aTxn, uint64_t aEpoch);
   void SendCommitTransaction(ContentChild* aChild, const BaseTransaction& aTxn,
                              uint64_t aEpoch);
 
-  // Overload `CanSet` to get notifications for a particular field being set.
-  bool CanSet(FieldIndex<IDX_OuterWindowId>, const uint64_t& aValue,
-              ContentParent* aSource) {
-    return GetOuterWindowId() == 0 && aValue != 0;
-  }
+  bool CheckOnlyOwningProcessCanSet(ContentParent* aSource);
 
-  bool CanSet(FieldIndex<IDX_CookieJarSettings>,
-              const Maybe<mozilla::net::CookieJarSettingsArgs>& aValue,
+  // Overload `CanSet` to get notifications for a particular field being set.
+  bool CanSet(FieldIndex<IDX_IsSecure>, const bool& aIsSecure,
+              ContentParent* aSource);
+  bool CanSet(FieldIndex<IDX_AllowMixedContent>, const bool& aAllowMixedContent,
+              ContentParent* aSource);
+
+  bool CanSet(FieldIndex<IDX_CookieBehavior>, const Maybe<uint32_t>& aValue,
+              ContentParent* aSource);
+
+  bool CanSet(FieldIndex<IDX_IsOnContentBlockingAllowList>, const bool& aValue,
+              ContentParent* aSource);
+
+  bool CanSet(FieldIndex<IDX_EmbedderPolicy>, const bool& aValue,
               ContentParent* aSource) {
     return true;
   }
 
-  bool CanSet(FieldIndex<IDX_HasStoragePermission>, const bool& aValue,
-              ContentParent* aSource) {
+  bool CanSet(FieldIndex<IDX_IsThirdPartyWindow>,
+              const bool& IsThirdPartyWindow, ContentParent* aSource);
+  bool CanSet(FieldIndex<IDX_IsThirdPartyTrackingResourceWindow>,
+              const bool& aIsThirdPartyTrackingResourceWindow,
+              ContentParent* aSource);
+  bool CanSet(FieldIndex<IDX_IsSecureContext>, const bool& aIsSecureContext,
+              ContentParent* aSource);
+  bool CanSet(FieldIndex<IDX_DocTreeHadAudibleMedia>, const bool& aValue,
+              ContentParent* aSource);
+  bool CanSet(FieldIndex<IDX_AutoplayPermission>, const uint32_t& aValue,
+              ContentParent* aSource);
+  bool CanSet(FieldIndex<IDX_SHEntryHasUserInteraction>,
+              const bool& aSHEntryHasUserInteraction, ContentParent* aSource) {
     return true;
   }
 
@@ -98,9 +169,17 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   void DidSet(FieldIndex<I>, T&& aOldValue) {}
 
   uint64_t mInnerWindowId;
+  uint64_t mOuterWindowId;
   RefPtr<BrowsingContext> mBrowsingContext;
 
+  // --- NEVER CHANGE `mChildren` DIRECTLY! ---
+  // Changes to this list need to be synchronized to the list within our
+  // `mBrowsingContext`, and should only be performed through the
+  // `AppendChildBrowsingContext` and `RemoveChildBrowsingContext` methods.
+  nsTArray<RefPtr<BrowsingContext>> mChildren;
+
   bool mIsDiscarded = false;
+  bool mInProcess = false;
 };
 
 using WindowContextTransaction = WindowContext::BaseTransaction;

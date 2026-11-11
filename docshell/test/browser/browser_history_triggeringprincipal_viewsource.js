@@ -8,6 +8,10 @@ const HTML_URI = TEST_PATH + "dummy_page.html";
 const VIEW_SRC_URI = "view-source:" + HTML_URI;
 
 add_task(async function() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.navigation.requireUserInteraction", false]],
+  });
+
   info("load baseline html in new tab");
   await BrowserTestUtils.withNewTab(HTML_URI, async function(aBrowser) {
     is(
@@ -48,7 +52,7 @@ add_task(async function() {
       false,
       HTML_URI
     );
-    await ContentTask.spawn(tab.linkedBrowser, HTML_URI, HTML_URI => {
+    await SpecialPowers.spawn(tab.linkedBrowser, [HTML_URI], HTML_URI => {
       content.document.location = HTML_URI;
     });
     await loadPromise;

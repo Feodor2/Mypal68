@@ -17,21 +17,23 @@
 
 namespace dom = mozilla::dom;
 
+namespace {
+uint64_t gSHEntrySharedID = 0;
+}  // namespace
+
 namespace mozilla {
 namespace dom {
 
-SHEntrySharedParentState::SHEntrySharedParentState(nsISHistory* aSHistory,
-                                                   uint64_t aID)
-    : SHEntrySharedParentState(nsWeakPtr(do_GetWeakReference(aSHistory)).get(),
-                               aID) {}
+SHEntrySharedParentState::SHEntrySharedParentState(nsISHistory* aSHistory)
+    : SHEntrySharedParentState(
+          nsWeakPtr(do_GetWeakReference(aSHistory)).get()) {}
 
-SHEntrySharedParentState::SHEntrySharedParentState(nsIWeakReference* aSHistory,
-                                                   uint64_t aID)
+SHEntrySharedParentState::SHEntrySharedParentState(nsIWeakReference* aSHistory)
     : mDocShellID({0}),
       mViewerBounds(0, 0, 0, 0),
       mCacheKey(0),
       mLastTouched(0),
-      mID(aID),
+      mID(++gSHEntrySharedID),
       mSHistory(aSHistory),
       mIsFrameNavigation(false),
       mSticky(true),
@@ -45,7 +47,7 @@ void SHEntrySharedParentState::CopyFrom(SHEntrySharedParentState* aEntry) {
   mDocShellID = aEntry->mDocShellID;
   mTriggeringPrincipal = aEntry->mTriggeringPrincipal;
   mPrincipalToInherit = aEntry->mPrincipalToInherit;
-  mStoragePrincipalToInherit = aEntry->mStoragePrincipalToInherit;
+  mPartitionedPrincipalToInherit = aEntry->mPartitionedPrincipalToInherit;
   mCsp = aEntry->mCsp;
   mSaveLayoutState = aEntry->mSaveLayoutState;
   mContentType.Assign(aEntry->mContentType);
@@ -63,12 +65,8 @@ void dom::SHEntrySharedParentState::NotifyListenersContentViewerEvicted() {
   }
 }
 
-dom::SHEntrySharedChildState::SHEntrySharedChildState()
-    : mSaveLayoutState(true) {}
-
 void SHEntrySharedChildState::CopyFrom(SHEntrySharedChildState* aEntry) {
   mChildShells.AppendObjects(aEntry->mChildShells);
-  mSaveLayoutState = aEntry->mSaveLayoutState;
 }
 
 }  // namespace dom
@@ -98,9 +96,8 @@ NS_IMPL_QUERY_INTERFACE(nsSHEntryShared, nsIBFCacheEntry, nsIMutationObserver)
 NS_IMPL_ADDREF_INHERITED(nsSHEntryShared, dom::SHEntrySharedParentState)
 NS_IMPL_RELEASE_INHERITED(nsSHEntryShared, dom::SHEntrySharedParentState)
 
-already_AddRefed<nsSHEntryShared> nsSHEntryShared::Duplicate(
-    uint64_t aNewSharedID) {
-  RefPtr<nsSHEntryShared> newEntry = new nsSHEntryShared(this, aNewSharedID);
+already_AddRefed<nsSHEntryShared> nsSHEntryShared::Duplicate() {
+  RefPtr<nsSHEntryShared> newEntry = new nsSHEntryShared(this);
 
   newEntry->dom::SHEntrySharedParentState::CopyFrom(this);
   newEntry->dom::SHEntrySharedChildState::CopyFrom(this);

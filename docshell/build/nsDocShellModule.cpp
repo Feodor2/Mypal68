@@ -4,7 +4,6 @@
 
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
-#include "mozilla/dom/SHEntryChild.h"
 
 // session history
 #include "nsSHEntryShared.h"
@@ -17,14 +16,10 @@ nsresult InitDocShellModule() {
   mozilla::dom::BrowsingContext::Init();
   nsresult rv = nsSHistory::Startup();
   NS_ENSURE_SUCCESS(rv, rv);
-  mozilla::dom::SHEntryChildShared::Init();
 
   return NS_OK;
 }
 
-void UnloadDocShellModule() {
-  nsSHistory::Shutdown();
-  nsSHEntryShared::Shutdown();
-}
+void UnloadDocShellModule() { nsSHistory::Shutdown(); }
 
 }  // namespace mozilla

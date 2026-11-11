@@ -6,6 +6,7 @@
 #define mozilla_dom_BrowsingContextGroup_h
 
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/FunctionRef.h"
 #include "nsRefPtrHashtable.h"
 #include "nsHashKeys.h"
 #include "nsTArray.h"
@@ -19,6 +20,7 @@ class ThrottledEventQueue;
 namespace dom {
 
 class BrowsingContext;
+class WindowContext;
 class ContentParent;
 class DocGroup;
 
@@ -32,60 +34,65 @@ class BrowsingContextGroup final : public nsWrapperCache {
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(BrowsingContextGroup)
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(BrowsingContextGroup)
 
-  typedef nsTHashSet<nsRefPtrHashKey<ContentParent>> ContentParents;
+  // Interact with the list of synced contexts. This controls the lifecycle of
+  // the BrowsingContextGroup and contexts loaded within them.
+  void Register(nsISupports* aContext);
+  void Unregister(nsISupports* aContext);
 
-  // Interact with the list of BrowsingContexts.
-  bool Contains(BrowsingContext* aContext);
-  void Register(BrowsingContext* aContext);
-  void Unregister(BrowsingContext* aContext);
+  // Control which processes will be used to host documents loaded in this
+  // BrowsingContextGroup. There should only ever be one host process per remote
+  // type.
+  //
+  // A new host process will be subscribed to the BrowsingContextGroup unless it
+  // is still launching, in which case it will subscribe itself when it is done
+  // launching.
+  void EnsureHostProcess(ContentParent* aProcess);
 
-  // Interact with the list of ContentParents
-  void Subscribe(ContentParent* aOriginProcess);
-  void Unsubscribe(ContentParent* aOriginProcess);
+  // A removed host process will no longer be used to host documents loaded in
+  // this BrowsingContextGroup.
+  void RemoveHostProcess(ContentParent* aProcess);
 
-  // Force the given ContentParent to subscribe to our BrowsingContextGroup.
-  void EnsureSubscribed(ContentParent* aProcess);
+  // Synchronize the current BrowsingContextGroup state down to the given
+  // content process, and continue updating it.
+  //
+  // You rarely need to call this directy, as it's automatically called by
+  // |EnsureHostProcess| as needed.
+  void Subscribe(ContentParent* aProcess);
 
-  // Methods interacting with cached contexts.
-  bool IsContextCached(BrowsingContext* aContext) const;
-  void CacheContext(BrowsingContext* aContext);
-  void CacheContexts(const BrowsingContext::Children& aContexts);
-  bool EvictCachedContext(BrowsingContext* aContext);
+  // Stop synchromizing the current BrowsingContextGroup state down to a given
+  // content process. The content process must no longer be a host process.
+  void Unsubscribe(ContentParent* aProcess);
+
+  // Look up the process which should be used to host documents with this
+  // RemoteType. This will be a non-dead process associated with this
+  // BrowsingContextGroup, if possible.
+  ContentParent* GetHostProcess(const nsACString& aRemoteType);
+
+  // When a BrowsingContext is being discarded, we may want to keep the
+  // corresponding BrowsingContextGroup alive until the other process
+  // acknowledges the BrowsingContext has been discarded. A `KeepAlive` will be
+  // added to the `BrowsingContextGroup`, delaying destruction.
+  void AddKeepAlive();
+  void RemoveKeepAlive();
 
   // Get a reference to the list of toplevel contexts in this
   // BrowsingContextGroup.
-  BrowsingContext::Children& Toplevels() { return mToplevels; }
-  void GetToplevels(BrowsingContext::Children& aToplevels) {
+  nsTArray<RefPtr<BrowsingContext>>& Toplevels() { return mToplevels; }
+  void GetToplevels(nsTArray<RefPtr<BrowsingContext>>& aToplevels) {
     aToplevels.AppendElements(mToplevels);
   }
+
+  uint64_t Id() { return mId; }
 
   nsISupports* GetParentObject() const;
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
-  BrowsingContextGroup();
-
+  // Get or create a BrowsingContextGroup with the given ID.
+  static already_AddRefed<BrowsingContextGroup> GetOrCreate(uint64_t aId);
+  static already_AddRefed<BrowsingContextGroup> Create();
   static already_AddRefed<BrowsingContextGroup> Select(
-      BrowsingContext* aParent, BrowsingContext* aOpener) {
-    if (aParent) {
-      return do_AddRef(aParent->Group());
-    }
-    if (aOpener) {
-      return do_AddRef(aOpener->Group());
-    }
-    return MakeAndAddRef<BrowsingContextGroup>();
-  }
-
-  static already_AddRefed<BrowsingContextGroup> Select(uint64_t aParentId,
-                                                       uint64_t aOpenerId) {
-    RefPtr<BrowsingContext> parent = BrowsingContext::Get(aParentId);
-    MOZ_RELEASE_ASSERT(parent || aParentId == 0);
-
-    RefPtr<BrowsingContext> opener = BrowsingContext::Get(aOpenerId);
-    MOZ_RELEASE_ASSERT(opener || aOpenerId == 0);
-
-    return Select(parent, opener);
-  }
+      WindowContext* aParent, BrowsingContext* aOpener);
 
   // For each 'ContentParent', except for 'aExcludedParent',
   // associated with this group call 'aCallback'.
@@ -134,20 +141,37 @@ class BrowsingContextGroup final : public nsWrapperCache {
     return mWorkerEventQueue;
   }
 
+  static void GetAllGroups(nsTArray<RefPtr<BrowsingContextGroup>>& aGroups);
+
  private:
   friend class CanonicalBrowsingContext;
 
+  explicit BrowsingContextGroup(uint64_t aId);
   ~BrowsingContextGroup();
 
-  void UnsubscribeAllContentParents();
+  void MaybeDestroy();
+  void Destroy();
 
-  // A BrowsingContextGroup contains a series of BrowsingContext objects. They
-  // are addressed using a hashtable to avoid linear lookup when adding or
-  // removing elements from the set.
-  nsTHashSet<nsRefPtrHashKey<BrowsingContext>> mContexts;
+  uint64_t mId;
+
+  uint32_t mKeepAliveCount = 0;
+
+#ifdef DEBUG
+  bool mDestroyed = false;
+#endif
+
+  // A BrowsingContextGroup contains a series of {Browsing,Window}Context
+  // objects. They are addressed using a hashtable to avoid linear lookup when
+  // adding or removing elements from the set.
+  //
+  // FIXME: This list is only required over a counter to keep nested
+  // non-discarded contexts within discarded contexts alive. It should be
+  // removed in the future.
+  // FIXME: Consider introducing a better common base than `nsISupports`?
+  nsTHashSet<nsRefPtrHashKey<nsISupports>> mContexts;
 
   // The set of toplevel browsing contexts in the current BrowsingContextGroup.
-  BrowsingContext::Children mToplevels;
+  nsTArray<RefPtr<BrowsingContext>> mToplevels;
 
   // DocGroups are thread-safe, and not able to be cycle collected,
   // but we still keep strong pointers. When all Documents are removed
@@ -155,10 +179,15 @@ class BrowsingContextGroup final : public nsWrapperCache {
   // removed from here.
   nsRefPtrHashtable<nsCStringHashKey, DocGroup> mDocGroups;
 
-  ContentParents mSubscribers;
+  // The content process which will host documents in this BrowsingContextGroup
+  // which need to be loaded with a given remote type.
+  //
+  // A non-launching host process must also be a subscriber, though a launching
+  // host process may not yet be subscribed, and a subscriber need not be a host
+  // process.
+  nsRefPtrHashtable<nsCStringHashKey, ContentParent> mHosts;
 
-  // Map of cached contexts that need to stay alive due to bfcache.
-  nsTHashSet<nsRefPtrHashKey<BrowsingContext>> mCachedContexts;
+  nsTHashSet<nsRefPtrHashKey<ContentParent>> mSubscribers;
 
   // A queue to store postMessage events during page load, the queue will be
   // flushed once the page is loaded

@@ -294,35 +294,7 @@ var State = {
   // protection list, so we cache the result for faster future lookups.
   _trackingState: new Map(),
   isTracker(host) {
-    if (!this._trackingState.has(host)) {
-      // Temporarily set to false to avoid doing several lookups if a site has
-      // several subframes on the same domain.
-      this._trackingState.set(host, false);
-      if (host.startsWith("about:") || host.startsWith("moz-nullprincipal")) {
         return false;
-      }
-
-      let uri = Services.io.newURI("http://" + host);
-      let classifier = Cc["@mozilla.org/url-classifier/dbservice;1"].getService(
-        Ci.nsIURIClassifier
-      );
-      let feature = classifier.getFeatureByName("tracking-protection");
-      if (!feature) {
-        return false;
-      }
-
-      classifier.asyncClassifyLocalWithFeatures(
-        uri,
-        [feature],
-        Ci.nsIUrlClassifierFeature.blacklist,
-        list => {
-          if (list.length) {
-            this._trackingState.set(host, true);
-          }
-        }
-      );
-    }
-    return this._trackingState.get(host);
   },
 
   getCounters() {

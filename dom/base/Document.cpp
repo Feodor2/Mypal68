@@ -7546,27 +7546,6 @@ void Document::ResolveScheduledSVGPresAttrs() {
   mLazySVGPresElements.Clear();
 }
 
-already_AddRefed<nsSimpleContentList> Document::BlockedNodesByClassifier()
-    const {
-  RefPtr<nsSimpleContentList> list = new nsSimpleContentList(nullptr);
-
-  nsTArray<nsWeakPtr> blockedNodes;
-  blockedNodes = mBlockedNodesByClassifier;
-
-  for (unsigned long i = 0; i < blockedNodes.Length(); i++) {
-    nsWeakPtr weakNode = blockedNodes[i];
-    nsCOMPtr<nsIContent> node = do_QueryReferent(weakNode);
-    // Consider only nodes to which we have managed to get strong references.
-    // Coping with nullptrs since it's expected for nodes to disappear when
-    // nobody else is referring to them.
-    if (node) {
-      list->AppendElement(node);
-    }
-  }
-
-  return list.forget();
-}
-
 void Document::GetSelectedStyleSheetSet(nsAString& aSheetSet) {
   aSheetSet.Truncate();
 
@@ -14726,19 +14705,6 @@ void Document::MaybeAllowStorageForOpenerAfterUserInteraction() {
   nsPIDOMWindowInner* inner = GetInnerWindow();
   if (NS_WARN_IF(!inner)) {
     return;
-  }
-
-  uint32_t cookieBehavior = CookieJarSettings()->GetCookieBehavior();
-  if (cookieBehavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
-      cookieBehavior ==
-          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) {
-    // We care about first-party tracking resources only.
-    if (!nsContentUtils::IsFirstPartyTrackingResourceWindow(inner)) {
-      return;
-    }
-  } else {
-    MOZ_ASSERT(net::CookieJarSettings::IsRejectThirdPartyWithExceptions(
-        cookieBehavior));
   }
 
   auto* outer = nsGlobalWindowOuter::Cast(inner->GetOuterWindow());

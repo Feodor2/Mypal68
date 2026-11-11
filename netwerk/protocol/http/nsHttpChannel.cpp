@@ -43,7 +43,6 @@
 #include "nsStreamUtils.h"
 #include "nsIOService.h"
 #include "nsDNSPrefetch.h"
-#include "nsChannelClassifier.h"
 #include "nsIRedirectResultListener.h"
 #include "mozilla/TimeStamp.h"
 #include "nsError.h"
@@ -114,10 +113,8 @@
 #include "nsINetworkLinkService.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ServiceWorkerUtils.h"
-#include "mozilla/net/AsyncUrlChannelClassifier.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/NeckoChannelParams.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/net/SocketProcessParent.h"
 #include "js/Conversions.h"
 #include "mozilla/dom/SecFetch.h"
@@ -480,29 +477,6 @@ nsresult nsHttpChannel::PrepareToConnect() {
   return OnBeforeConnect();
 }
 
-void nsHttpChannel::HandleContinueCancellingByURLClassifier(
-    nsresult aErrorCode) {
-  MOZ_ASSERT(
-      UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(aErrorCode));
-  MOZ_ASSERT(!mCallOnResume, "How did that happen?");
-
-  if (mSuspendCount) {
-    LOG(
-        ("Waiting until resume HandleContinueCancellingByURLClassifier "
-         "[this=%p]\n",
-         this));
-    mCallOnResume = [aErrorCode](nsHttpChannel* self) {
-      self->HandleContinueCancellingByURLClassifier(aErrorCode);
-      return NS_OK;
-    };
-    return;
-  }
-
-  LOG(("nsHttpChannel::HandleContinueCancellingByURLClassifier [this=%p]\n",
-       this));
-  ContinueCancellingByURLClassifier(aErrorCode);
-}
-
 void nsHttpChannel::HandleOnBeforeConnect() {
   MOZ_ASSERT(!mCallOnResume, "How did that happen?");
   nsresult rv;
@@ -736,14 +710,6 @@ nsresult nsHttpChannel::Connect() {
 
   if (ShouldIntercept()) {
     return RedirectToInterceptedChannel();
-  }
-
-  bool isTrackingResource = IsThirdPartyTrackingResource();
-  LOG(("nsHttpChannel %p tracking resource=%d, cos=%u", this,
-       isTrackingResource, mClassOfService));
-
-  if (isTrackingResource) {
-    AddClassFlags(nsIClassOfService::Tail);
   }
 
   if (WaitingForTailUnblock()) {
@@ -990,7 +956,6 @@ void nsHttpChannel::DoNotifyListenerCleanup() {
 
 void nsHttpChannel::ReleaseListeners() {
   HttpBaseChannel::ReleaseListeners();
-  mChannelClassifier = nullptr;
   mWarningReporter = nullptr;
 
   for (StreamFilterRequest& request : mStreamFilterRequests) {
@@ -2049,7 +2014,7 @@ nsresult nsHttpChannel::ProcessResponse() {
     nsCOMPtr<nsILoadContextInfo> lci = GetLoadContextInfo(this);
     mozilla::net::Predictor::UpdateCacheability(
         referrer, mURI, httpStatus, mRequestHead, mResponseHead.get(), lci,
-        IsThirdPartyTrackingResource());
+        false);
   }
 
   // Only allow 407 (authentication required) to continue
@@ -3481,9 +3446,7 @@ bool nsHttpChannel::IsIsolated() {
     return LoadIsIsolated();
   }
   StoreIsIsolated(
-      StaticPrefs::browser_cache_cache_isolation() ||
-      (IsThirdPartyTrackingResource() &&
-       !ContentBlocking::ShouldAllowAccessFor(this, mURI, nullptr)));
+      StaticPrefs::browser_cache_cache_isolation());
   StoreHasBeenIsolatedChecked(true);
   return LoadIsIsolated();
 }
@@ -5733,13 +5696,6 @@ nsHttpChannel::Cancel(nsresult status) {
   MOZ_ASSERT(NS_IsMainThread());
   // We should never have a pump open while a CORS preflight is in progress.
   MOZ_ASSERT_IF(mPreflightChannel, !mCachePump);
-#ifdef DEBUG
-  if (UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(status)) {
-    MOZ_CRASH_UNSAFE_PRINTF("Blocking classifier error %" PRIx32
-                            " need to be handled by CancelByURLClassifier()",
-                            static_cast<uint32_t>(status));
-  }
-#endif
 
   LOG(("nsHttpChannel::Cancel [this=%p status=%" PRIx32 "]\n", this,
        static_cast<uint32_t>(status)));
@@ -5755,91 +5711,7 @@ nsHttpChannel::Cancel(nsresult status) {
   return CancelInternal(status);
 }
 
-NS_IMETHODIMP
-nsHttpChannel::CancelByURLClassifier(nsresult aErrorCode) {
-  MOZ_ASSERT(
-      UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(aErrorCode));
-  MOZ_ASSERT(NS_IsMainThread());
-  // We should never have a pump open while a CORS preflight is in progress.
-  MOZ_ASSERT_IF(mPreflightChannel, !mCachePump);
-
-  LOG(("nsHttpChannel::CancelByURLClassifier [this=%p]\n", this));
-
-  if (mCanceled) {
-    LOG(("  ignoring; already canceled\n"));
-    return NS_OK;
-  }
-
-  // We are being canceled by the channel classifier because of tracking
-  // protection, but we haven't yet had a chance to dispatch the
-  // "http-on-modify-request" notifications yet (this would normally be
-  // done in PrepareToConnect()).  So do that now, before proceeding to
-  // cancel.
-  //
-  // Note that running these observers can itself result in the channel
-  // being canceled.  In that case, we accept that cancelation code as
-  // the cause of the cancelation, as if the classification of the channel
-  // would have occurred past this point!
-
-  // notify "http-on-modify-request" observers
-  CallOnModifyRequestObservers();
-
-  // Check if request was cancelled during on-modify-request
-  if (mCanceled) {
-    return mStatus;
-  }
-
-  if (mSuspendCount) {
-    LOG(("Waiting until resume in Cancel [this=%p]\n", this));
-    MOZ_ASSERT(!mCallOnResume);
-    StoreChannelClassifierCancellationPending(1);
-    mCallOnResume = [aErrorCode](nsHttpChannel* self) {
-      self->HandleContinueCancellingByURLClassifier(aErrorCode);
-      return NS_OK;
-    };
-    return NS_OK;
-  }
-
-  // Check to see if we should redirect this channel elsewhere by
-  // nsIHttpChannel.redirectTo API request
-  if (mAPIRedirectToURI) {
-    StoreChannelClassifierCancellationPending(1);
-    return AsyncCall(&nsHttpChannel::HandleAsyncAPIRedirect);
-  }
-
-  return CancelInternal(aErrorCode);
-}
-
-void nsHttpChannel::ContinueCancellingByURLClassifier(nsresult aErrorCode) {
-  MOZ_ASSERT(
-      UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(aErrorCode));
-  MOZ_ASSERT(NS_IsMainThread());
-  // We should never have a pump open while a CORS preflight is in progress.
-  MOZ_ASSERT_IF(mPreflightChannel, !mCachePump);
-
-  LOG(("nsHttpChannel::ContinueCancellingByURLClassifier [this=%p]\n", this));
-  if (mCanceled) {
-    LOG(("  ignoring; already canceled\n"));
-    return;
-  }
-
-  // Check to see if we should redirect this channel elsewhere by
-  // nsIHttpChannel.redirectTo API request
-  if (mAPIRedirectToURI) {
-    Unused << AsyncCall(&nsHttpChannel::HandleAsyncAPIRedirect);
-    return;
-  }
-
-  Unused << CancelInternal(aErrorCode);
-}
-
 nsresult nsHttpChannel::CancelInternal(nsresult status) {
-  bool channelClassifierCancellationPending =
-      !!LoadChannelClassifierCancellationPending();
-  if (UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(status)) {
-    StoreChannelClassifierCancellationPending(0);
-  }
-
   mCanceled = true;
   mStatus = status;
   if (mProxyRequest) mProxyRequest->Cancel(status);
@@ -5852,10 +5724,6 @@ nsresult nsHttpChannel::CancelInternal(nsresult status) {
     mOnTailUnblock = nullptr;
     mRequestContext->CancelTailedRequest(this);
     CloseCacheEntry(false);
-    Unused << AsyncAbort(status);
-  } else if (channelClassifierCancellationPending) {
-    // If we're coming from an asynchronous path when canceling a channel due
-    // to safe-browsing protection, we need to AsyncAbort the channel now.
     Unused << AsyncAbort(status);
   }
   return NS_OK;
@@ -6073,38 +5941,8 @@ nsresult nsHttpChannel::AsyncOpenFinal(TimeStamp aTimeStamp) {
 
     return NS_OK;  // Keep channel pending until timer fires or script times out
   }
-  // ------------------------------------------
 
-  if (!NS_ShouldClassifyChannel(this)) {
-    return MaybeResolveProxyAndBeginConnect();
-  }
-
-  // We are about to do an async lookup to check if the URI is a tracker. If
-  // yes, this channel will be canceled by channel classifier.  Chances are the
-  // lookup is not needed so CheckIsTrackerWithLocalTable() will return an
-  // error and then we can MaybeResolveProxyAndBeginConnect() right away.
-  RefPtr<nsHttpChannel> self = this;
-  bool willCallback = NS_SUCCEEDED(
-      AsyncUrlChannelClassifier::CheckChannel(this, [self]() -> void {
-        nsresult rv = self->MaybeResolveProxyAndBeginConnect();
-        if (NS_FAILED(rv)) {
-          // Since this error is thrown asynchronously so that the caller
-          // of BeginConnect() will not do clean up for us. We have to do
-          // it on our own.
-          self->CloseCacheEntry(false);
-          Unused << self->AsyncAbort(rv);
-        }
-      }));
-
-  if (!willCallback) {
-    // We can do MaybeResolveProxyAndBeginConnect immediately if
-    // CheckIsTrackerWithLocalTable is failed. Note that we don't need to
-    // handle the failure because BeginConnect() will return synchronously and
-    // the caller will be responsible for handling it.
-    return MaybeResolveProxyAndBeginConnect();
-  }
-
-  return NS_OK;
+  return MaybeResolveProxyAndBeginConnect();
 }
 
 nsresult nsHttpChannel::MaybeResolveProxyAndBeginConnect() {
@@ -6131,18 +5969,6 @@ nsresult nsHttpChannel::MaybeResolveProxyAndBeginConnect() {
 
 nsresult nsHttpChannel::AsyncOpenOnTailUnblock() {
   return AsyncOpen(mListener);
-}
-
-already_AddRefed<nsChannelClassifier>
-nsHttpChannel::GetOrCreateChannelClassifier() {
-  if (!mChannelClassifier) {
-    mChannelClassifier = new nsChannelClassifier(this);
-    LOG(("nsHttpChannel [%p] created nsChannelClassifier [%p]\n", this,
-         mChannelClassifier.get()));
-  }
-
-  RefPtr<nsChannelClassifier> classifier = mChannelClassifier;
-  return classifier.forget();
 }
 
 uint16_t nsHttpChannel::GetProxyDNSStrategy() {
@@ -6376,20 +6202,6 @@ nsresult nsHttpChannel::BeginConnect() {
     return mStatus;
   }
 
-  bool shouldBeClassified = NS_ShouldClassifyChannel(this);
-
-  if (shouldBeClassified) {
-    if (LoadChannelClassifierCancellationPending()) {
-      LOG(
-          ("Waiting for safe-browsing protection cancellation in BeginConnect "
-           "[this=%p]\n",
-           this));
-      return NS_OK;
-    }
-
-    ReEvaluateReferrerAfterTrackingStatusIsKnown();
-  }
-
   rv = MaybeStartDNSPrefetch();
   if (NS_FAILED(rv)) {
     auto dnsStrategy = GetProxyDNSStrategy();
@@ -6404,15 +6216,6 @@ nsresult nsHttpChannel::BeginConnect() {
   rv = ContinueBeginConnectWithResult();
   if (NS_FAILED(rv)) {
     return rv;
-  }
-
-  if (shouldBeClassified) {
-    // Start nsChannelClassifier to catch phishing and malware URIs.
-    RefPtr<nsChannelClassifier> channelClassifier =
-        GetOrCreateChannelClassifier();
-    LOG(("nsHttpChannel::Starting nsChannelClassifier %p [this=%p]",
-         channelClassifier.get(), this));
-    channelClassifier->Start();
   }
 
   return NS_OK;

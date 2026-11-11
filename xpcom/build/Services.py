@@ -54,8 +54,6 @@ service('StreamTransportService', 'nsIStreamTransportService',
         "@mozilla.org/network/stream-transport-service;1")
 service('CacheStorageService', 'nsICacheStorageService',
         "@mozilla.org/netwerk/cache-storage-service;1")
-service('URIClassifier', 'nsIURIClassifier',
-        "@mozilla.org/uriclassifierservice")
 service('HttpActivityDistributor', 'nsIHttpActivityDistributor',
         "@mozilla.org/network/http-activity-distributor;1")
 service('History', 'mozilla::IHistory',
@@ -107,7 +105,6 @@ CPP_INCLUDES = """
 #include "nsICacheStorageService.h"
 #include "nsIStreamTransportService.h"
 #include "nsISocketTransportService.h"
-#include "nsIURIClassifier.h"
 #include "nsIHttpActivityObserver.h"
 #include "nsIAsyncShutdown.h"
 #include "nsIUUIDGenerator.h"

@@ -95,7 +95,6 @@
 #include "nsGlobalWindow.h"
 #include "nsIBaseWindow.h"
 #include "nsIBrowserDOMWindow.h"
-#include "nsIClassifiedChannel.h"
 #include "nsIDocShell.h"
 #include "nsIFrame.h"
 #include "nsILoadContext.h"
@@ -3540,15 +3539,6 @@ nsresult BrowserChild::PrepareProgressListenerData(
     rv = channel->GetOriginalURI(getter_AddRefs(uri));
     NS_ENSURE_SUCCESS(rv, rv);
     aRequestData.originalRequestURI() = uri;
-
-    nsCOMPtr<nsIClassifiedChannel> classifiedChannel =
-        do_QueryInterface(channel);
-    if (classifiedChannel) {
-      nsAutoCString matchedList;
-      rv = classifiedChannel->GetMatchedList(matchedList);
-      NS_ENSURE_SUCCESS(rv, rv);
-      aRequestData.matchedList() = std::move(matchedList);
-    }
   }
   return NS_OK;
 }

@@ -56,7 +56,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   ReaderMode: "resource://gre/modules/ReaderMode.jsm",
   ReaderParent: "resource:///modules/ReaderParent.jsm",
   RFPHelper: "resource://gre/modules/RFPHelper.jsm",
-  SafeBrowsing: "resource://gre/modules/SafeBrowsing.jsm",
   Sanitizer: "resource:///modules/Sanitizer.jsm",
   SessionStartup: "resource:///modules/sessionstore/SessionStartup.jsm",
   SessionStore: "resource:///modules/sessionstore/SessionStore.jsm",
@@ -225,10 +224,6 @@ XPCOMUtils.defineLazyScriptGetter(
 // lazy service getters
 
 XPCOMUtils.defineLazyServiceGetters(this, {
-  classifierService: [
-    "@mozilla.org/url-classifier/dbservice;1",
-    "nsIURIClassifier",
-  ],
   Favicons: ["@mozilla.org/browser/favicon-service;1", "nsIFaviconService"],
   gAboutNewTabService: [
     "@mozilla.org/browser/aboutnewtab-service;1",
@@ -5105,8 +5100,6 @@ var XULBrowserWindow = {
 
       BrowserPageActions.onLocationChange();
 
-      SafeBrowsingNotificationBox.onLocationChange(aLocationURI);
-
       gTabletModePageCounter.inc();
 
       this._updateElementsForContentType();
@@ -8462,55 +8455,6 @@ var PanicButtonNotifier = {
   close() {
     let popup = document.getElementById("panic-button-success-notification");
     popup.hidePopup();
-  },
-};
-
-const SafeBrowsingNotificationBox = {
-  _currentURIBaseDomain: null,
-  show(title, buttons) {
-    let uri = gBrowser.currentURI;
-
-    // start tracking host so that we know when we leave the domain
-    this._currentURIBaseDomain = Services.eTLD.getBaseDomain(uri);
-
-    let notificationBox = gBrowser.getNotificationBox();
-    let value = "blocked-badware-page";
-
-    let previousNotification = notificationBox.getNotificationWithValue(value);
-    if (previousNotification) {
-      notificationBox.removeNotification(previousNotification);
-    }
-
-    let notification = notificationBox.appendNotification(
-      title,
-      value,
-      "chrome://global/skin/icons/blocklist_favicon.png",
-      notificationBox.PRIORITY_CRITICAL_HIGH,
-      buttons
-    );
-    // Persist the notification until the user removes so it
-    // doesn't get removed on redirects.
-    notification.persistence = -1;
-  },
-  onLocationChange(aLocationURI) {
-    // take this to represent that you haven't visited a bad place
-    if (!this._currentURIBaseDomain) {
-      return;
-    }
-
-    let newURIBaseDomain = Services.eTLD.getBaseDomain(aLocationURI);
-
-    if (newURIBaseDomain !== this._currentURIBaseDomain) {
-      let notificationBox = gBrowser.getNotificationBox();
-      let notification = notificationBox.getNotificationWithValue(
-        "blocked-badware-page"
-      );
-      if (notification) {
-        notificationBox.removeNotification(notification, false);
-      }
-
-      this._currentURIBaseDomain = null;
-    }
   },
 };
 

@@ -8,8 +8,7 @@
 
 namespace mozilla::dom {
 
-NS_IMPL_ISUPPORTS(RemoteWebProgressRequest, nsIRequest, nsIChannel,
-                  nsIClassifiedChannel)
+NS_IMPL_ISUPPORTS(RemoteWebProgressRequest, nsIRequest, nsIChannel)
 
 // nsIChannel methods
 
@@ -128,44 +127,6 @@ NS_IMETHODIMP RemoteWebProgressRequest::GetIsDocument(bool* aIsDocument) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-// nsIClassifiedChannel methods
-
-NS_IMETHODIMP RemoteWebProgressRequest::SetMatchedInfo(
-    const nsACString& aList, const nsACString& aProvider,
-    const nsACString& aFullHash) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP RemoteWebProgressRequest::GetMatchedList(
-    nsACString& aMatchedList) {
-  aMatchedList = mMatchedList;
-  return NS_OK;
-}
-
-NS_IMETHODIMP RemoteWebProgressRequest::GetMatchedProvider(
-    nsACString& aMatchedProvider) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP RemoteWebProgressRequest::GetMatchedFullHash(
-    nsACString& aMatchedFullHash) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP RemoteWebProgressRequest::SetMatchedTrackingInfo(
-    const nsTArray<nsCString>& aLists, const nsTArray<nsCString>& aFullHashes) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP RemoteWebProgressRequest::GetMatchedTrackingLists(
-    nsTArray<nsCString>& aLists) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP RemoteWebProgressRequest::GetMatchedTrackingFullHashes(
-    nsTArray<nsCString>& aFullHashes) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
 // nsIRequest methods
 
 NS_IMETHODIMP RemoteWebProgressRequest::GetName(nsACString& aName) {
@@ -220,30 +181,6 @@ NS_IMETHODIMP RemoteWebProgressRequest::SetTRRMode(
 }
 
 NS_IMETHODIMP RemoteWebProgressRequest::SetLoadFlags(nsLoadFlags aLoadFlags) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-RemoteWebProgressRequest::IsThirdPartyTrackingResource(
-    bool* aIsTrackingResource) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-RemoteWebProgressRequest::GetClassificationFlags(
-    uint32_t* aClassificationFlags) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-RemoteWebProgressRequest::GetFirstPartyClassificationFlags(
-    uint32_t* aClassificationFlags) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-RemoteWebProgressRequest::GetThirdPartyClassificationFlags(
-    uint32_t* aClassificationFlags) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

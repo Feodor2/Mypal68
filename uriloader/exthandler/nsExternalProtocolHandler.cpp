@@ -393,25 +393,6 @@ NS_IMETHODIMP nsExtProtocolChannel::SetParentListener(
   return NS_OK;
 }
 
-NS_IMETHODIMP nsExtProtocolChannel::SetClassifierMatchedInfo(
-    const nsACString& aList, const nsACString& aProvider,
-    const nsACString& aFullHash) {
-  // nothing to do
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsExtProtocolChannel::SetClassifierMatchedTrackingInfo(
-    const nsACString& aLists, const nsACString& aFullHashes) {
-  // nothing to do
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsExtProtocolChannel::NotifyClassificationFlags(
-    uint32_t aClassificationFlags, bool aIsThirdParty) {
-  // nothing to do
-  return NS_OK;
-}
-
 NS_IMETHODIMP nsExtProtocolChannel::NotifyFlashPluginStateChanged(
     nsIHttpChannel::FlashPluginState aState) {
   // nothing to do

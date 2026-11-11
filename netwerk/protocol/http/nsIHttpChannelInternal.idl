@@ -367,14 +367,6 @@ interface nsIHttpChannelInternal : nsISupports
     [noscript] attribute TimeStamp navigationStartTimeStamp;
 
     /**
-     * Cancel a channel because we have determined that it needs to be blocked
-     * for safe-browsing protection.  This is an internal API that is meant to
-     * be called by the channel classifier.  Please DO NOT use this API if you
-     * don't know whether you should be using it.
-     */
-    [noscript] void cancelByURLClassifier(in nsresult aErrorCode);
-
-    /**
      * The channel will be loaded over IPv6, disabling IPv4.
      */
     [noscript, notxpcom, nostdcall]

@@ -29,7 +29,6 @@
 #include "nsError.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIChannel.h"
-#include "nsIClassifiedChannel.h"
 #include "nsIContentPolicy.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsILoadContext.h"
@@ -521,34 +520,26 @@ ThirdPartyUtil::AnalyzeChannel(nsIChannel* aChannel, bool aNotify, nsIURI* aURI,
     result += ThirdPartyAnalysis::IsForeign;
   }
 
-  nsCOMPtr<nsIClassifiedChannel> classifiedChannel =
-      do_QueryInterface(aChannel);
-  if (classifiedChannel) {
-    if (classifiedChannel->IsThirdPartyTrackingResource()) {
-      result += ThirdPartyAnalysis::IsThirdPartyTrackingResource;
-    }
+  // Check first-party storage access even for non-tracking resources, since
+  // we will need the result when computing the access rights for the reject
+  // foreign cookie behavior mode.
 
-    // Check first-party storage access even for non-tracking resources, since
-    // we will need the result when computing the access rights for the reject
-    // foreign cookie behavior mode.
+  // If the caller has requested third-party checks, we will only perform the
+  // storage access check once we know we're in the third-party context.
+  bool performStorageChecks =
+      aRequireThirdPartyCheck ? result.contains(ThirdPartyAnalysis::IsForeign)
+                              : true;
+  if (performStorageChecks &&
+      ContentBlocking::ShouldAllowAccessFor(aChannel, aURI ? aURI : uri.get(),
+                                            aRejectedReason)) {
+    result += ThirdPartyAnalysis::IsStorageAccessPermissionGranted;
+  }
 
-    // If the caller has requested third-party checks, we will only perform the
-    // storage access check once we know we're in the third-party context.
-    bool performStorageChecks =
-        aRequireThirdPartyCheck ? result.contains(ThirdPartyAnalysis::IsForeign)
-                                : true;
-    if (performStorageChecks &&
-        ContentBlocking::ShouldAllowAccessFor(aChannel, aURI ? aURI : uri.get(),
-                                              aRejectedReason)) {
-      result += ThirdPartyAnalysis::IsStorageAccessPermissionGranted;
-    }
-
-    if (aNotify && !result.contains(
-                       ThirdPartyAnalysis::IsStorageAccessPermissionGranted)) {
-      ContentBlockingNotifier::OnDecision(
-          aChannel, ContentBlockingNotifier::BlockingDecision::eBlock,
-          *aRejectedReason);
-    }
+  if (aNotify && !result.contains(
+                     ThirdPartyAnalysis::IsStorageAccessPermissionGranted)) {
+    ContentBlockingNotifier::OnDecision(
+        aChannel, ContentBlockingNotifier::BlockingDecision::eBlock,
+        *aRejectedReason);
   }
 
   return result;

@@ -1862,51 +1862,6 @@ HttpChannelParent::SetParentListener(ParentChannelListener* aListener) {
 }
 
 NS_IMETHODIMP
-HttpChannelParent::SetClassifierMatchedInfo(const nsACString& aList,
-                                            const nsACString& aProvider,
-                                            const nsACString& aFullHash) {
-  LOG(("HttpChannelParent::SetClassifierMatchedInfo [this=%p]\n", this));
-  if (!mIPCClosed) {
-    ClassifierInfo info;
-    info.list() = aList;
-    info.provider() = aProvider;
-    info.fullhash() = aFullHash;
-
-    Unused << SendSetClassifierMatchedInfo(info);
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpChannelParent::SetClassifierMatchedTrackingInfo(
-    const nsACString& aLists, const nsACString& aFullHashes) {
-  LOG(("HttpChannelParent::SetClassifierMatchedTrackingInfo [this=%p]\n",
-       this));
-  if (!mIPCClosed) {
-    ClassifierInfo info;
-    info.list() = aLists;
-    info.fullhash() = aFullHashes;
-
-    Unused << SendSetClassifierMatchedTrackingInfo(info);
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpChannelParent::NotifyClassificationFlags(uint32_t aClassificationFlags,
-                                             bool aIsThirdParty) {
-  LOG(
-      ("HttpChannelParent::NotifyClassificationFlags "
-       "classificationFlags=%" PRIu32 ", thirdparty=%d [this=%p]\n",
-       aClassificationFlags, static_cast<int>(aIsThirdParty), this));
-  if (!mIPCClosed) {
-    Unused << SendNotifyClassificationFlags(aClassificationFlags,
-                                            aIsThirdParty);
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 HttpChannelParent::NotifyFlashPluginStateChanged(
     nsIHttpChannel::FlashPluginState aState) {
   LOG(("HttpChannelParent::NotifyFlashPluginStateChanged [this=%p]\n", this));

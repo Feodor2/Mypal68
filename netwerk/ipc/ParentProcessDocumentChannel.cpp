@@ -5,11 +5,9 @@
 #include "ParentProcessDocumentChannel.h"
 
 #include "mozilla/net/ParentChannelWrapper.h"
-#include "mozilla/net/UrlClassifierCommon.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "nsDocShell.h"
 #include "nsIObserverService.h"
-#include "nsIClassifiedChannel.h"
 
 extern mozilla::LazyLogModule gDocumentChannelLog;
 #define LOG(fmt) MOZ_LOG(gDocumentChannelLog, mozilla::LogLevel::Verbose, fmt)

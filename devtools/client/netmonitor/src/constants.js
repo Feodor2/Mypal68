@@ -209,7 +209,6 @@ const UPDATE_PROPS = [
   "responseCacheAvailable",
   "formDataSections",
   "stacktrace",
-  "isThirdPartyTrackingResource",
   "referrerPolicy",
   "blockedReason",
   "channelId",

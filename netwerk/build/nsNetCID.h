@@ -370,21 +370,6 @@
     }                                                \
   }
 
-/**
- * Contract ID for a service implementing nsIURIClassifier that identifies
- * phishing and malware sites.
- */
-#define NS_URICLASSIFIERSERVICE_CONTRACTID "@mozilla.org/uriclassifierservice"
-
-// service implementing nsINetworkPredictor
-#define NS_NETWORKPREDICTOR_CONTRACTID "@mozilla.org/network/predictor;1"
-#define NS_NETWORKPREDICTOR_CID                      \
-  { /* {969adfdf-7221-4419-aecf-05f8faf00c9b} */     \
-    0x969adfdf, 0x7221, 0x4419, {                    \
-      0xae, 0xcf, 0x05, 0xf8, 0xfa, 0xf0, 0x0c, 0x9b \
-    }                                                \
-  }
-
 /******************************************************************************
  * netwerk/cache/ classes
  */

@@ -67,7 +67,6 @@ DIRS += [
     "tooltiptext",
     "typeaheadfind",
     "utils",
-    "url-classifier",
     "urlformatter",
     "viewconfig",
     "viewsource",

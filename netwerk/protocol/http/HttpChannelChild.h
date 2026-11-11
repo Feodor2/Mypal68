@@ -173,17 +173,8 @@ class HttpChannelChild final : public PHttpChannelChild,
   mozilla::ipc::IPCResult RecvAltDataCacheInputStreamAvailable(
       const Maybe<IPCStream>& aStream) override;
 
-  mozilla::ipc::IPCResult RecvNotifyClassificationFlags(
-      const uint32_t& aClassificationFlags, const bool& aIsThirdParty) override;
-
   mozilla::ipc::IPCResult RecvNotifyFlashPluginStateChanged(
       const nsIHttpChannel::FlashPluginState& aState) override;
-
-  mozilla::ipc::IPCResult RecvSetClassifierMatchedInfo(
-      const ClassifierInfo& info) override;
-
-  mozilla::ipc::IPCResult RecvSetClassifierMatchedTrackingInfo(
-      const ClassifierInfo& info) override;
 
   mozilla::ipc::IPCResult RecvOnAfterLastPart(const nsresult& aStatus) override;
 

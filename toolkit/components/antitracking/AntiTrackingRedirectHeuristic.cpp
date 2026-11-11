@@ -11,11 +11,9 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/net/CookieJarSettings.h"
-#include "mozilla/net/UrlClassifierCommon.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
-#include "nsIClassifiedChannel.h"
 #include "nsICookieService.h"
 #include "nsIHttpChannel.h"
 #include "nsIRedirectHistoryEntry.h"
@@ -31,67 +29,7 @@ namespace {
 bool ShouldRedirectHeuristicApplyETP(nsIChannel* aOldChannel, nsIURI* aOldURI,
                                      nsIPrincipal* aOldPrincipal,
                                      nsIChannel* aNewChannel, nsIURI* aNewURI) {
-  nsCOMPtr<nsIClassifiedChannel> classifiedOldChannel =
-      do_QueryInterface(aOldChannel);
-  nsCOMPtr<nsIClassifiedChannel> classifiedNewChannel =
-      do_QueryInterface(aNewChannel);
-  if (!classifiedOldChannel || !classifiedNewChannel) {
-    LOG_SPEC2(("Ignoring redirect for %s to %s because there is not "
-               "nsIClassifiedChannel interface",
-               _spec1, _spec2),
-              aOldURI, aNewURI);
     return false;
-  }
-
-  nsCOMPtr<nsILoadInfo> oldLoadInfo = aOldChannel->LoadInfo();
-  MOZ_ASSERT(oldLoadInfo);
-
-  nsCOMPtr<nsILoadInfo> newLoadInfo = aNewChannel->LoadInfo();
-  MOZ_ASSERT(newLoadInfo);
-
-  bool allowedByPreviousRedirect =
-      oldLoadInfo->GetAllowListFutureDocumentsCreatedFromThisRedirectChain();
-
-  // We're looking at the first-party classification flags because we're
-  // interested in first-party redirects.
-  uint32_t newClassificationFlags =
-      classifiedNewChannel->GetFirstPartyClassificationFlags();
-
-  if (net::UrlClassifierCommon::IsTrackingClassificationFlag(
-          newClassificationFlags)) {
-    // This is not a tracking -> non-tracking redirect.
-    LOG_SPEC2(("Redirect for %s to %s because it's not tracking to "
-               "non-tracking. Part of a chain of granted redirects: %d",
-               _spec1, _spec2, allowedByPreviousRedirect),
-              aOldURI, aNewURI);
-    newLoadInfo->SetAllowListFutureDocumentsCreatedFromThisRedirectChain(
-        allowedByPreviousRedirect);
-    return false;
-  }
-
-  if (!ContentBlockingUserInteraction::Exists(aOldPrincipal)) {
-    LOG_SPEC2(("Ignoring redirect for %s to %s because no user-interaction on "
-               "tracker",
-               _spec1, _spec2),
-              aOldURI, aNewURI);
-    return false;
-  }
-
-  uint32_t oldClassificationFlags =
-      classifiedOldChannel->GetFirstPartyClassificationFlags();
-
-  if (!net::UrlClassifierCommon::IsTrackingClassificationFlag(
-          oldClassificationFlags) &&
-      !allowedByPreviousRedirect) {
-    // This is not a tracking -> non-tracking redirect.
-    LOG_SPEC2(
-        ("Redirect for %s to %s because it's not tracking to non-tracking.",
-         _spec1, _spec2),
-        aOldURI, aNewURI);
-    return false;
-  }
-
-  return true;
 }
 
 bool ShouldRedirectHeuristicApplyRejectForeign(nsIChannel* aOldChannel,

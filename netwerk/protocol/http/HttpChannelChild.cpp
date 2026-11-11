@@ -18,8 +18,6 @@
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/net/HttpChannelChild.h"
-#include "mozilla/net/UrlClassifierCommon.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
 
 #include "AltDataOutputStreamChild.h"
 #include "CookieServiceChild.h"
@@ -58,7 +56,6 @@
 #include "nsThreadUtils.h"
 #include "nsCORSListenerProxy.h"
 #include "nsApplicationCache.h"
-#include "ClassifierDummyChannel.h"
 #include "nsIOService.h"
 
 #ifdef MOZ_GECKO_PROFILER
@@ -1189,34 +1186,6 @@ void HttpChannelChild::DoOnStopRequest(nsIRequest* aRequest,
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!LoadIsPending());
 
-  auto checkForBlockedContent = [&]() {
-    // NB: We use aChannelStatus here instead of mStatus because if there was an
-    // nsCORSListenerProxy on this request, it will override the tracking
-    // protection's return value.
-    if (UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(
-            aChannelStatus) ||
-        aChannelStatus == NS_ERROR_MALWARE_URI ||
-        aChannelStatus == NS_ERROR_UNWANTED_URI ||
-        aChannelStatus == NS_ERROR_BLOCKED_URI ||
-        aChannelStatus == NS_ERROR_HARMFUL_URI ||
-        aChannelStatus == NS_ERROR_PHISHING_URI) {
-      nsCString list, provider, fullhash;
-
-      nsresult rv = GetMatchedList(list);
-      NS_ENSURE_SUCCESS_VOID(rv);
-
-      rv = GetMatchedProvider(provider);
-      NS_ENSURE_SUCCESS_VOID(rv);
-
-      rv = GetMatchedFullHash(fullhash);
-      NS_ENSURE_SUCCESS_VOID(rv);
-
-      UrlClassifierCommon::SetBlockedContent(this, aChannelStatus, list,
-                                             provider, fullhash);
-    }
-  };
-  checkForBlockedContent();
-
   // See bug 1587686. If the redirect setup is not completed, the post-redirect
   // channel will be not opened and mListener will be null.
   MOZ_ASSERT(mListener || !LoadWasOpened());
@@ -1833,23 +1802,6 @@ void HttpChannelChild::ProcessFlushedForDiversion() {
                         true);
 }
 
-mozilla::ipc::IPCResult HttpChannelChild::RecvNotifyClassificationFlags(
-    const uint32_t& aClassificationFlags, const bool& aIsThirdParty) {
-  LOG(
-      ("HttpChannelChild::RecvNotifyClassificationFlags thirdparty=%d "
-       "flags=%" PRIu32 " [this=%p]\n",
-       static_cast<int>(aIsThirdParty), aClassificationFlags, this));
-  MOZ_ASSERT(NS_IsMainThread());
-
-  mEventQ->RunOrEnqueue(new NeckoTargetChannelFunctionEvent(
-      this, [self = UnsafePtr<HttpChannelChild>(this), aClassificationFlags,
-             aIsThirdParty] {
-        self->AddClassificationFlags(aClassificationFlags, aIsThirdParty);
-      }));
-
-  return IPC_OK();
-}
-
 mozilla::ipc::IPCResult HttpChannelChild::RecvNotifyFlashPluginStateChanged(
     const nsIHttpChannel::FlashPluginState& aState) {
   LOG(("HttpChannelChild::RecvNotifyFlashPluginStateChanged [this=%p]\n",
@@ -1878,41 +1830,6 @@ void HttpChannelChild::FlushedForDiversion() {
   if (!mSynthesizedResponse) {
     SendDivertComplete();
   }
-}
-
-mozilla::ipc::IPCResult HttpChannelChild::RecvSetClassifierMatchedInfo(
-    const ClassifierInfo& aInfo) {
-  LOG(("HttpChannelChild::RecvSetClassifierMatchedInfo [this=%p]\n", this));
-  MOZ_ASSERT(NS_IsMainThread());
-
-  mEventQ->RunOrEnqueue(new NeckoTargetChannelFunctionEvent(
-      this, [self = UnsafePtr<HttpChannelChild>(this), aInfo]() {
-        self->SetMatchedInfo(aInfo.list(), aInfo.provider(), aInfo.fullhash());
-      }));
-
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult HttpChannelChild::RecvSetClassifierMatchedTrackingInfo(
-    const ClassifierInfo& aInfo) {
-  LOG(("HttpChannelChild::RecvSetClassifierMatchedTrackingInfo [this=%p]\n",
-       this));
-  MOZ_ASSERT(NS_IsMainThread());
-
-  nsTArray<nsCString> lists, fullhashes;
-  for (const nsACString& token : aInfo.list().Split(',')) {
-    lists.AppendElement(token);
-  }
-  for (const nsACString& token : aInfo.fullhash().Split(',')) {
-    fullhashes.AppendElement(token);
-  }
-
-  mEventQ->RunOrEnqueue(new NeckoTargetChannelFunctionEvent(
-      this, [self = UnsafePtr<HttpChannelChild>(this), lists, fullhashes]() {
-        self->SetMatchedTrackingInfo(lists, fullhashes);
-      }));
-
-  return IPC_OK();
 }
 
 void HttpChannelChild::ProcessDivertMessages() {
@@ -2555,20 +2472,8 @@ nsresult HttpChannelChild::AsyncOpenInternal(nsIStreamListener* aListener) {
       intercepted->NotifyController();
     };
 
-    ClassifierDummyChannel::StorageAllowedState state =
-        ClassifierDummyChannel::StorageAllowed(this, callback);
-    if (state == ClassifierDummyChannel::eStorageGranted) {
-      callback(true);
-      return NS_OK;
-    }
-
-    if (state == ClassifierDummyChannel::eAsyncNeeded) {
-      // The async callback will be executed eventually.
-      return NS_OK;
-    }
-
-    MOZ_ASSERT(state == ClassifierDummyChannel::eStorageDenied);
-    // Fall through
+    callback(true);
+    return NS_OK;
   }
 
   rv = ContinueAsyncOpen();

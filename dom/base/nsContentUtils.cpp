@@ -202,7 +202,6 @@
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/ipc/SharedMemory.h"
 #include "mozilla/ipc/Shmem.h"
-#include "mozilla/net/UrlClassifierCommon.h"
 #include "mozilla/widget/IMEData.h"
 #include "nsAboutProtocolUtils.h"
 #include "nsAlgorithm.h"
@@ -258,7 +257,6 @@
 #include "nsICategoryManager.h"
 #include "nsIChannel.h"
 #include "nsIChannelEventSink.h"
-#include "nsIClassifiedChannel.h"
 #include "nsICharsetDetectionObserver.h"
 #include "nsIConsoleService.h"
 #include "nsIContent.h"
@@ -8479,48 +8477,6 @@ bool nsContentUtils::IsThirdPartyWindowOrChannel(nsPIDOMWindowInner* aWindow,
   }
 
   return thirdParty;
-}
-
-// static public
-bool nsContentUtils::IsThirdPartyTrackingResourceWindow(
-    nsPIDOMWindowInner* aWindow) {
-  MOZ_ASSERT(aWindow);
-
-  Document* document = aWindow->GetExtantDoc();
-  if (!document) {
-    return false;
-  }
-
-  nsCOMPtr<nsIClassifiedChannel> classifiedChannel =
-      do_QueryInterface(document->GetChannel());
-  if (!classifiedChannel) {
-    return false;
-  }
-
-  return classifiedChannel->IsThirdPartyTrackingResource();
-}
-
-// static public
-bool nsContentUtils::IsFirstPartyTrackingResourceWindow(
-    nsPIDOMWindowInner* aWindow) {
-  MOZ_ASSERT(aWindow);
-
-  Document* document = aWindow->GetExtantDoc();
-  if (!document) {
-    return false;
-  }
-
-  nsCOMPtr<nsIClassifiedChannel> classifiedChannel =
-      do_QueryInterface(document->GetChannel());
-  if (!classifiedChannel) {
-    return false;
-  }
-
-  uint32_t classificationFlags =
-      classifiedChannel->GetFirstPartyClassificationFlags();
-
-  return mozilla::net::UrlClassifierCommon::IsTrackingClassificationFlag(
-      classificationFlags);
 }
 
 namespace {

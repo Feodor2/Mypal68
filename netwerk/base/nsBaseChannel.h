@@ -245,9 +245,6 @@ class nsBaseChannel
   void ContinueHandleAsyncRedirect(nsresult result);
   nsresult ContinueRedirect();
 
-  // start URI classifier if requested
-  void ClassifyURI();
-
   class RedirectRunnable : public mozilla::Runnable {
    public:
     RedirectRunnable(nsBaseChannel* chan, nsIChannel* newChannel)

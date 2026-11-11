@@ -88,8 +88,6 @@ WindowGlobalInit WindowGlobalActor::WindowInitializer(
   fields.mIsOnContentBlockingAllowList =
       doc->CookieJarSettings()->GetIsOnContentBlockingAllowList();
   fields.mIsThirdPartyWindow = doc->HasThirdPartyChannel();
-  fields.mIsThirdPartyTrackingResourceWindow =
-      nsContentUtils::IsThirdPartyTrackingResourceWindow(aWindow);
   fields.mIsSecureContext = aWindow->IsSecureContext();
 
   auto policy = doc->GetEmbedderPolicy();

@@ -9,16 +9,8 @@ EXPORTS += [
     'nsToolkitCompsCID.h',
 ]
 
-SOURCES += [
-    'nsToolkitCompsModule.cpp',
-]
-
 XPCOM_MANIFESTS += [
     'components.conf',
 ]
 
 FINAL_LIBRARY = 'xul'
-
-LOCAL_INCLUDES += [
-    '../url-classifier',
-]

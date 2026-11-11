@@ -21,7 +21,6 @@
 #include "mozilla/net/FileChannelParent.h"
 #include "mozilla/net/DNSRequestParent.h"
 #include "mozilla/net/ChannelDiverterParent.h"
-#include "mozilla/net/ClassifierDummyChannelParent.h"
 #include "mozilla/net/IPCTransportProvider.h"
 #include "mozilla/net/RequestContextService.h"
 #include "mozilla/net/SocketProcessParent.h"
@@ -808,41 +807,6 @@ mozilla::ipc::IPCResult NeckoParent::RecvGetExtensionFD(
   }
 
   return IPC_OK();
-}
-
-PClassifierDummyChannelParent* NeckoParent::AllocPClassifierDummyChannelParent(
-    nsIURI* aURI, nsIURI* aTopWindowURI, const nsresult& aTopWindowURIResult,
-    const Maybe<LoadInfoArgs>& aLoadInfo) {
-  RefPtr<ClassifierDummyChannelParent> c = new ClassifierDummyChannelParent();
-  return c.forget().take();
-}
-
-mozilla::ipc::IPCResult NeckoParent::RecvPClassifierDummyChannelConstructor(
-    PClassifierDummyChannelParent* aActor, nsIURI* aURI, nsIURI* aTopWindowURI,
-    const nsresult& aTopWindowURIResult, const Maybe<LoadInfoArgs>& aLoadInfo) {
-  ClassifierDummyChannelParent* p =
-      static_cast<ClassifierDummyChannelParent*>(aActor);
-
-  if (NS_WARN_IF(!aURI)) {
-    return IPC_FAIL_NO_REASON(this);
-  }
-
-  nsCOMPtr<nsILoadInfo> loadInfo;
-  nsresult rv = LoadInfoArgsToLoadInfo(aLoadInfo, getter_AddRefs(loadInfo));
-  if (NS_WARN_IF(NS_FAILED(rv)) || !loadInfo) {
-    return IPC_FAIL_NO_REASON(this);
-  }
-
-  p->Init(aURI, aTopWindowURI, aTopWindowURIResult, loadInfo);
-  return IPC_OK();
-}
-
-bool NeckoParent::DeallocPClassifierDummyChannelParent(
-    PClassifierDummyChannelParent* aActor) {
-  RefPtr<ClassifierDummyChannelParent> c =
-      dont_AddRef(static_cast<ClassifierDummyChannelParent*>(aActor));
-  MOZ_ASSERT(c);
-  return true;
 }
 
 mozilla::ipc::IPCResult NeckoParent::RecvInitSocketProcessBridge(

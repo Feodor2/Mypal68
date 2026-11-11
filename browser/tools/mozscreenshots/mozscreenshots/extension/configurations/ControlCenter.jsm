@@ -19,10 +19,6 @@ const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
 
-let { UrlClassifierTestUtils } = ChromeUtils.import(
-  "resource://testing-common/UrlClassifierTestUtils.jsm"
-);
-
 const RESOURCE_PATH =
   "browser/browser/tools/mozscreenshots/mozscreenshots/extension/mozscreenshots/browser/resources/lib/controlCenter";
 const HTTP_PAGE = "http://example.com/";
@@ -250,7 +246,6 @@ var ControlCenter = {
       selectors: ["#navigator-toolbox", "#identity-popup"],
       async applyConfig() {
         Services.prefs.setBoolPref("privacy.trackingprotection.enabled", true);
-        await UrlClassifierTestUtils.addTestTrackers();
 
         await loadPage(TRACKING_PAGE);
         await openIdentityPopup();
@@ -265,7 +260,6 @@ var ControlCenter = {
         );
         let gBrowser = browserWindow.gBrowser;
         Services.prefs.setBoolPref("privacy.trackingprotection.enabled", true);
-        await UrlClassifierTestUtils.addTestTrackers();
 
         await loadPage(TRACKING_PAGE);
         await openIdentityPopup();

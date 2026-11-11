@@ -55,26 +55,6 @@ rights-webservices =
     how to disable a particular feature or Service may be found
     <a data-l10n-name="mozilla-disable-service-link">here</a>. Other features
     and Services can be disabled in the application preferences.
-rights-safebrowsing =
-    <strong>SafeBrowsing: </strong>Disabling the Safe Browsing feature is not
-    recommended as it may result in you going to unsafe sites. If you wish to
-    disable the feature completely, follow these steps:
-rights-safebrowsing-term-1 = Open the application preferences
-rights-safebrowsing-term-2 = Select the Security selection
-rights-safebrowsing-term-3 =
-    Uncheck the option to “{ enableSafeBrowsing-label }”
-enableSafeBrowsing-label = Block dangerous and deceptive content
-rights-safebrowsing-term-4 = Safe Browsing is now disabled
-rights-locationawarebrowsing =
-    <strong>Location Aware Browsing: </strong>is always opt-in. No location
-    information is ever sent without your permission. If you wish to disable
-    the feature completely, follow these steps:
-rights-locationawarebrowsing-term-1 =
-    In the URL bar, type <code>about:config</code>
-rights-locationawarebrowsing-term-2 = Type geo.enabled
-rights-locationawarebrowsing-term-3 =
-    Double click on the geo.enabled preference
-rights-locationawarebrowsing-term-4 = Location-Aware Browsing is now disabled
 rights-webservices-unbranded =
     An overview of the website services the product incorporates, along with
     instructions on how to disable them, if applicable, should be included

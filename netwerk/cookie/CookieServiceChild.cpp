@@ -19,7 +19,6 @@
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsIChannel.h"
-#include "nsIClassifiedChannel.h"
 #include "nsIHttpChannel.h"
 #include "nsIEffectiveTLDService.h"
 #include "nsIURI.h"
@@ -138,7 +137,6 @@ void CookieServiceChild::TrackCookieLoad(nsIChannel* aChannel) {
   bool isSameSiteForeign = CookieCommons::IsSameSiteForeign(aChannel, uri);
   SendPrepareCookieList(
       uri, result.contains(ThirdPartyAnalysis::IsForeign),
-      result.contains(ThirdPartyAnalysis::IsThirdPartyTrackingResource),
       result.contains(ThirdPartyAnalysis::IsStorageAccessPermissionGranted),
       rejectedReason, isSafeTopLevelNav, isSameSiteForeign, attrs);
 }
@@ -542,7 +540,6 @@ CookieServiceChild::SetCookieStringFromHttp(nsIURI* aHostURI,
   CookieStatus cookieStatus = CookieService::CheckPrefs(
       cookieJarSettings, aHostURI,
       result.contains(ThirdPartyAnalysis::IsForeign),
-      result.contains(ThirdPartyAnalysis::IsThirdPartyTrackingResource),
       result.contains(ThirdPartyAnalysis::IsStorageAccessPermissionGranted),
       aCookieString, CountCookiesFromHashTable(baseDomain, attrs), attrs,
       &rejectedReason);

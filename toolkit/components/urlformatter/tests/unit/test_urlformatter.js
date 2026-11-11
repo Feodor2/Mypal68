@@ -76,9 +76,6 @@ function run_test() {
   Assert.equal(formatter.formatURL(advancedUrl), advancedUrlRef);
 
   for (let val of [
-    "MOZILLA_API_KEY",
-    "GOOGLE_LOCATION_SERVICE_API_KEY",
-    "GOOGLE_SAFEBROWSING_API_KEY",
     "BING_API_CLIENTID",
     "BING_API_KEY",
   ]) {

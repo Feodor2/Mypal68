@@ -17,7 +17,6 @@ DIRS += [
     'protocol',
     'system',
     'ipc',
-    'url-classifier'
 ]
 
 if CONFIG['MOZ_SRTP']:

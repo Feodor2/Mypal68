@@ -29,31 +29,9 @@ DataChannelParent::SetParentListener(ParentChannelListener* aListener) {
 }
 
 NS_IMETHODIMP
-DataChannelParent::NotifyClassificationFlags(uint32_t aClassificationFlags,
-                                             bool aIsThirdParty) {
-  // Nothing to do.
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 DataChannelParent::NotifyFlashPluginStateChanged(
     nsIHttpChannel::FlashPluginState aState) {
   // Nothing to do.
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-DataChannelParent::SetClassifierMatchedInfo(const nsACString& aList,
-                                            const nsACString& aProvider,
-                                            const nsACString& aFullHash) {
-  // nothing to do
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-DataChannelParent::SetClassifierMatchedTrackingInfo(
-    const nsACString& aLists, const nsACString& aFullHashes) {
-  // nothing to do
   return NS_OK;
 }
 

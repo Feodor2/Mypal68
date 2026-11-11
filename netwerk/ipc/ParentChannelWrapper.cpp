@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ParentChannelWrapper.h"
-#include "mozilla/net/UrlClassifierCommon.h"
 #include "nsIRedirectChannelRegistrar.h"
 
 namespace mozilla {
@@ -48,44 +47,6 @@ ParentChannelWrapper::NotifyFlashPluginStateChanged(
   if (httpChannel) {
     httpChannel->SetFlashPluginState(aState);
   }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-ParentChannelWrapper::SetClassifierMatchedInfo(const nsACString& aList,
-                                               const nsACString& aProvider,
-                                               const nsACString& aFullHash) {
-  nsCOMPtr<nsIClassifiedChannel> classifiedChannel =
-      do_QueryInterface(mChannel);
-  if (classifiedChannel) {
-    classifiedChannel->SetMatchedInfo(aList, aProvider, aFullHash);
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-ParentChannelWrapper::SetClassifierMatchedTrackingInfo(
-    const nsACString& aLists, const nsACString& aFullHash) {
-  nsCOMPtr<nsIClassifiedChannel> classifiedChannel =
-      do_QueryInterface(mChannel);
-  if (classifiedChannel) {
-    nsTArray<nsCString> lists, fullhashes;
-    for (const nsACString& token : aLists.Split(',')) {
-      lists.AppendElement(token);
-    }
-    for (const nsACString& token : aFullHash.Split(',')) {
-      fullhashes.AppendElement(token);
-    }
-    classifiedChannel->SetMatchedTrackingInfo(lists, fullhashes);
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-ParentChannelWrapper::NotifyClassificationFlags(uint32_t aClassificationFlags,
-                                                bool aIsThirdParty) {
-  UrlClassifierCommon::SetClassificationFlagsHelper(
-      mChannel, aClassificationFlags, aIsThirdParty);
   return NS_OK;
 }
 

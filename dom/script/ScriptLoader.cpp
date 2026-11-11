@@ -36,7 +36,6 @@
 #include "mozilla/dom/ScriptDecoding.h"  // mozilla::dom::ScriptDecoding
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SRILogHelper.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_javascript.h"
@@ -50,7 +49,6 @@
 #include "nsIPrincipal.h"
 #include "nsJSPrincipals.h"
 #include "nsContentPolicyUtils.h"
-#include "nsIClassifiedChannel.h"
 #include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIClassOfService.h"
@@ -2972,10 +2970,6 @@ void ScriptLoader::ReportErrorToConsole(ScriptLoadRequest* aRequest,
   } else if (aResult == NS_ERROR_DOM_WEBEXT_CONTENT_SCRIPT_URI) {
     MOZ_ASSERT(!isScript);
     message = "WebExtContentScriptModuleSourceNotAllowed";
-  } else if (net::UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(
-                 aResult)) {
-    // Blocking classifier error codes already show their own console messages.
-    return;
   } else {
     message = isScript ? "ScriptSourceLoadFailed" : "ModuleSourceLoadFailed";
   }
@@ -3023,19 +3017,6 @@ void ScriptLoader::ReportPreloadErrorsToConsole(ScriptLoadRequest* aRequest) {
 
 void ScriptLoader::HandleLoadError(ScriptLoadRequest* aRequest,
                                    nsresult aResult) {
-  /*
-   * Handle script not loading error because source was an tracking URL (or
-   * fingerprinting, cryptomining, etc).
-   * We make a note of this script node by including it in a dedicated
-   * array of blocked tracking nodes under its parent document.
-   */
-  if (net::UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(
-          aResult)) {
-    nsCOMPtr<nsIContent> cont =
-        do_QueryInterface(aRequest->GetScriptLoadContext()->GetScriptElement());
-    mDocument->AddBlockedNodeByClassifier(cont);
-  }
-
   if (aRequest->IsModuleRequest()) {
     MOZ_ASSERT(!aRequest->GetScriptLoadContext()->mIsInline);
     aRequest->AsModuleRequest()->OnFetchComplete(aResult);
@@ -3294,13 +3275,6 @@ nsresult ScriptLoader::PrepareLoadedRequest(ScriptLoadRequest* aRequest,
     nsAutoCString sourceMapURL;
     if (nsContentUtils::GetSourceMapURL(httpChannel, sourceMapURL)) {
       aRequest->mSourceMapURL = Some(NS_ConvertUTF8toUTF16(sourceMapURL));
-    }
-
-    nsCOMPtr<nsIClassifiedChannel> classifiedChannel = do_QueryInterface(req);
-    MOZ_ASSERT(classifiedChannel);
-    if (classifiedChannel &&
-        classifiedChannel->IsThirdPartyTrackingResource()) {
-      aRequest->GetScriptLoadContext()->SetIsTracking();
     }
   }
 

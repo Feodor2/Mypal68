@@ -121,7 +121,6 @@
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/quota/ActorsParent.h"
 #include "mozilla/dom/localstorage/ActorsParent.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/RemoteLazyInputStreamStorage.h"
 #include "nsLayoutUtils.h"
 #include "nsThreadManager.h"
@@ -403,8 +402,6 @@ void nsLayoutStatics::Shutdown() {
   BlobURLProtocolHandler::RemoveDataEntries();
 
   css::ImageLoader::Shutdown();
-
-  mozilla::net::UrlClassifierFeatureFactory::Shutdown();
 
   gfxUserFontEntry::Shutdown();
 }

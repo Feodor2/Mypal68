@@ -81,7 +81,6 @@ modules["SIGNED_APP"] = Mod(38)
 modules["DOM_ANIM"] = Mod(39)
 modules["DOM_PUSH"] = Mod(40)
 modules["DOM_MEDIA"] = Mod(41)
-modules["URL_CLASSIFIER"] = Mod(42)
 # ErrorResult gets its own module to reduce the chance of someone accidentally
 # defining an error code matching one of the ErrorResult ones.
 modules["ERRORRESULT"] = Mod(43)
@@ -895,18 +894,6 @@ with modules["DOM_XPATH"]:
 # =======================================================================
 with modules["URILOADER"]:
     errors["NS_ERROR_WONT_HANDLE_CONTENT"] = FAILURE(1)
-    # The load has been cancelled because it was found on a malware or phishing
-    # blacklist.
-    errors["NS_ERROR_MALWARE_URI"] = FAILURE(30)
-    errors["NS_ERROR_PHISHING_URI"] = FAILURE(31)
-    errors["NS_ERROR_TRACKING_URI"] = FAILURE(34)
-    errors["NS_ERROR_UNWANTED_URI"] = FAILURE(35)
-    errors["NS_ERROR_BLOCKED_URI"] = FAILURE(37)
-    errors["NS_ERROR_HARMFUL_URI"] = FAILURE(38)
-    errors["NS_ERROR_MAYBE_TRACKING_URI"] = FAILURE(39)
-    errors["NS_ERROR_TRACKING_ANNOTATION_URI"] = FAILURE(40)
-    errors["NS_ERROR_FINGERPRINTING_URI"] = FAILURE(41)
-    errors["NS_ERROR_CRYPTOMINING_URI"] = FAILURE(42)
     # Used when "Save Link As..." doesn't see the headers quickly enough to
     # choose a filename.  See nsContextMenu.js.
     errors["NS_ERROR_SAVE_LINK_AS_TIMEOUT"] = FAILURE(32)
@@ -1146,30 +1133,6 @@ with modules["DOM_MEDIA"]:
 
     # Internal platform-related errors
     errors["NS_ERROR_DOM_MEDIA_CUBEB_INITIALIZATION_ERR"] = FAILURE(101)
-
-
-# =======================================================================
-# 42: NS_ERROR_MODULE_URL_CLASSIFIER
-# =======================================================================
-with modules["URL_CLASSIFIER"]:
-    # Errors during list updates
-    errors["NS_ERROR_UC_UPDATE_UNKNOWN"] = FAILURE(1)
-    errors["NS_ERROR_UC_UPDATE_DUPLICATE_PREFIX"] = FAILURE(2)
-    errors["NS_ERROR_UC_UPDATE_INFINITE_LOOP"] = FAILURE(3)
-    errors["NS_ERROR_UC_UPDATE_WRONG_REMOVAL_INDICES"] = FAILURE(4)
-    errors["NS_ERROR_UC_UPDATE_CHECKSUM_MISMATCH"] = FAILURE(5)
-    errors["NS_ERROR_UC_UPDATE_MISSING_CHECKSUM"] = FAILURE(6)
-    errors["NS_ERROR_UC_UPDATE_SHUTDOWNING"] = FAILURE(7)
-    errors["NS_ERROR_UC_UPDATE_TABLE_NOT_FOUND"] = FAILURE(8)
-    errors["NS_ERROR_UC_UPDATE_BUILD_PREFIX_FAILURE"] = FAILURE(9)
-    errors["NS_ERROR_UC_UPDATE_FAIL_TO_WRITE_DISK"] = FAILURE(10)
-    errors["NS_ERROR_UC_UPDATE_UNEXPECTED_VERSION"] = FAILURE(11)
-
-    # Specific errors while parsing pver2/pver4 responses
-    errors["NS_ERROR_UC_PARSER_MISSING_PARAM"] = FAILURE(12)
-    errors["NS_ERROR_UC_PARSER_DECODE_FAILURE"] = FAILURE(13)
-    errors["NS_ERROR_UC_PARSER_UNKNOWN_THREAT"] = FAILURE(14)
-    errors["NS_ERROR_UC_PARSER_MISSING_VALUE"] = FAILURE(15)
 
 
 # =======================================================================

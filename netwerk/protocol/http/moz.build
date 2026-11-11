@@ -42,9 +42,6 @@ EXPORTS.mozilla.net += [
     'BackgroundChannelRegistrar.h',
     'BackgroundDataBridgeChild.h',
     'BackgroundDataBridgeParent.h',
-    'ClassifierDummyChannel.h',
-    'ClassifierDummyChannelChild.h',
-    'ClassifierDummyChannelParent.h',
     'HttpAuthUtils.h',
     'HttpBackgroundChannelChild.h',
     'HttpBackgroundChannelParent.h',
@@ -86,9 +83,6 @@ UNIFIED_SOURCES += [
     'BackgroundDataBridgeParent.cpp',
     'CacheControlParser.cpp',
     'CachePushChecker.cpp',
-    'ClassifierDummyChannel.cpp',
-    'ClassifierDummyChannelChild.cpp',
-    'ClassifierDummyChannelParent.cpp',
     'ConnectionDiagnostics.cpp',
     'DelayHttpChannelQueue.cpp',
     'Http2Compression.cpp',
@@ -145,7 +139,6 @@ IPDL_SOURCES += [
     'PAltService.ipdl',
     'PAltSvcTransaction.ipdl',
     'PBackgroundDataBridge.ipdl',
-    'PClassifierDummyChannel.ipdl',
     'PHttpBackgroundChannel.ipdl',
     'PHttpChannel.ipdl',
     'PHttpConnectionMgr.ipdl',
@@ -163,7 +156,6 @@ LOCAL_INCLUDES += [
     '/netwerk/cookie',
     '/netwerk/dns',
     '/netwerk/ipc',
-    '/netwerk/url-classifier',
 ]
 
 EXTRA_JS_MODULES += [

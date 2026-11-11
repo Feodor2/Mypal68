@@ -20,7 +20,6 @@
 #include "mozilla/dom/network/TCPServerSocketChild.h"
 #include "mozilla/dom/network/UDPSocketChild.h"
 #include "mozilla/net/AltDataOutputStreamChild.h"
-#include "mozilla/net/ClassifierDummyChannelChild.h"
 #include "mozilla/net/SocketProcessBridgeChild.h"
 #ifdef MOZ_WEBRTC
 #  include "mozilla/net/StunAddrsRequestChild.h"
@@ -351,18 +350,6 @@ mozilla::ipc::IPCResult NeckoChild::RecvNetworkChangeNotification(
                                 NS_ConvertUTF8toUTF16(type).get());
   }
   return IPC_OK();
-}
-
-PClassifierDummyChannelChild* NeckoChild::AllocPClassifierDummyChannelChild(
-    nsIURI* aURI, nsIURI* aTopWindowURI, const nsresult& aTopWindowURIResult,
-    const Maybe<LoadInfoArgs>& aLoadInfo) {
-  return new ClassifierDummyChannelChild();
-}
-
-bool NeckoChild::DeallocPClassifierDummyChannelChild(
-    PClassifierDummyChannelChild* aActor) {
-  delete static_cast<ClassifierDummyChannelChild*>(aActor);
-  return true;
 }
 
 }  // namespace net

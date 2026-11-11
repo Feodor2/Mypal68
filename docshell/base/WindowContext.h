@@ -35,7 +35,6 @@ class BrowsingContextGroup;
   FIELD(IsThirdPartyWindow, bool)                                      \
   /* Whether this window's channel has been marked as a third-party    \
    * tracking resource */                                              \
-  FIELD(IsThirdPartyTrackingResourceWindow, bool)                      \
   FIELD(IsSecureContext, bool)                                         \
   /* Mixed-Content: If the corresponding documentURI is https,         \
    * then this flag is true. */                                        \
@@ -146,9 +145,6 @@ class WindowContext : public nsISupports, public nsWrapperCache {
 
   bool CanSet(FieldIndex<IDX_IsThirdPartyWindow>,
               const bool& IsThirdPartyWindow, ContentParent* aSource);
-  bool CanSet(FieldIndex<IDX_IsThirdPartyTrackingResourceWindow>,
-              const bool& aIsThirdPartyTrackingResourceWindow,
-              ContentParent* aSource);
   bool CanSet(FieldIndex<IDX_IsSecureContext>, const bool& aIsSecureContext,
               ContentParent* aSource);
   bool CanSet(FieldIndex<IDX_DocTreeHadAudibleMedia>, const bool& aValue,

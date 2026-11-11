@@ -11,7 +11,6 @@ include NeckoChannelParams;
 include IPCServiceWorkerDescriptor;
 include IPCStream;
 include HttpChannelParams;
-include PURLClassifierInfo;
 
 include "mozilla/dom/ReferrerInfoUtils.h";
 include "mozilla/net/NeckoMessageUtils.h";
@@ -186,18 +185,9 @@ child:
 
   async OnStatus(nsresult status);
 
-  // Tell the child that the resource being loaded has been classified.
-  async NotifyClassificationFlags(uint32_t aClassificationFlags, bool aIsThirdParty);
-
   // Tell the child that the current channel's document is not allowed to load
   // flash content.
   async NotifyFlashPluginStateChanged(FlashPluginState aState);
-
-  // Tell the child information of matched URL againts SafeBrowsing list
-  async SetClassifierMatchedInfo(ClassifierInfo info);
-
-  // Tell the child information of matched URL againts SafeBrowsing tracking list
-  async SetClassifierMatchedTrackingInfo(ClassifierInfo info);
 
   // Forwards nsIMultiPartChannelListener::onAfterLastPart. Make sure we've
   // disconnected our listeners, since we might not have on the last OnStopRequest.

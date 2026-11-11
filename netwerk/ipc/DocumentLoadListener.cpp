@@ -43,7 +43,6 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/RemoteWebProgress.h"
 #include "mozilla/dom/RemoteWebProgressRequest.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/ExtensionPolicyService.h"
 
 #ifdef ANDROID
@@ -931,18 +930,6 @@ void DocumentLoadListener::ApplyPendingFunctions(
     variant.match(
         [parentChannel](const nsIHttpChannel::FlashPluginState& aState) {
           parentChannel->NotifyFlashPluginStateChanged(aState);
-        },
-        [parentChannel](const ClassifierMatchedInfoParams& aParams) {
-          parentChannel->SetClassifierMatchedInfo(
-              aParams.mList, aParams.mProvider, aParams.mFullHash);
-        },
-        [parentChannel](const ClassifierMatchedTrackingInfoParams& aParams) {
-          parentChannel->SetClassifierMatchedTrackingInfo(aParams.mLists,
-                                                          aParams.mFullHashes);
-        },
-        [parentChannel](const ClassificationFlagsParams& aParams) {
-          parentChannel->NotifyClassificationFlags(aParams.mClassificationFlags,
-                                                   aParams.mIsThirdParty);
         });
   }
 
@@ -1713,23 +1700,6 @@ void DocumentLoadListener::TriggerRedirectToRealChannel(
           });
 }
 
-void DocumentLoadListener::MaybeReportBlockedByURLClassifier(nsresult aStatus) {
-  if (!GetBrowsingContext() || GetBrowsingContext()->IsTop() ||
-      !StaticPrefs::privacy_trackingprotection_testing_report_blocked_node()) {
-    return;
-  }
-
-  if (!UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(aStatus)) {
-    return;
-  }
-
-  RefPtr<WindowGlobalParent> parent =
-      GetBrowsingContext()->GetParentWindowContext();
-  if (parent) {
-    Unused << parent->SendAddBlockedFrameNodeByClassifier(GetBrowsingContext());
-  }
-}
-
 bool DocumentLoadListener::DocShellWillDisplayContent(nsresult aStatus) {
   if (NS_SUCCEEDED(aStatus)) {
     return true;
@@ -1805,8 +1775,6 @@ DocumentLoadListener::OnStartRequest(nsIRequest* aRequest) {
   mChannel->Suspend();
 
   mInitiatedRedirectToRealChannel = true;
-
-  MaybeReportBlockedByURLClassifier(status);
 
   // Determine if a new process needs to be spawned. If it does, this will
   // trigger a cross process switch, and we should hold off on redirecting to
@@ -1966,41 +1934,6 @@ DocumentLoadListener::NotifyFlashPluginStateChanged(
     nsIHttpChannel::FlashPluginState aState) {
   mIParentChannelFunctions.AppendElement(
       IParentChannelFunction{VariantIndex<0>{}, aState});
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-DocumentLoadListener::SetClassifierMatchedInfo(const nsACString& aList,
-                                               const nsACString& aProvider,
-                                               const nsACString& aFullHash) {
-  ClassifierMatchedInfoParams params;
-  params.mList = aList;
-  params.mProvider = aProvider;
-  params.mFullHash = aFullHash;
-
-  mIParentChannelFunctions.AppendElement(
-      IParentChannelFunction{VariantIndex<1>{}, std::move(params)});
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-DocumentLoadListener::SetClassifierMatchedTrackingInfo(
-    const nsACString& aLists, const nsACString& aFullHash) {
-  ClassifierMatchedTrackingInfoParams params;
-  params.mLists = aLists;
-  params.mFullHashes = aFullHash;
-
-  mIParentChannelFunctions.AppendElement(
-      IParentChannelFunction{VariantIndex<2>{}, std::move(params)});
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-DocumentLoadListener::NotifyClassificationFlags(uint32_t aClassificationFlags,
-                                                bool aIsThirdParty) {
-  mIParentChannelFunctions.AppendElement(IParentChannelFunction{
-      VariantIndex<3>{},
-      ClassificationFlagsParams{aClassificationFlags, aIsThirdParty}});
   return NS_OK;
 }
 

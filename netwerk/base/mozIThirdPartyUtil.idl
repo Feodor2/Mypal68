@@ -16,7 +16,6 @@ interface nsILoadInfo;
 
 enum class ThirdPartyAnalysis {
   IsForeign,
-  IsThirdPartyTrackingResource,
   IsStorageAccessPermissionGranted,
 };
 

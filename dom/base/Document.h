@@ -1375,34 +1375,6 @@ class Document : public nsINode,
   Maybe<ClientState> GetClientState() const;
   Maybe<ServiceWorkerDescriptor> GetController() const;
 
-  // Returns the size of the mBlockedNodesByClassifier array.
-  //
-  // This array contains nodes that have been blocked to prevent user tracking,
-  // fingerprinting, cryptomining, etc. They most likely have had their
-  // nsIChannel canceled by the URL classifier (Safebrowsing).
-  //
-  // A script can subsequently use GetBlockedNodesByClassifier()
-  // to get a list of references to these nodes.
-  //
-  // Note:
-  // This expresses how many tracking nodes have been blocked for this document
-  // since its beginning, not how many of them are still around in the DOM tree.
-  // Weak references to blocked nodes are added in the mBlockedNodesByClassifier
-  // array but they are not removed when those nodes are removed from the tree
-  // or even garbage collected.
-  long BlockedNodeByClassifierCount() const {
-    return mBlockedNodesByClassifier.Length();
-  }
-
-  //
-  // Returns strong references to mBlockedNodesByClassifier. (Document.h)
-  //
-  // This array contains nodes that have been blocked to prevent
-  // user tracking. They most likely have had their nsIChannel
-  // canceled by the URL classifier (Safebrowsing).
-  //
-  already_AddRefed<nsSimpleContentList> BlockedNodesByClassifier() const;
-
   // Helper method that returns true if the document has storage-access sandbox
   // flag.
   bool StorageAccessSandboxed() const;
@@ -3484,23 +3456,6 @@ class Document : public nsINode,
   inline SVGDocument* AsSVGDocument();
   inline const SVGDocument* AsSVGDocument() const;
 
-  /*
-   * Given a node, get a weak reference to it and append that reference to
-   * mBlockedNodesByClassifier. Can be used later on to look up a node in it.
-   * (e.g., by the UI)
-   */
-  void AddBlockedNodeByClassifier(nsINode* node) {
-    if (!node) {
-      return;
-    }
-
-    nsWeakPtr weakNode = do_GetWeakReference(node);
-
-    if (weakNode) {
-      mBlockedNodesByClassifier.AppendElement(weakNode);
-    }
-  }
-
   gfxUserFontSet* GetUserFontSet();
   void FlushUserFontSet();
   void MarkUserFontSetDirty();
@@ -4733,13 +4688,6 @@ class Document : public nsINode,
   // to the current static clone of this document. This is weak since the clone
   // also has a reference to this document.
   WeakPtr<Document> mLatestStaticClone;
-
-  // Array of nodes that have been blocked to prevent user tracking.
-  // They most likely have had their nsIChannel canceled by the URL
-  // classifier. (Safebrowsing)
-  //
-  // Weak nsINode pointers are used to allow nodes to disappear.
-  nsTArray<nsWeakPtr> mBlockedNodesByClassifier;
 
   // Weak reference to mScriptGlobalObject QI:d to nsPIDOMWindow,
   // updated on every set of mScriptGlobalObject.

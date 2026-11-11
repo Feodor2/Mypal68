@@ -98,7 +98,6 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
       private: actor.private,
       fromCache: actor.fromCache,
       fromServiceWorker: actor.fromServiceWorker,
-      isThirdPartyTrackingResource: actor.isThirdPartyTrackingResource,
       referrerPolicy: actor.referrerPolicy,
       blockedReason: actor.blockedReason,
       channelId: actor.channelId,

@@ -36,16 +36,6 @@ class LoadURIDelegateChild extends GeckoViewActorChild {
     debug`handleLoadError: uri=${aUri && aUri.spec}
                              displaySpec=${aUri && aUri.displaySpec}
                              error=${aError}`;
-    if (aUri && LoadURIDelegate.isSafeBrowsingError(aError)) {
-      const message = {
-        type: "GeckoView:ContentBlocked",
-        uri: aUri.spec,
-        error: aError,
-      };
-
-      this.eventDispatcher.sendRequest(message);
-    }
-
     return LoadURIDelegate.handleLoadError(
       this.contentWindow,
       this.eventDispatcher,

@@ -403,21 +403,6 @@ var ContentBlocking = {
     ThirdPartyCookies,
   ],
 
-  get _baseURIForChannelClassifier() {
-    // Convert document URI into the format used by
-    // nsChannelClassifier::ShouldEnableTrackingProtection.
-    // Any scheme turned into https is correct.
-    try {
-      return Services.io.newURI(
-        "https://" + gBrowser.selectedBrowser.currentURI.hostPort
-      );
-    } catch (e) {
-      // Getting the hostPort for about: and file: URIs fails, but TP doesn't work with
-      // these URIs anyway, so just return null here.
-      return null;
-    }
-  },
-
   init() {
     this.animatedIcon.addEventListener("animationend", () =>
       this.iconBox.removeAttribute("animate")
@@ -499,119 +484,11 @@ var ContentBlocking = {
   },
 
   onContentBlockingEvent(event, webProgress, isSimulated, previousState) {
-    let baseURI = this._baseURIForChannelClassifier;
-
-    // Don't deal with about:, file: etc.
-    if (!baseURI) {
-      this.iconBox.removeAttribute("animate");
-      this.iconBox.removeAttribute("active");
-      this.iconBox.removeAttribute("hasException");
-      return;
-    }
-
-    let anyDetected = false;
-    let anyBlocking = false;
-
-    for (let blocker of this.blockers) {
-      // Store data on whether the blocker is activated in the current document for
-      // reporting it using the "report breakage" dialog. Under normal circumstances this
-      // dialog should only be able to open in the currently selected tab and onSecurityChange
-      // runs on tab switch, so we can avoid associating the data with the document directly.
-      blocker.activated = blocker.isBlocking(event);
-      blocker.categoryItem.classList.toggle("blocked", blocker.enabled);
-      let detected = blocker.isDetected(event);
-      blocker.categoryItem.hidden = !detected;
-      anyDetected = anyDetected || detected;
-      anyBlocking = anyBlocking || blocker.activated;
-    }
-
-    let isBrowserPrivate = PrivateBrowsingUtils.isBrowserPrivate(
-      gBrowser.selectedBrowser
-    );
-
-    // Check whether the user has added an exception for this site.
-    let principal = Services.scriptSecurityManager.createContentPrincipal(
-      baseURI,
-      {}
-    );
-    let type = isBrowserPrivate
-      ? "trackingprotection-pb"
-      : "trackingprotection";
-    let hasException =
-      Services.perms.testExactPermissionFromPrincipal(principal, type) ==
-      Services.perms.ALLOW_ACTION;
-
-    // Reset the animation in case the user is switching tabs or if no blockers were detected
-    // (this is most likely happening because the user navigated on to a different site). This
-    // allows us to play it from the start without choppiness next time.
-    if (isSimulated || !anyBlocking) {
-      this.iconBox.removeAttribute("animate");
-      // Only play the animation when the shield is not already shown on the page (the visibility
-      // of the shield based on this onSecurityChange be determined afterwards).
-    } else if (anyBlocking && !this.iconBox.hasAttribute("active")) {
-      this.iconBox.setAttribute("animate", "true");
-    }
-
-    // We consider the shield state "active" when some kind of blocking activity
-    // occurs on the page.  Note that merely allowing the loading of content that
-    // we could have blocked does not trigger the appearance of the shield.
-    // This state will be overriden later if there's an exception set for this site.
-    this.content.toggleAttribute("detected", anyDetected);
-    this.content.toggleAttribute("blocking", anyBlocking);
-    this.content.toggleAttribute("hasException", hasException);
-
-    this.iconBox.toggleAttribute("active", anyBlocking);
-    this.iconBox.toggleAttribute("hasException", hasException);
-
-    if (hasException) {
-      this.iconBox.setAttribute(
-        "tooltiptext",
-        this.strings.disabledTooltipText
-      );
-      if (!this.hadShieldState && !isSimulated) {
-        this.hadShieldState = true;
-      }
-    } else if (anyBlocking) {
-      this.iconBox.setAttribute("tooltiptext", this.strings.activeTooltipText);
-      if (!this.hadShieldState && !isSimulated) {
-        this.hadShieldState = true;
-      }
-    } else {
-      this.iconBox.removeAttribute("tooltiptext");
-    }
   },
 
   disableForCurrentPage() {
-    let baseURI = this._baseURIForChannelClassifier;
-
-    // Add the current host in the 'trackingprotection' consumer of
-    // the permission manager using a normalized URI. This effectively
-    // places this host on the tracking protection allowlist.
-    if (PrivateBrowsingUtils.isBrowserPrivate(gBrowser.selectedBrowser)) {
-      PrivateBrowsingUtils.addToTrackingAllowlist(baseURI);
-    } else {
-      Services.perms.add(
-        baseURI,
-        "trackingprotection",
-        Services.perms.ALLOW_ACTION
-      );
-    }
-
-    this.hideIdentityPopupAndReload();
   },
 
   enableForCurrentPage() {
-    // Remove the current host from the 'trackingprotection' consumer
-    // of the permission manager. This effectively removes this host
-    // from the tracking protection allowlist.
-    let baseURI = this._baseURIForChannelClassifier;
-
-    if (PrivateBrowsingUtils.isBrowserPrivate(gBrowser.selectedBrowser)) {
-      PrivateBrowsingUtils.removeFromTrackingAllowlist(baseURI);
-    } else {
-      Services.perms.remove(baseURI, "trackingprotection");
-    }
-
-    this.hideIdentityPopupAndReload();
   },
 };

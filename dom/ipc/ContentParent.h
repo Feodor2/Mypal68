@@ -563,21 +563,6 @@ class ContentParent final
 
   virtual int32_t Pid() const override;
 
-  // PURLClassifierParent.
-  PURLClassifierParent* AllocPURLClassifierParent(const Principal& aPrincipal,
-                                                  bool* aSuccess);
-  virtual mozilla::ipc::IPCResult RecvPURLClassifierConstructor(
-      PURLClassifierParent* aActor, const Principal& aPrincipal,
-      bool* aSuccess) override;
-
-  // PURLClassifierLocalParent.
-  PURLClassifierLocalParent* AllocPURLClassifierLocalParent(
-      nsIURI* aURI, const nsTArray<IPCURLClassifierFeature>& aFeatures);
-
-  virtual mozilla::ipc::IPCResult RecvPURLClassifierLocalConstructor(
-      PURLClassifierLocalParent* aActor, nsIURI* aURI,
-      nsTArray<IPCURLClassifierFeature>&& aFeatures) override;
-
   PSessionStorageObserverParent* AllocPSessionStorageObserverParent();
 
   virtual mozilla::ipc::IPCResult RecvPSessionStorageObserverConstructor(
@@ -585,10 +570,6 @@ class ContentParent final
 
   bool DeallocPSessionStorageObserverParent(
       PSessionStorageObserverParent* aActor);
-
-  bool DeallocPURLClassifierLocalParent(PURLClassifierLocalParent* aActor);
-
-  bool DeallocPURLClassifierParent(PURLClassifierParent* aActor);
 
   // Use the PHangMonitor channel to ask the child to repaint a tab.
   void PaintTabWhileInterruptingJS(BrowserParent* aBrowserParent,

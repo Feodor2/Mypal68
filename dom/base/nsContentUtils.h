@@ -2961,18 +2961,6 @@ class nsContentUtils {
                                           nsIChannel* aChannel, nsIURI* aURI);
 
   /*
-   * Returns true if this window's channel has been marked as a third-party
-   * tracking resource.
-   */
-  static bool IsThirdPartyTrackingResourceWindow(nsPIDOMWindowInner* aWindow);
-
-  /*
-   * Returns true if this window's channel has been marked as a first-party
-   * tracking resource.
-   */
-  static bool IsFirstPartyTrackingResourceWindow(nsPIDOMWindowInner* aWindow);
-
-  /*
    * Serializes a HTML nsINode into its markup representation.
    */
   static bool SerializeNodeToMarkup(nsINode* aRoot, bool aDescendentsOnly,

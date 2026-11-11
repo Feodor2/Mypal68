@@ -111,7 +111,6 @@
 #include "mozilla/dom/ServiceWorkerRegistrar.h"
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/dom/StorageIPC.h"
-#include "mozilla/dom/URLClassifierParent.h"
 #include "mozilla/dom/WakeLock.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/ipc/SharedMap.h"
@@ -3215,7 +3214,6 @@ bool ContentParent::ShouldSyncPreference(const char16_t* aData) {
   static const BlacklistEntry sContentPrefBranchBlacklist[] = {
       BLACKLIST_ENTRY(u"app.update.lastUpdateTime."),
       BLACKLIST_ENTRY(u"datareporting.policy."),
-      BLACKLIST_ENTRY(u"browser.safebrowsing.provider."),
       BLACKLIST_ENTRY(u"browser.shell."),
       BLACKLIST_ENTRY(u"browser.slowStartup."),
       BLACKLIST_ENTRY(u"browser.startup."),
@@ -5586,80 +5584,6 @@ mozilla::ipc::IPCResult ContentParent::RecvRecordDiscardedData(
   TelemetryIPC::RecordDiscardedData(GetTelemetryProcessID(mRemoteType),
                                     aDiscardedData);
   return IPC_OK();
-}
-
-//////////////////////////////////////////////////////////////////
-// PURLClassifierParent
-
-PURLClassifierParent* ContentParent::AllocPURLClassifierParent(
-    const Principal& aPrincipal, bool* aSuccess) {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  *aSuccess = true;
-  RefPtr<URLClassifierParent> actor = new URLClassifierParent();
-  return actor.forget().take();
-}
-
-mozilla::ipc::IPCResult ContentParent::RecvPURLClassifierConstructor(
-    PURLClassifierParent* aActor, const Principal& aPrincipal, bool* aSuccess) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aActor);
-  *aSuccess = false;
-
-  auto* actor = static_cast<URLClassifierParent*>(aActor);
-  nsCOMPtr<nsIPrincipal> principal(aPrincipal);
-  if (!principal) {
-    actor->ClassificationFailed();
-    return IPC_OK();
-  }
-  return actor->StartClassify(principal, aSuccess);
-}
-
-bool ContentParent::DeallocPURLClassifierParent(PURLClassifierParent* aActor) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aActor);
-
-  RefPtr<URLClassifierParent> actor =
-      dont_AddRef(static_cast<URLClassifierParent*>(aActor));
-  return true;
-}
-
-//////////////////////////////////////////////////////////////////
-// PURLClassifierLocalParent
-
-PURLClassifierLocalParent* ContentParent::AllocPURLClassifierLocalParent(
-    nsIURI* aURI, const nsTArray<IPCURLClassifierFeature>& aFeatures) {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  RefPtr<URLClassifierLocalParent> actor = new URLClassifierLocalParent();
-  return actor.forget().take();
-}
-
-mozilla::ipc::IPCResult ContentParent::RecvPURLClassifierLocalConstructor(
-    PURLClassifierLocalParent* aActor, nsIURI* aURI,
-    nsTArray<IPCURLClassifierFeature>&& aFeatures) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aActor);
-
-  nsTArray<IPCURLClassifierFeature> features = std::move(aFeatures);
-
-  if (!aURI) {
-    NS_WARNING("aURI should not be null");
-    return IPC_FAIL_NO_REASON(this);
-  }
-
-  auto* actor = static_cast<URLClassifierLocalParent*>(aActor);
-  return actor->StartClassify(aURI, features);
-}
-
-bool ContentParent::DeallocPURLClassifierLocalParent(
-    PURLClassifierLocalParent* aActor) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(aActor);
-
-  RefPtr<URLClassifierLocalParent> actor =
-      dont_AddRef(static_cast<URLClassifierLocalParent*>(aActor));
-  return true;
 }
 
 PSessionStorageObserverParent*

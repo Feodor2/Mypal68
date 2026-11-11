@@ -29,7 +29,6 @@ XPIDL_SOURCES += [
     "nsIChannelEventSink.idl",
     "nsIChannelWithDivertableParentListener.idl",
     "nsIChildChannel.idl",
-    "nsIClassifiedChannel.idl",
     "nsIClassOfService.idl",
     "nsIContentSniffer.idl",
     "nsIDashboard.idl",
@@ -314,7 +313,6 @@ LOCAL_INCLUDES += [
     "/dom/base",
     "/netwerk/protocol/http",
     "/netwerk/socket",
-    "/netwerk/url-classifier",
     "/security/manager/ssl",
 ]
 

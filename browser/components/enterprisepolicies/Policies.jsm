@@ -553,13 +553,6 @@ var Policies = {
           param.InvalidCertificate
         );
       }
-
-      if ("SafeBrowsing" in param) {
-        setAndLockPref(
-          "browser.safebrowsing.allowOverride",
-          !param.SafeBrowsing
-        );
-      }
     },
   },
 

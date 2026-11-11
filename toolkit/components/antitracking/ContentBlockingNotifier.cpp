@@ -11,7 +11,6 @@
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/WindowGlobalParent.h"
-#include "nsIClassifiedChannel.h"
 #include "nsIRunnable.h"
 #include "nsIScriptError.h"
 #include "nsIURI.h"
@@ -250,12 +249,6 @@ void NotifyBlockingDecision(nsIChannel* aTrackingChannel,
   ContentBlockingNotifier::OnEvent(aTrackingChannel, false,
                                    nsIWebProgressListener::STATE_COOKIES_LOADED,
                                    trackingOrigin);
-
-  nsCOMPtr<nsIClassifiedChannel> classifiedChannel =
-      do_QueryInterface(aTrackingChannel);
-  if (!classifiedChannel) {
-    return;
-  }
 }
 
 // Send a message to notify OnContentBlockingEvent in the parent, which will
@@ -285,14 +278,6 @@ void NotifyEventInChild(
   NS_ENSURE_TRUE_VOID(browserChild);
 
   nsTArray<nsCString> trackingFullHashes;
-  nsCOMPtr<nsIClassifiedChannel> classifiedChannel =
-      do_QueryInterface(aTrackingChannel);
-
-  if (classifiedChannel) {
-    Unused << classifiedChannel->GetMatchedTrackingFullHashes(
-        trackingFullHashes);
-  }
-
   browserChild->NotifyContentBlockingEvent(aRejectedReason, aTrackingChannel,
                                            aBlocked, aTrackingOrigin,
                                            trackingFullHashes, aReason);
@@ -321,14 +306,6 @@ void NotifyEventInParent(
   NS_ENSURE_TRUE_VOID(wgp);
 
   nsTArray<nsCString> trackingFullHashes;
-  nsCOMPtr<nsIClassifiedChannel> classifiedChannel =
-      do_QueryInterface(aTrackingChannel);
-
-  if (classifiedChannel) {
-    Unused << classifiedChannel->GetMatchedTrackingFullHashes(
-        trackingFullHashes);
-  }
-
   wgp->NotifyContentBlockingEvent(aRejectedReason, aTrackingChannel, aBlocked,
                                   aTrackingOrigin, trackingFullHashes, aReason);
 }

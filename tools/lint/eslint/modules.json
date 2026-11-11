@@ -187,7 +187,6 @@
   "ShortURL.jsm": ["shortURL", "getETLD"],
   "ShutdownLeaksCollector.jsm": ["ContentCollector"],
   "SignInToWebsite.jsm": ["SignInToWebsiteController"],
-  "SiteClassifier.jsm": ["classifySite"],
   "Social.jsm": ["Social", "OpenGraphBuilder", "DynamicResizeWatcher", "sizeSocialPanelToContent"],
   "SpecialPowersObserver.jsm": ["SpecialPowersObserver", "SpecialPowersObserverFactory"],
   "StateMachineHelper.jsm": ["State", "CommandType"],

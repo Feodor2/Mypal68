@@ -27,33 +27,12 @@ SimpleChannelParent::SetParentListener(ParentChannelListener* aListener) {
 }
 
 NS_IMETHODIMP
-SimpleChannelParent::NotifyClassificationFlags(uint32_t aClassificationFlags,
-                                               bool aIsThirdParty) {
-  // Nothing to do.
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 SimpleChannelParent::NotifyFlashPluginStateChanged(
     nsIHttpChannel::FlashPluginState aState) {
   // Nothing to do.
   return NS_OK;
 }
 
-NS_IMETHODIMP
-SimpleChannelParent::SetClassifierMatchedInfo(const nsACString& aList,
-                                              const nsACString& aProvider,
-                                              const nsACString& aPrefix) {
-  // nothing to do
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-SimpleChannelParent::SetClassifierMatchedTrackingInfo(
-    const nsACString& aLists, const nsACString& aFullHashes) {
-  // nothing to do
-  return NS_OK;
-}
 
 NS_IMETHODIMP
 SimpleChannelParent::Delete() {

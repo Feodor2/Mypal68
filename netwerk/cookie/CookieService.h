@@ -74,7 +74,6 @@ class CookieService final : public nsICookieService,
                            nsIConsoleReportCollector* aCRC, bool& aSetCookie);
   static CookieStatus CheckPrefs(nsICookieJarSettings* aCookieJarSettings,
                                  nsIURI* aHostURI, bool aIsForeign,
-                                 bool aIsThirdPartyTrackingResource,
                                  bool aStorageAccessPermissionGranted,
                                  const nsACString& aCookieHeader,
                                  const int aNumOfCookies,
@@ -82,7 +81,6 @@ class CookieService final : public nsICookieService,
                                  uint32_t* aRejectedReason);
 
   void GetCookiesForURI(nsIURI* aHostURI, nsIChannel* aChannel, bool aIsForeign,
-                        bool aIsThirdPartyTrackingResource,
                         bool aStorageAccessPermissionGranted,
                         uint32_t aRejectedReason, bool aIsSafeTopLevelNav,
                         bool aIsSameSiteForeign, bool aHttpBound,

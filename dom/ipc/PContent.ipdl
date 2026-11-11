@@ -34,8 +34,6 @@ include protocol PRemoteSpellcheckEngine;
 include protocol PWebBrowserPersistDocument;
 include protocol PWebrtcGlobal;
 include protocol PWindowGlobal;
-include protocol PURLClassifier;
-include protocol PURLClassifierLocal;
 #ifdef MOZ_VR
 include protocol PVRManager;
 #endif
@@ -320,13 +318,6 @@ struct StringBundleDescriptor
     uint32_t mapSize;
 };
 
-struct IPCURLClassifierFeature
-{
-    nsCString featureName;
-    nsCString[] tables;
-    nsCString skipHostList;
-};
-
 // Transport structure for Notifications API notifications
 // (https://developer.mozilla.org/en-US/docs/Web/API/notification) instances
 // used exclusively by the NotificationEvent PContent method.
@@ -406,8 +397,6 @@ nested(upto inside_cpow) sync protocol PContent
     manages PRemoteSpellcheckEngine;
     manages PWebBrowserPersistDocument;
     manages PWebrtcGlobal;
-    manages PURLClassifier;
-    manages PURLClassifierLocal;
     manages PScriptCache;
     manages PSessionStorageObserver;
 
@@ -959,11 +948,6 @@ parent:
     async PWebrtcGlobal();
 
     async CreateAudioIPCConnection() returns (FileDescriptor fd);
-
-    sync PURLClassifier(Principal principal)
-        returns (bool success);
-
-    async PURLClassifierLocal(nsIURI uri, IPCURLClassifierFeature[] features);
 
     async PSessionStorageObserver();
 

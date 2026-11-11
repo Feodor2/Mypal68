@@ -460,7 +460,6 @@ class HeadersPanel extends Component {
         statusText,
         urlDetails,
         referrerPolicy,
-        isThirdPartyTrackingResource,
       },
     } = this.props;
     const item = { fromCache, fromServiceWorker, status, statusText };
@@ -525,31 +524,6 @@ class HeadersPanel extends Component {
         statusCodeDocURL
           ? MDNLink({
               url: statusCodeDocURL,
-              title: SUMMARY_STATUS_LEARN_MORE,
-            })
-          : span({
-              className: "headers-summary learn-more-link",
-            })
-      );
-    }
-
-    let trackingProtectionStatus;
-
-    if (isThirdPartyTrackingResource) {
-      const trackingProtectionDocURL = getTrackingProtectionURL();
-
-      trackingProtectionStatus = div(
-        {
-          key: "tracking-protection",
-          className: "tabpanel-summary-container tracking-protection",
-        },
-        div({
-          className: "tracking-resource",
-        }),
-        L10N.getStr("netmonitor.trackingResource.tooltip"),
-        trackingProtectionDocURL
-          ? MDNLink({
-              url: trackingProtectionDocURL,
               title: SUMMARY_STATUS_LEARN_MORE,
             })
           : span({

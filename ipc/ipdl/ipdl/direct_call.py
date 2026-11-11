@@ -88,13 +88,6 @@ DIRECT_CALL_OVERRIDES = {
         "mozilla::dom::UDPSocketParent", "mozilla/dom/network/UDPSocketParent.h"
     ),
 
-    ("PURLClassifierLocal", "child"): (
-        "URLClassifierLocalChild", "mozilla/dom/URLClassifierChild.h"
-    ),
-    ("PURLClassifierLocal", "parent"): (
-        "URLClassifierLocalParent", "mozilla/dom/URLClassifierParent.h"
-    ),
-
     ("PVR", "child"): ("VRChild", "VRChild.h"),
     ("PVR", "parent"): ("VRParent", "VRParent.h"),
     ("PVRGPU", "child"): ("VRGPUChild", "VRGPUChild.h"),

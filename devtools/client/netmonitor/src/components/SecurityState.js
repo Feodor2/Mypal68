@@ -59,12 +59,7 @@ class SecurityState extends Component {
         className: iconClassList.join(" "),
         onMouseDown: onSecurityIconMouseDown,
         title: iconTitle,
-      }),
-      item.isThirdPartyTrackingResource &&
-        div({
-          className: "tracking-resource",
-          title: L10N.getStr("netmonitor.trackingResource.tooltip"),
-        })
+      })
     );
   }
 }

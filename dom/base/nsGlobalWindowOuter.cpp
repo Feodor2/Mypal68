@@ -164,7 +164,6 @@
 #include "nsServiceManagerUtils.h"
 #include "mozilla/dom/CustomEvent.h"
 #include "nsIScreenManager.h"
-#include "nsIClassifiedChannel.h"
 
 #include "xpcprivate.h"
 
@@ -2488,14 +2487,6 @@ bool nsGlobalWindowOuter::CheckStorageAccessPermission(
   if (net::CookieJarSettings::IsRejectThirdPartyWithExceptions(
           cookieBehavior)) {
     checkStorageAccess = true;
-  } else {
-    MOZ_ASSERT(
-        cookieBehavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
-        cookieBehavior ==
-            nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
-    if (nsContentUtils::IsThirdPartyTrackingResourceWindow(aInnerWindow)) {
-      checkStorageAccess = true;
-    }
   }
 
   if (checkStorageAccess) {

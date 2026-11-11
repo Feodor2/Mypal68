@@ -305,42 +305,14 @@ class DocumentLoadListener : public nsIInterfaceRequestor,
 
   void Disconnect();
 
-  void MaybeReportBlockedByURLClassifier(nsresult aStatus);
-
   // Returns true if a channel with aStatus will display
   // some sort of content (could be the actual channel data,
   // attempt a uri fixup and new load, or an error page).
   // Returns false if the docshell will ignore the load entirely.
   bool DocShellWillDisplayContent(nsresult aStatus);
 
-  // This defines a variant that describes all the attribute setters (and their
-  // parameters) from nsIParentChannel
-  //
-  // NotifyFlashPluginStateChanged(nsIHttpChannel::FlashPluginState aState) = 0;
-  // SetClassifierMatchedInfo(const nsACString& aList, const nsACString&
-  // aProvider, const nsACString& aFullHash) = 0;
-  // SetClassifierMatchedTrackingInfo(const nsACString& aLists, const
-  // nsACString& aFullHashes) = 0; NotifyClassificationFlags(uint32_t
-  // aClassificationFlags, bool aIsThirdParty) = 0;
-  struct ClassifierMatchedInfoParams {
-    nsCString mList;
-    nsCString mProvider;
-    nsCString mFullHash;
-  };
-
-  struct ClassifierMatchedTrackingInfoParams {
-    nsCString mLists;
-    nsCString mFullHashes;
-  };
-
-  struct ClassificationFlagsParams {
-    uint32_t mClassificationFlags;
-    bool mIsThirdParty;
-  };
-
   typedef mozilla::Variant<
-      nsIHttpChannel::FlashPluginState, ClassifierMatchedInfoParams,
-      ClassifierMatchedTrackingInfoParams, ClassificationFlagsParams>
+      nsIHttpChannel::FlashPluginState>
       IParentChannelFunction;
 
   // Store a list of all the attribute setters that have been called on this

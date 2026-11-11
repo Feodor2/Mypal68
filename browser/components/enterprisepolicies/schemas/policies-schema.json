@@ -351,12 +351,6 @@
         "Locked": {
           "type": "boolean"
         },
-        "Cryptomining": {
-          "type": "boolean"
-        },
-        "Fingerprinting": {
-          "type": "boolean"
-        },
         "Exceptions": {
           "type": "array",
           "strict": false,

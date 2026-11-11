@@ -87,11 +87,9 @@
 #include "mozilla/dom/HTMLObjectElement.h"
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/nsCSPContext.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "nsChannelClassifier.h"
 #include "nsFocusManager.h"
 #include "ReferrerInfo.h"
 
@@ -968,28 +966,6 @@ nsObjectLoadingContent::OnStartRequest(nsIRequest* aRequest) {
   nsresult status = NS_OK;
   bool success = IsSuccessfulRequest(aRequest, &status);
 
-  if (status == NS_ERROR_BLOCKED_URI) {
-    nsCOMPtr<nsIConsoleService> console(
-        do_GetService("@mozilla.org/consoleservice;1"));
-    if (console) {
-      nsCOMPtr<nsIURI> uri;
-      chan->GetURI(getter_AddRefs(uri));
-      nsString message =
-          u"Blocking "_ns +
-          NS_ConvertASCIItoUTF16(uri->GetSpecOrDefault().get()) +
-          nsLiteralString(
-              u" since it was found on an internal Firefox blocklist.");
-      console->LogStringMessage(message.get());
-    }
-    mContentBlockingEnabled = true;
-    return NS_ERROR_FAILURE;
-  }
-
-  if (UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(status)) {
-    mContentBlockingEnabled = true;
-    return NS_ERROR_FAILURE;
-  }
-
   if (!success) {
     LOG(("OBJLC [%p]: OnStartRequest: Request failed\n", this));
     // If the request fails, we still call LoadObject() to handle fallback
@@ -1007,18 +983,6 @@ NS_IMETHODIMP
 nsObjectLoadingContent::OnStopRequest(nsIRequest* aRequest,
                                       nsresult aStatusCode) {
   AUTO_PROFILER_LABEL("nsObjectLoadingContent::OnStopRequest", NETWORK);
-
-  // Handle object not loading error because source was a tracking URL (or
-  // fingerprinting, cryptomining, etc.).
-  // We make a note of this object node by including it in a dedicated
-  // array of blocked tracking nodes under its parent document.
-  if (UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(aStatusCode)) {
-    nsCOMPtr<nsIContent> thisNode =
-        do_QueryInterface(static_cast<nsIObjectLoadingContent*>(this));
-    if (thisNode && thisNode->IsInComposedDoc()) {
-      thisNode->GetComposedDoc()->AddBlockedNodeByClassifier(thisNode);
-    }
-  }
 
   if (aRequest != mChannel) {
     return NS_BINDING_ABORTED;
@@ -1986,13 +1950,6 @@ nsresult nsObjectLoadingContent::LoadObject(bool aNotify, bool aForceLoad,
     }
   }
 
-  // Items resolved as Image/Document are no candidates for content blocking,
-  // as well as invalid plugins (they will not have the mContentType set).
-  if ((mType == eType_Null || IsPluginType(mType)) && ShouldBlockContent()) {
-    LOG(("OBJLC [%p]: Enable content blocking", this));
-    mType = eType_Loading;
-  }
-
   // If we're a plugin but shouldn't start yet, load fallback with
   // reason click-to-play instead. Items resolved as Image/Document
   // will not be checked for previews, as well as invalid plugins
@@ -2935,10 +2892,6 @@ uint32_t nsObjectLoadingContent::GetRunID(SystemCallerGuarantee,
     return 0;
   }
   return mRunID;
-}
-
-bool nsObjectLoadingContent::ShouldBlockContent() {
-  return false;
 }
 
 bool nsObjectLoadingContent::ShouldPlay(FallbackType& aReason) {

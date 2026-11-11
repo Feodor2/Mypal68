@@ -616,12 +616,6 @@ bool NS_HasBeenCrossOrigin(nsIChannel* aChannel, bool aReport = false);
  */
 bool NS_IsSafeMethodNav(nsIChannel* aChannel);
 
-// Unique first-party domain for separating the safebrowsing cookie.
-// Note if this value is changed, code in test_cookiejars_safebrowsing.js and
-// nsUrlClassifierHashCompleter.js should also be changed.
-#define NECKO_SAFEBROWSING_FIRST_PARTY_DOMAIN \
-  "safebrowsing.86868755-6b82-4842-b301-72671a0db32e.mozilla"
-
 // Unique first-party domain for separating about uri.
 #define ABOUT_URI_FIRST_PARTY_DOMAIN \
   "about.ef2a7dd5-93bc-417f-a698-142c3116864f.mozilla"
@@ -911,11 +905,6 @@ nsresult NS_ShouldSecureUpgrade(
 nsresult NS_GetSecureUpgradedURI(nsIURI* aURI, nsIURI** aUpgradedURI);
 
 nsresult NS_CompareLoadInfoAndLoadContext(nsIChannel* aChannel);
-
-/**
- * Return true if this channel should be classified by the URL classifier.
- */
-bool NS_ShouldClassifyChannel(nsIChannel* aChannel);
 
 /**
  * Helper to set the blocking reason on loadinfo of the channel.

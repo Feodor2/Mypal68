@@ -19,7 +19,6 @@
 #include "nsHttpHandler.h"
 #include "nsHttpRequestHead.h"
 #include "nsIClassOfService.h"
-#include "nsIClassifiedChannel.h"
 #include "nsIConsoleReportCollector.h"
 #include "nsIEncodedChannel.h"
 #include "nsIForcePendingChannel.h"
@@ -94,8 +93,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
                         public nsITimedChannel,
                         public nsIForcePendingChannel,
                         public nsIConsoleReportCollector,
-                        public nsIThrottledInputChannel,
-                        public nsIClassifiedChannel {
+                        public nsIThrottledInputChannel {
  protected:
   virtual ~HttpBaseChannel();
 
@@ -107,7 +105,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_DECL_NSITRACEABLECHANNEL
   NS_DECL_NSITIMEDCHANNEL
   NS_DECL_NSITHROTTLEDINPUTCHANNEL
-  NS_DECL_NSICLASSIFIEDCHANNEL
 
   NS_DECLARE_STATIC_IID_ACCESSOR(HTTP_BASE_CHANNEL_IID)
 
@@ -229,8 +226,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD GetFlashPluginState(
       nsIHttpChannel::FlashPluginState* aState) override;
 
-  using nsIClassifiedChannel::IsThirdPartyTrackingResource;
-
   // nsIHttpChannelInternal
   NS_IMETHOD GetDocumentURI(nsIURI** aDocumentURI) override;
   NS_IMETHOD SetDocumentURI(nsIURI* aDocumentURI) override;
@@ -299,7 +294,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD SetLastRedirectFlags(uint32_t aValue) override;
   NS_IMETHOD GetNavigationStartTimeStamp(TimeStamp* aTimeStamp) override;
   NS_IMETHOD SetNavigationStartTimeStamp(TimeStamp aTimeStamp) override;
-  NS_IMETHOD CancelByURLClassifier(nsresult aErrorCode) override;
   virtual void SetIPv4Disabled(void) override;
   virtual void SetIPv6Disabled(void) override;
   NS_IMETHOD GetCrossOriginOpenerPolicy(
@@ -427,8 +421,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // is finished. This function works as a proxy function to dispatch
   // |EnsureUploadStreamIsCloneableComplete| to main thread.
   virtual void OnCopyComplete(nsresult aStatus);
-
-  void AddClassificationFlags(uint32_t aFlags, bool aIsThirdParty);
 
   void SetFlashPluginState(nsIHttpChannel::FlashPluginState aState);
 
@@ -645,14 +637,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   nsCString mAvailableCachedAltDataType;
   nsString mIntegrityMetadata;
 
-  // Classified channel's matched information
-  nsCString mMatchedList;
-  nsCString mMatchedProvider;
-  nsCString mMatchedFullHash;
-
-  nsTArray<nsCString> mMatchedTrackingLists;
-  nsTArray<nsCString> mMatchedTrackingFullHashes;
-
   nsCOMPtr<nsISupports> mOwner;
 
   nsHttpRequestHead mRequestHead;
@@ -723,8 +707,6 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // Use Release-Acquire ordering to ensure the OMT ODA is ignored while channel
   // is canceled on main thread.
   Atomic<bool, ReleaseAcquire> mCanceled;
-  Atomic<uint32_t, ReleaseAcquire> mFirstPartyClassificationFlags;
-  Atomic<uint32_t, ReleaseAcquire> mThirdPartyClassificationFlags;
   Atomic<uint32_t, ReleaseAcquire> mFlashPluginState;
 
   uint32_t mLoadFlags;

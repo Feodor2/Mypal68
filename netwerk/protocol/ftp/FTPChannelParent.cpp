@@ -493,30 +493,8 @@ FTPChannelParent::SetParentListener(ParentChannelListener* aListener) {
 }
 
 NS_IMETHODIMP
-FTPChannelParent::NotifyClassificationFlags(uint32_t aClassificationFlags,
-                                            bool aIsThirdParty) {
-  // One day, this should probably be filled in.
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 FTPChannelParent::NotifyFlashPluginStateChanged(
     nsIHttpChannel::FlashPluginState aState) {
-  // One day, this should probably be filled in.
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-FTPChannelParent::SetClassifierMatchedInfo(const nsACString& aList,
-                                           const nsACString& aProvider,
-                                           const nsACString& aFullHash) {
-  // One day, this should probably be filled in.
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-FTPChannelParent::SetClassifierMatchedTrackingInfo(
-    const nsACString& aLists, const nsACString& aFullHashes) {
   // One day, this should probably be filled in.
   return NS_OK;
 }

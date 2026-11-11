@@ -35,7 +35,6 @@
 #include "mozilla/dom/WindowBinding.h"  // For IdleRequestCallback/Options
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "IOActivityMonitor.h"
 #include "nsThreadUtils.h"
 #include "mozJSComponentLoader.h"
@@ -1199,13 +1198,6 @@ void ChromeUtils::UnregisterProcessActor(const GlobalObject& aGlobal,
 
   RefPtr<JSActorService> service = JSActorService::GetSingleton();
   service->UnregisterProcessActor(aName);
-}
-
-/* static */
-bool ChromeUtils::IsClassifierBlockingErrorCode(GlobalObject& aGlobal,
-                                                uint32_t aError) {
-  return net::UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(
-      static_cast<nsresult>(aError));
 }
 
 #ifdef ENABLE_TESTS

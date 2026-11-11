@@ -25,9 +25,6 @@
 #define NS_FORMHISTORYAUTOCOMPLETE_CONTRACTID \
   "@mozilla.org/autocomplete/search;1?name=form-history"
 
-#define NS_URLCLASSIFIERHASHCOMPLETER_CONTRACTID \
-  "@mozilla.org/url-classifier/hashcompleter;1"
-
 #define NS_NAVHISTORYSERVICE_CONTRACTID \
   "@mozilla.org/browser/nav-history-service;1"
 
@@ -63,14 +60,6 @@
   {                                                  \
     0x59648a91, 0x5a60, 0x4122, {                    \
       0x8f, 0xf2, 0x54, 0xb8, 0x39, 0xc8, 0x4a, 0xed \
-    }                                                \
-  }
-
-// {7a258022-6765-11e5-b379-b37b1f2354be}
-#define NS_URLCLASSIFIERDBSERVICE_CID                \
-  {                                                  \
-    0x7a258022, 0x6765, 0x11e5, {                    \
-      0xb3, 0x79, 0xb3, 0x7b, 0x1f, 0x23, 0x54, 0xbe \
     }                                                \
   }
 

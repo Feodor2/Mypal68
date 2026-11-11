@@ -64,7 +64,6 @@
 #include "mozilla/dom/RemoteWorkerService.h"
 #include "mozilla/dom/ScreenOrientation.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
-#include "mozilla/dom/URLClassifierChild.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/WorkerDebugger.h"
 #include "mozilla/dom/WorkerDebuggerManager.h"
@@ -3050,30 +3049,6 @@ void ContentChild::FatalErrorIfNotUsingGPUProcess(const char* const aErrorMsg,
     formattedMessage.AppendLiteral(R"(".)");
     NS_WARNING(formattedMessage.get());
   }
-}
-
-PURLClassifierChild* ContentChild::AllocPURLClassifierChild(
-    const Principal& aPrincipal, bool* aSuccess) {
-  *aSuccess = true;
-  return new URLClassifierChild();
-}
-
-bool ContentChild::DeallocPURLClassifierChild(PURLClassifierChild* aActor) {
-  MOZ_ASSERT(aActor);
-  delete aActor;
-  return true;
-}
-
-PURLClassifierLocalChild* ContentChild::AllocPURLClassifierLocalChild(
-    nsIURI* aUri, const nsTArray<IPCURLClassifierFeature>& aFeatures) {
-  return new URLClassifierLocalChild();
-}
-
-bool ContentChild::DeallocPURLClassifierLocalChild(
-    PURLClassifierLocalChild* aActor) {
-  MOZ_ASSERT(aActor);
-  delete aActor;
-  return true;
 }
 
 PSessionStorageObserverChild*

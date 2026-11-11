@@ -213,8 +213,6 @@ void WindowGlobalChild::OnNewDocument(Document* aDocument) {
   txn.SetIsOnContentBlockingAllowList(
       aDocument->CookieJarSettings()->GetIsOnContentBlockingAllowList());
   txn.SetIsThirdPartyWindow(aDocument->HasThirdPartyChannel());
-  txn.SetIsThirdPartyTrackingResourceWindow(
-      nsContentUtils::IsThirdPartyTrackingResourceWindow(mWindowGlobal));
   txn.SetIsSecureContext(mWindowGlobal->IsSecureContext());
   auto policy = aDocument->GetEmbedderPolicy();
   if (policy.isSome()) {
@@ -519,28 +517,6 @@ mozilla::ipc::IPCResult WindowGlobalChild::RecvDispatchSecurityPolicyViolation(
   doc->DispatchEvent(*event, IgnoreErrors());
   return IPC_OK();
 }
-
-mozilla::ipc::IPCResult WindowGlobalChild::RecvAddBlockedFrameNodeByClassifier(
-    const MaybeDiscardedBrowsingContext& aNode) {
-  if (aNode.IsNullOrDiscarded()) {
-    return IPC_OK();
-  }
-
-  nsGlobalWindowInner* window = GetWindowGlobal();
-  if (!window) {
-    return IPC_OK();
-  }
-
-  Document* doc = window->GetDocument();
-  if (!doc) {
-    return IPC_OK();
-  }
-
-  MOZ_ASSERT(aNode.get()->GetEmbedderElement()->OwnerDoc() == doc);
-  doc->AddBlockedNodeByClassifier(aNode.get()->GetEmbedderElement());
-  return IPC_OK();
-}
-
 IPCResult WindowGlobalChild::RecvRawMessage(const JSActorMessageMeta& aMeta,
                                             const ClonedMessageData& aData,
                                             const ClonedMessageData& aStack) {

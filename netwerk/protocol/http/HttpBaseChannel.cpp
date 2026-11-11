@@ -30,8 +30,6 @@
 #include "mozilla/dom/PerformanceStorage.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/net/PartiallySeekableInputStream.h"
-#include "mozilla/net/UrlClassifierCommon.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "nsCRT.h"
 #include "nsContentSecurityManager.h"
 #include "nsContentSecurityUtils.h"
@@ -173,8 +171,6 @@ HttpBaseChannel::HttpBaseChannel()
       mReqContentLength(0U),
       mStatus(NS_OK),
       mCanceled(false),
-      mFirstPartyClassificationFlags(0),
-      mThirdPartyClassificationFlags(0),
       mFlashPluginState(nsIHttpChannel::FlashPluginUnknown),
       mLoadFlags(LOAD_NORMAL),
       mCaps(0),
@@ -279,20 +275,6 @@ void HttpBaseChannel::ReleaseMainThreadOnlyReferences() {
   NS_DispatchToMainThread(new ProxyReleaseRunnable(std::move(arrayToRelease)));
 }
 
-void HttpBaseChannel::AddClassificationFlags(uint32_t aClassificationFlags,
-                                             bool aIsThirdParty) {
-  LOG(
-      ("HttpBaseChannel::AddClassificationFlags classificationFlags=%d "
-       "thirdparty=%d %p",
-       aClassificationFlags, static_cast<int>(aIsThirdParty), this));
-
-  if (aIsThirdParty) {
-    mThirdPartyClassificationFlags |= aClassificationFlags;
-  } else {
-    mFirstPartyClassificationFlags |= aClassificationFlags;
-  }
-}
-
 void HttpBaseChannel::SetFlashPluginState(
     nsIHttpChannel::FlashPluginState aState) {
   LOG(("HttpBaseChannel::SetFlashPluginState %p", this));
@@ -384,7 +366,6 @@ NS_INTERFACE_MAP_BEGIN(HttpBaseChannel)
   NS_INTERFACE_MAP_ENTRY(nsITimedChannel)
   NS_INTERFACE_MAP_ENTRY(nsIConsoleReportCollector)
   NS_INTERFACE_MAP_ENTRY(nsIThrottledInputChannel)
-  NS_INTERFACE_MAP_ENTRY(nsIClassifiedChannel)
   NS_INTERFACE_MAP_ENTRY_CONCRETE(HttpBaseChannel)
 NS_INTERFACE_MAP_END_INHERITING(nsHashPropertyBag)
 
@@ -1443,37 +1424,6 @@ NS_IMETHODIMP HttpBaseChannel::GetTopLevelOuterContentWindowId(
 
 NS_IMETHODIMP HttpBaseChannel::SetTopLevelContentWindowId(uint64_t aWindowId) {
   mContentWindowId = aWindowId;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpBaseChannel::IsThirdPartyTrackingResource(bool* aIsTrackingResource) {
-  MOZ_ASSERT(
-      !(mFirstPartyClassificationFlags && mThirdPartyClassificationFlags));
-  *aIsTrackingResource = UrlClassifierCommon::IsTrackingClassificationFlag(
-      mThirdPartyClassificationFlags);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpBaseChannel::GetClassificationFlags(uint32_t* aFlags) {
-  if (mThirdPartyClassificationFlags) {
-    *aFlags = mThirdPartyClassificationFlags;
-  } else {
-    *aFlags = mFirstPartyClassificationFlags;
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpBaseChannel::GetFirstPartyClassificationFlags(uint32_t* aFlags) {
-  *aFlags = mFirstPartyClassificationFlags;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpBaseChannel::GetThirdPartyClassificationFlags(uint32_t* aFlags) {
-  *aFlags = mThirdPartyClassificationFlags;
   return NS_OK;
 }
 
@@ -4154,63 +4104,6 @@ bool HttpBaseChannel::SameOriginWithOriginalUri(nsIURI* aURI) {
 }
 
 //-----------------------------------------------------------------------------
-// HttpBaseChannel::nsIClassifiedChannel
-
-NS_IMETHODIMP
-HttpBaseChannel::GetMatchedList(nsACString& aList) {
-  aList = mMatchedList;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpBaseChannel::GetMatchedProvider(nsACString& aProvider) {
-  aProvider = mMatchedProvider;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpBaseChannel::GetMatchedFullHash(nsACString& aFullHash) {
-  aFullHash = mMatchedFullHash;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpBaseChannel::SetMatchedInfo(const nsACString& aList,
-                                const nsACString& aProvider,
-                                const nsACString& aFullHash) {
-  NS_ENSURE_ARG(!aList.IsEmpty());
-
-  mMatchedList = aList;
-  mMatchedProvider = aProvider;
-  mMatchedFullHash = aFullHash;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpBaseChannel::GetMatchedTrackingLists(nsTArray<nsCString>& aLists) {
-  aLists = mMatchedTrackingLists;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpBaseChannel::GetMatchedTrackingFullHashes(
-    nsTArray<nsCString>& aFullHashes) {
-  aFullHashes = mMatchedTrackingFullHashes;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpBaseChannel::SetMatchedTrackingInfo(
-    const nsTArray<nsCString>& aLists, const nsTArray<nsCString>& aFullHashes) {
-  NS_ENSURE_ARG(!aLists.IsEmpty());
-  // aFullHashes can be empty for non hash-matching algorithm, for example,
-  // host based test entries in preference.
-
-  mMatchedTrackingLists = aLists;
-  mMatchedTrackingFullHashes = aFullHashes;
-  return NS_OK;
-}
-//-----------------------------------------------------------------------------
 // HttpBaseChannel::nsITimedChannel
 //-----------------------------------------------------------------------------
 
@@ -4910,13 +4803,6 @@ HttpBaseChannel::GetNativeServerTiming(
   }
 
   return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpBaseChannel::CancelByURLClassifier(nsresult aErrorCode) {
-  MOZ_ASSERT(
-      UrlClassifierFeatureFactory::IsClassifierBlockingErrorCode(aErrorCode));
-  return Cancel(aErrorCode);
 }
 
 void HttpBaseChannel::SetIPv4Disabled() { mCaps |= NS_HTTP_DISABLE_IPV4; }

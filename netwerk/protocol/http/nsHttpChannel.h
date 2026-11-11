@@ -45,8 +45,6 @@ class nsITransportSecurityInfo;
 namespace mozilla {
 namespace net {
 
-class nsChannelClassifier;
-
 using DNSPromise = MozPromise<nsCOMPtr<nsIDNSRecord>, nsresult, false>;
 class HttpChannelSecurityWarningReporter;
 
@@ -159,7 +157,6 @@ class nsHttpChannel final : public HttpBaseChannel,
   NS_IMETHOD SetChannelIsForDownload(bool aChannelIsForDownload) override;
   NS_IMETHOD GetNavigationStartTimeStamp(TimeStamp* aTimeStamp) override;
   NS_IMETHOD SetNavigationStartTimeStamp(TimeStamp aTimeStamp) override;
-  NS_IMETHOD CancelByURLClassifier(nsresult aErrorCode) override;
   // nsISupportsPriority
   NS_IMETHOD SetPriority(int32_t value) override;
   // nsIClassOfService
@@ -300,9 +297,7 @@ class nsHttpChannel final : public HttpBaseChannel,
       const std::function<nsresult(nsHttpChannel*)>& aFunc);
 
   bool RequestIsConditional();
-  void HandleContinueCancellingByURLClassifier(nsresult aErrorCode);
   nsresult CancelInternal(nsresult status);
-  void ContinueCancellingByURLClassifier(nsresult aErrorCode);
 
   // Connections will only be established in this function.
   // (including DNS prefetch and speculative connection.)
@@ -540,8 +535,6 @@ class nsHttpChannel final : public HttpBaseChannel,
 
   const nsCString& GetTopWindowOrigin();
 
-  already_AddRefed<nsChannelClassifier> GetOrCreateChannelClassifier();
-
   // Start an internal redirect to a new InterceptedHttpChannel which will
   // resolve in firing a ServiceWorker FetchEvent.
   MOZ_MUST_USE nsresult RedirectToInterceptedChannel();
@@ -564,13 +557,6 @@ class nsHttpChannel final : public HttpBaseChannel,
   nsCOMPtr<nsIURI> mRedirectURI;
   nsCOMPtr<nsIChannel> mRedirectChannel;
   nsCOMPtr<nsIChannel> mPreflightChannel;
-
-  // nsChannelClassifier checks this channel's URI against
-  // the URI classifier service.
-  // nsChannelClassifier will be invoked twice in InitLocalBlockList() and
-  // BeginConnect(), so save the nsChannelClassifier here to keep the
-  // state of whether tracking protection is enabled or not.
-  RefPtr<nsChannelClassifier> mChannelClassifier;
 
   // Proxy release all members above on main thread.
   void ReleaseMainThreadOnlyReferences();
@@ -702,11 +688,6 @@ class nsHttpChannel final : public HttpBaseChannel,
 
     // the next authentication request can be sent on a whole new connection
     (uint32_t, AuthConnectionRestartable, 1),
-
-    // True if the channel classifier has marked the channel to be cancelled due
-    // to the safe-browsing classifier rules, but the asynchronous cancellation
-    // process hasn't finished yet.
-    (uint32_t, ChannelClassifierCancellationPending, 1),
 
     // True only when we are between Resume and async fire of mCallOnResume.
     // Used to suspend any newly created pumps in mCallOnResume handler.

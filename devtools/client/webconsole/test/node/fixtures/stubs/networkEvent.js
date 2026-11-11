@@ -69,7 +69,6 @@ rawPackets.set(`GET request`, {
     "responseContent"
   ],
   "private": false,
-  "isThirdPartyTrackingResource": false,
   "referrerPolicy": "no-referrer-when-downgrade",
   "channelId": 265845590720515
 });
@@ -151,7 +150,6 @@ rawPackets.set(`XHR GET request`, {
     "responseContent"
   ],
   "private": false,
-  "isThirdPartyTrackingResource": false,
   "referrerPolicy": "no-referrer-when-downgrade",
   "channelId": 265845590720516
 });
@@ -233,7 +231,6 @@ rawPackets.set(`XHR POST request`, {
     "responseContent"
   ],
   "private": false,
-  "isThirdPartyTrackingResource": false,
   "referrerPolicy": "no-referrer-when-downgrade",
   "channelId": 265845590720517
 });

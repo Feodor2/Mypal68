@@ -6,17 +6,14 @@
 #define mozilla_dom_RemoteWebProgressRequest_h
 
 #include "nsIChannel.h"
-#include "nsIClassifiedChannel.h"
 
 namespace mozilla {
 namespace dom {
 
-class RemoteWebProgressRequest final : public nsIChannel,
-                                       public nsIClassifiedChannel {
+class RemoteWebProgressRequest final : public nsIChannel {
  public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSICHANNEL
-  NS_DECL_NSICLASSIFIEDCHANNEL
   NS_DECL_NSIREQUEST
 
   RemoteWebProgressRequest(nsIURI* aURI, nsIURI* aOriginalURI,

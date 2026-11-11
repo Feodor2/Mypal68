@@ -7,7 +7,6 @@ const BASE_LIST_ID = "base";
 const CONTENT_LIST_ID = "content";
 const TRACK_SUFFIX = "-track-digest256";
 const TRACKING_TABLE_PREF = "urlclassifier.trackingTable";
-const LISTS_PREF_BRANCH = "browser.safebrowsing.provider.mozilla.lists.";
 
 var gBlocklistManager = {
   _type: "",
@@ -131,19 +130,6 @@ var gBlocklistManager = {
 
   async _loadBlockLists() {
     this._blockLists = [];
-
-    // Load blocklists into a table.
-    let branch = Services.prefs.getBranch(LISTS_PREF_BRANCH);
-    let itemArray = branch.getChildList("");
-    for (let itemName of itemArray) {
-      try {
-        let list = await this._createBlockList(itemName);
-        this._blockLists.push(list);
-      } catch (e) {
-        // Ignore bogus or missing list name.
-        continue;
-      }
-    }
 
     this._updateTree();
   },

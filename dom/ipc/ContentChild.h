@@ -33,7 +33,6 @@ class nsIObserver;
 struct SubstitutionMapping;
 struct OverrideMapping;
 class nsIDomainPolicy;
-class nsIURIClassifierCallback;
 struct LookAndFeelInt;
 class nsDocShellLoadState;
 class nsFrameLoader;
@@ -565,16 +564,6 @@ class ContentChild final : public PContentChild,
   nsTArray<base::SharedMemoryHandle>& SharedFontListBlocks() {
     return mSharedFontListBlocks;
   }
-
-  // PURLClassifierChild
-  PURLClassifierChild* AllocPURLClassifierChild(const Principal& aPrincipal,
-                                                bool* aSuccess);
-  bool DeallocPURLClassifierChild(PURLClassifierChild* aActor);
-
-  // PURLClassifierLocalChild
-  PURLClassifierLocalChild* AllocPURLClassifierLocalChild(
-      nsIURI* aUri, const nsTArray<IPCURLClassifierFeature>& aFeatures);
-  bool DeallocPURLClassifierLocalChild(PURLClassifierLocalChild* aActor);
 
   PSessionStorageObserverChild* AllocPSessionStorageObserverChild();
 

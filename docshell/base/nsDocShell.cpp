@@ -77,7 +77,6 @@
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/net/DocumentChannel.h"
 #include "mozilla/net/ParentChannelWrapper.h"
-#include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "ReferrerInfo.h"
 
 #include "nsIApplicationCacheChannel.h"
@@ -3311,15 +3310,6 @@ nsDocShell::DisplayLoadError(nsresult aError, nsIURI* aURI,
     } else {
       error = "nssFailure2";
     }
-  } else if (NS_ERROR_PHISHING_URI == aError ||
-             NS_ERROR_MALWARE_URI == aError ||
-             NS_ERROR_UNWANTED_URI == aError ||
-             NS_ERROR_HARMFUL_URI == aError) {
-    nsAutoCString host;
-    aURI->GetHost(host);
-    CopyUTF8toUTF16(host, *formatStrs.AppendElement());
-
-    cssClass.AssignLiteral("blacklist");
   } else if (NS_ERROR_CONTENT_CRASHED == aError) {
     errorPage.AssignLiteral("tabcrashed");
     error = "tabcrashed";
@@ -5722,8 +5712,6 @@ nsresult nsDocShell::FilterStatusForErrorPage(
       aStatus == NS_ERROR_UNKNOWN_SOCKET_TYPE ||
       aStatus == NS_ERROR_NET_INTERRUPT || aStatus == NS_ERROR_NET_RESET ||
       aStatus == NS_ERROR_PROXY_BAD_GATEWAY || aStatus == NS_ERROR_OFFLINE ||
-      aStatus == NS_ERROR_MALWARE_URI || aStatus == NS_ERROR_PHISHING_URI ||
-      aStatus == NS_ERROR_UNWANTED_URI || aStatus == NS_ERROR_HARMFUL_URI ||
       aStatus == NS_ERROR_UNSAFE_CONTENT_TYPE ||
       aStatus == NS_ERROR_REMOTE_XUL ||
       aStatus == NS_ERROR_INTERCEPTION_FAILED ||

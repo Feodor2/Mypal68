@@ -215,9 +215,6 @@ class ChromeUtils {
   static void UnregisterProcessActor(const GlobalObject& aGlobal,
                                      const nsACString& aName);
 
-  static bool IsClassifierBlockingErrorCode(GlobalObject& aGlobal,
-                                            uint32_t aError);
-
 #ifdef ENABLE_TESTS
   static void PrivateNoteIntentionalCrash(const GlobalObject& aGlobal,
                                           ErrorResult& aError);

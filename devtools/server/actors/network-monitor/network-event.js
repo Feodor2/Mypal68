@@ -67,7 +67,6 @@ const NetworkEventActor = protocol.ActorClassWithSpec(networkEventSpec, {
       fromCache: this._fromCache,
       fromServiceWorker: this._fromServiceWorker,
       private: this._private,
-      isThirdPartyTrackingResource: this._isThirdPartyTrackingResource,
       referrerPolicy: this._referrerPolicy,
       blockedReason: this._blockedReason,
       channelId: this._channelId,
@@ -109,8 +108,6 @@ const NetworkEventActor = protocol.ActorClassWithSpec(networkEventSpec, {
     this._cause = networkEvent.cause;
     this._fromCache = networkEvent.fromCache;
     this._fromServiceWorker = networkEvent.fromServiceWorker;
-    this._isThirdPartyTrackingResource =
-      networkEvent.isThirdPartyTrackingResource;
     this._referrerPolicy = networkEvent.referrerPolicy;
     this._channelId = networkEvent.channelId;
 

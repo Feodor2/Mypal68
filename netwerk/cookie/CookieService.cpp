@@ -418,7 +418,6 @@ CookieService::GetCookieStringFromHttp(nsIURI* aHostURI, nsIChannel* aChannel,
   AutoTArray<Cookie*, 8> foundCookieList;
   GetCookiesForURI(
       aHostURI, aChannel, result.contains(ThirdPartyAnalysis::IsForeign),
-      result.contains(ThirdPartyAnalysis::IsThirdPartyTrackingResource),
       result.contains(ThirdPartyAnalysis::IsStorageAccessPermissionGranted),
       rejectedReason, isSafeTopLevelNav, isSameSiteForeign, true, attrs,
       foundCookieList);
@@ -542,7 +541,6 @@ CookieService::SetCookieStringFromHttp(nsIURI* aHostURI,
   CookieStatus cookieStatus = CheckPrefs(
       cookieJarSettings, aHostURI,
       result.contains(ThirdPartyAnalysis::IsForeign),
-      result.contains(ThirdPartyAnalysis::IsThirdPartyTrackingResource),
       result.contains(ThirdPartyAnalysis::IsStorageAccessPermissionGranted),
       aCookieHeader, priorCookieCount, attrs, &rejectedReason);
 
@@ -810,7 +808,6 @@ CookieService::RemoveNative(const nsACString& aHost, const nsACString& aName,
 
 void CookieService::GetCookiesForURI(
     nsIURI* aHostURI, nsIChannel* aChannel, bool aIsForeign,
-    bool aIsThirdPartyTrackingResource,
     bool aStorageAccessPermissionGranted, uint32_t aRejectedReason,
     bool aIsSafeTopLevelNav, bool aIsSameSiteForeign, bool aHttpBound,
     const OriginAttributes& aOriginAttrs, nsTArray<Cookie*>& aCookieList) {
@@ -869,7 +866,7 @@ void CookieService::GetCookiesForURI(
       baseDomainFromURI, aOriginAttrs.mPrivateBrowsingId);
 
   CookieStatus cookieStatus = CheckPrefs(
-      cookieJarSettings, aHostURI, aIsForeign, aIsThirdPartyTrackingResource,
+      cookieJarSettings, aHostURI, aIsForeign,
       aStorageAccessPermissionGranted,
       VoidCString(), priorCookieCount, aOriginAttrs, &rejectedReason);
 
@@ -1401,7 +1398,6 @@ static inline bool IsSubdomainOf(const nsACString& a, const nsACString& b) {
 
 CookieStatus CookieService::CheckPrefs(nsICookieJarSettings* aCookieJarSettings,
                                        nsIURI* aHostURI, bool aIsForeign,
-                                       bool aIsThirdPartyTrackingResource,
                                        bool aStorageAccessPermissionGranted,
                                        const nsACString& aCookieHeader,
                                        const int aNumOfCookies,
@@ -1456,8 +1452,7 @@ CookieStatus CookieService::CheckPrefs(nsICookieJarSettings* aCookieJarSettings,
   // No cookies allowed if this request comes from a resource in a 3rd party
   // context, when anti-tracking protection is enabled and when we don't have
   // access to the first-party cookie jar.
-  if (aIsForeign && aIsThirdPartyTrackingResource &&
-      !aStorageAccessPermissionGranted &&
+  if (aIsForeign && !aStorageAccessPermissionGranted &&
       aCookieJarSettings->GetRejectThirdPartyContexts()) {
     bool rejectThirdPartyWithExceptions =
         CookieJarSettings::IsRejectThirdPartyWithExceptions(

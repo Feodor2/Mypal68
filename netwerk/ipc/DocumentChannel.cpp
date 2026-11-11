@@ -19,7 +19,6 @@
 #include "mozilla/net/HttpChannelChild.h"
 #include "mozilla/net/NeckoChild.h"
 #include "mozilla/net/ParentProcessDocumentChannel.h"
-#include "mozilla/net/UrlClassifierCommon.h"
 #include "nsContentSecurityManager.h"
 #include "nsContentPolicyUtils.h" //MY
 #include "nsDocShellLoadState.h"

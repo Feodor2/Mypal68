@@ -44,13 +44,6 @@ XPCOMUtils.defineLazyGetter(this, "AlertsServiceDND", function() {
   }
 });
 
-XPCOMUtils.defineLazyServiceGetter(
-  this,
-  "listManager",
-  "@mozilla.org/url-classifier/listmanager;1",
-  "nsIUrlListManager"
-);
-
 Preferences.addAll([
   // Button prefs
   { id: "pref.privacy.disable_button.cookie_exceptions", type: "bool" },

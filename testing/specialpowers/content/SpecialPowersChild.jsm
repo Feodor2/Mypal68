@@ -1232,7 +1232,7 @@ class SpecialPowersChild extends JSWindowActorChild {
   // XXX: these APIs really ought to be removed, they're not e10s-safe.
   // (also they're pretty Firefox-specific)
   _getTopChromeWindow(window) {
-    return window.docShell.rootTreeItem.domWindow;
+    return window.browsingContext.topChromeWindow;
   }
   _getAutoCompletePopup(window) {
     return this._getTopChromeWindow(window).document.getElementById(
@@ -1684,6 +1684,14 @@ class SpecialPowersChild extends JSWindowActorChild {
     });
   }
 
+  getSecurityState(target) {
+    let browsingContext = this._browsingContextForTarget(target);
+
+    return this.sendQuery("SecurityState", {
+      browsingContext,
+    });
+  }
+
   _spawnTask(task, args, caller, taskId, imports) {
     let sb = new SpecialPowersSandbox(
       null,
@@ -1855,7 +1863,7 @@ class SpecialPowersChild extends JSWindowActorChild {
     if (typeof arg == "string") {
       // It's an URL.
       let uri = Services.io.newURI(arg);
-      principal = secMan.createCodebasePrincipal(uri, {});
+      principal = secMan.createContentPrincipal(uri, {});
     } else if (arg.nodePrincipal) {
       // It's a document.
       // In some tests the arg is a wrapped DOM element, so we unwrap it first.
@@ -1863,7 +1871,7 @@ class SpecialPowersChild extends JSWindowActorChild {
     } else {
       let uri = Services.io.newURI(arg.url);
       let attrs = arg.originAttributes || {};
-      principal = secMan.createCodebasePrincipal(uri, attrs);
+      principal = secMan.createContentPrincipal(uri, attrs);
     }
 
     return principal;

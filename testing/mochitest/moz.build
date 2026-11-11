@@ -103,7 +103,6 @@ TEST_HARNESS_FILES.testing.mochitest += [
     'pywebsocket_wrapper.py',
     'redirect.html',
     'runjunit.py',
-    'runrobocop.py',
     'runtests.py',
     'runtestsremote.py',
     'server.js',
@@ -209,7 +208,7 @@ TEST_HARNESS_FILES.testing.mochitest.websocketprocessbridge += [
 
 with Files("**"):
     BUG_COMPONENT = ("Testing", "Mochitest")
-    SCHEDULES.exclusive = ['mochitest', 'robocop']
+    SCHEDULES.exclusive = ['mochitest']
 
 with Files("*remote*"):
     BUG_COMPONENT = ("Firefox for Android", "Testing")

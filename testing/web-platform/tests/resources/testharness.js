@@ -398,20 +398,7 @@ policies and contribution forms [3].
         self.addEventListener("message",
                 function(event) {
                     if (event.data && event.data.type && event.data.type === "connect") {
-                        if (event.ports && event.ports[0]) {
-                            // If a MessageChannel was passed, then use it to
-                            // send results back to the main window.  This
-                            // allows the tests to work even if the browser
-                            // does not fully support MessageEvent.source in
-                            // ServiceWorkers yet.
-                            this_obj._add_message_port(event.ports[0]);
-                            event.ports[0].start();
-                        } else {
-                            // If there is no MessageChannel, then attempt to
-                            // use the MessageEvent.source to send results
-                            // back to the main window.
-                            this_obj._add_message_port(event.source);
-                        }
+                        this_obj._add_message_port(event.source);
                     }
                 }, false);
 
@@ -771,7 +758,10 @@ policies and contribution forms [3].
 
     function done() {
         if (tests.tests.length === 0) {
-            tests.set_file_is_test();
+            tests.status.status = tests.status.ERROR;
+            tests.status.message = "done() was called without first defining any tests";
+            tests.complete();
+            return;
         }
         if (tests.file_is_test) {
             // file is test files never have asynchronous cleanup logic,
@@ -1494,6 +1484,13 @@ policies and contribution forms [3].
     }
     expose(assert_any, "assert_any");
 
+    function assert_precondition(precondition, description) {
+        if (!precondition) {
+            throw new PreconditionFailedError(description);
+        }
+    }
+    expose(assert_precondition, "assert_precondition");
+
     function Test(name, properties)
     {
         if (tests.file_is_test && tests.tests.length) {
@@ -1531,7 +1528,8 @@ policies and contribution forms [3].
         PASS:0,
         FAIL:1,
         TIMEOUT:2,
-        NOTRUN:3
+        NOTRUN:3,
+        PRECONDITION_FAILED:4
     };
 
     Test.prototype = merge({}, Test.statuses);
@@ -1591,10 +1589,11 @@ policies and contribution forms [3].
             if (this.phase >= this.phases.HAS_RESULT) {
                 return;
             }
+            var status = e instanceof PreconditionFailedError ? this.PRECONDITION_FAILED : this.FAIL;
             var message = String((typeof e === "object" && e !== null) ? e.message : e);
             var stack = e.stack ? e.stack : null;
 
-            this.set_status(this.FAIL, message, stack);
+            this.set_status(status, message, stack);
             this.phase = this.phases.HAS_RESULT;
             this.done();
         }
@@ -2065,7 +2064,8 @@ policies and contribution forms [3].
     TestsStatus.statuses = {
         OK:0,
         ERROR:1,
-        TIMEOUT:2
+        TIMEOUT:2,
+        PRECONDITION_FAILED:3
     };
 
     TestsStatus.prototype = merge({}, TestsStatus.statuses);
@@ -2156,6 +2156,8 @@ policies and contribution forms [3].
                     {
                         clearTimeout(this.timeout_id);
                     }
+                } else if (p == "single_test" && value) {
+                    this.set_file_is_test();
                 } else if (p == "timeout_multiplier") {
                     this.timeout_multiplier = value;
                     if (this.timeout_length) {
@@ -2169,9 +2171,10 @@ policies and contribution forms [3].
             try {
                 func();
             } catch (e) {
-                this.status.status = this.status.ERROR;
+                this.status.status = e instanceof PreconditionFailedError ? this.status.PRECONDITION_FAILED : this.status.ERROR;
                 this.status.message = String(e);
                 this.status.stack = e.stack ? e.stack : null;
+                this.complete();
             }
         }
         this.set_timeout();
@@ -2685,12 +2688,14 @@ policies and contribution forms [3].
         status_text_harness[harness_status.OK] = "OK";
         status_text_harness[harness_status.ERROR] = "Error";
         status_text_harness[harness_status.TIMEOUT] = "Timeout";
+        status_text_harness[harness_status.PRECONDITION_FAILED] = "Precondition Failed";
 
         var status_text = {};
         status_text[Test.prototype.PASS] = "Pass";
         status_text[Test.prototype.FAIL] = "Fail";
         status_text[Test.prototype.TIMEOUT] = "Timeout";
         status_text[Test.prototype.NOTRUN] = "Not Run";
+        status_text[Test.prototype.PRECONDITION_FAILED] = "Precondition Failed";
 
         var status_number = {};
         forEach(tests,
@@ -3010,9 +3015,6 @@ policies and contribution forms [3].
      */
     function assert(expected_true, function_name, description, error, substitutions)
     {
-        if (tests.tests.length === 0) {
-            tests.set_file_is_test();
-        }
         if (expected_true !== true) {
             var msg = make_message(function_name, description,
                                    error, substitutions);
@@ -3074,6 +3076,13 @@ policies and contribution forms [3].
 
         return lines.slice(i).join("\n");
     }
+
+    function PreconditionFailedError(message)
+    {
+        AssertionError.call(this, message);
+    }
+    PreconditionFailedError.prototype = Object.create(AssertionError.prototype);
+    expose(PreconditionFailedError, "PreconditionFailedError");
 
     function make_message(function_name, description, error, substitutions)
     {
@@ -3302,20 +3311,19 @@ policies and contribution forms [3].
     var tests = new Tests();
 
     if (global_scope.addEventListener) {
-        var error_handler = function(message, stack) {
-            if (tests.tests.length === 0 && !tests.allow_uncaught_exception) {
-                tests.set_file_is_test();
-            }
-
+        var error_handler = function(error, message, stack) {
+            var precondition_failed = error instanceof PreconditionFailedError;
             if (tests.file_is_test) {
                 var test = tests.tests[0];
                 if (test.phase >= test.phases.HAS_RESULT) {
                     return;
                 }
-                test.set_status(test.FAIL, message, stack);
+                var status = precondition_failed ? test.PRECONDITION_FAILED : test.FAIL;
+                test.set_status(status, message, stack);
                 test.phase = test.phases.HAS_RESULT;
             } else if (!tests.allow_uncaught_exception) {
-                tests.status.status = tests.status.ERROR;
+                var status = precondition_failed ? tests.status.PRECONDITION_FAILED : tests.status.ERROR;
+                tests.status.status = status;
                 tests.status.message = message;
                 tests.status.stack = stack;
             }
@@ -3330,19 +3338,21 @@ policies and contribution forms [3].
             } else {
                 stack = e.filename + ":" + e.lineno + ":" + e.colno;
             }
-            error_handler(message, stack);
+            error_handler(e.error, message, stack);
         }, false);
 
         addEventListener("unhandledrejection", function(e) {
-            var reason;
-            if (e.reason) {
-                reason  = e.reason.message ? e.reason.message : e.reason;
+            var message;
+            if (e.reason && e.reason.message) {
+                message = "Unhandled rejection: " + e.reason.message;
             } else {
-                reason = e;
+                message = "Unhandled rejection";
             }
-            var message = "Unhandled rejection: " + reason;
-            // There's no stack for unhandled rejections.
-            error_handler(message);
+            var stack;
+            if (e.reason && e.reason.stack) {
+                stack = e.reason.stack;
+            }
+            error_handler(e.reason, message, stack);
         }, false);
     }
 
@@ -3380,7 +3390,7 @@ table#results {\
 \
 table#results th:first-child,\
 table#results td:first-child {\
-    width:4em;\
+    width:8em;\
 }\
 \
 table#results th:last-child,\
@@ -3421,7 +3431,11 @@ tr.notrun > td:first-child {\
     color:blue;\
 }\
 \
-.pass > td:first-child, .fail > td:first-child, .timeout > td:first-child, .notrun > td:first-child {\
+tr.preconditionfailed > td:first-child {\
+    color:blue;\
+}\
+\
+.pass > td:first-child, .fail > td:first-child, .timeout > td:first-child, .notrun > td:first-child, .preconditionfailed > td:first-child {\
     font-variant:small-caps;\
 }\
 \

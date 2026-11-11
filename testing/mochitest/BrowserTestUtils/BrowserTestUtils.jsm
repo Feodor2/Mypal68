@@ -29,9 +29,6 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { TestUtils } = ChromeUtils.import(
   "resource://testing-common/TestUtils.jsm"
 );
-const { ContentTask } = ChromeUtils.import(
-  "resource://testing-common/ContentTask.jsm"
-);
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
@@ -77,10 +74,11 @@ const kAboutPageRegistrationContentScript =
   "chrome://mochikit/content/tests/BrowserTestUtils/content-about-page-utils.js";
 
 /**
- * Create and register BrowserTestUtils Window Actor.
+ * Create and register the BrowserTestUtils and ContentEventListener window
+ * actors.
  */
-function registerActor() {
-  let actorOptions = {
+function registerActors() {
+  ChromeUtils.registerWindowActor("BrowserTestUtils", {
     parent: {
       moduleURI: "resource://testing-common/BrowserTestUtilsParent.jsm",
     },
@@ -93,30 +91,25 @@ function registerActor() {
     },
     allFrames: true,
     includeChrome: true,
-  };
-  ChromeUtils.registerWindowActor("BrowserTestUtils", actorOptions);
-}
+  });
 
-function registerContentEventListenerActor() {
-  let actorOptions = {
+  ChromeUtils.registerWindowActor("ContentEventListener", {
     parent: {
       moduleURI: "resource://testing-common/ContentEventListenerParent.jsm",
     },
-
     child: {
       moduleURI: "resource://testing-common/ContentEventListenerChild.jsm",
       events: {
         // We need to see the creation of all new windows, in case they have
-        // a browsing context we are interesting in.
+        // a browsing context we are interested in.
         DOMWindowCreated: { capture: true },
       },
     },
     allFrames: true,
-  };
-  ChromeUtils.registerWindowActor("ContentEventListener", actorOptions);
+  });
 }
 
-registerActor();
+registerActors();
 
 var BrowserTestUtils = {
   /**
@@ -527,8 +520,6 @@ var BrowserTestUtils = {
 
   _contentEventListeners: new Map(),
 
-  _contentEventListenerActorRegistered: false,
-
   /**
    * Waits for the web progress listener associated with this tab to fire a
    * STATE_STOP for the toplevel document.
@@ -683,10 +674,16 @@ var BrowserTestUtils = {
   waitForLocationChange(tabbrowser, url) {
     return new Promise((resolve, reject) => {
       let progressListener = {
-        onLocationChange(aBrowser) {
+        onLocationChange(
+          aBrowser,
+          aWebProgress,
+          aRequest,
+          aLocationURI,
+          aFlags
+        ) {
           if (
-            (url && aBrowser.currentURI.spec != url) ||
-            (!url && aBrowser.currentURI.spec == "about:blank")
+            (url && aLocationURI.spec != url) ||
+            (!url && aLocationURI.spec == "about:blank")
           ) {
             return;
           }
@@ -848,14 +845,18 @@ var BrowserTestUtils = {
 
     // We cannot use the regular BrowserTestUtils helper for waiting here, since that
     // would try to insert the preloaded browser, which would only break things.
-    await ContentTask.spawn(gBrowser.preloadedBrowser, null, async () => {
-      await ContentTaskUtils.waitForCondition(() => {
-        return (
-          this.content.document &&
-          this.content.document.readyState == "complete"
-        );
-      });
-    });
+    await gBrowser.preloadedBrowser.ownerGlobal.SpecialPowers.spawn(
+      gBrowser.preloadedBrowser,
+      [],
+      async () => {
+        await ContentTaskUtils.waitForCondition(() => {
+          return (
+            this.content.document &&
+            this.content.document.readyState == "complete"
+          );
+        });
+      }
+    );
   },
 
   /**
@@ -885,6 +886,24 @@ var BrowserTestUtils = {
         }
       }
       Services.ww.registerNotification(observer);
+    });
+  },
+
+  /**
+   * @param win (optional)
+   *        The window we should wait to have "domwindowopened" sent through
+   *        the observer service for. If this is not supplied, we'll just
+   *        resolve when the first "domwindowopened" notification is seen.
+   *        The promise will be resolved once the new window's document has been
+   *        loaded.
+   * @return {Promise}
+   *         A Promise which resolves when a "domwindowopened" notification
+   *         has been fired by the window watcher.
+   */
+  domWindowOpenedAndLoaded(win) {
+    return this.domWindowOpened(win, async win => {
+      await this.waitForEvent(win, "load");
+      return true;
     });
   },
 
@@ -1145,12 +1164,15 @@ var BrowserTestUtils = {
    *        event is the expected one, or false if it should be ignored and
    *        listening should continue. If not specified, the first event with
    *        the specified name resolves the returned promise.
-   * @param {bool} wantsUntrusted [optional]
+   * @param {bool} wantUntrusted [optional]
    *        Whether to accept untrusted events
    *
-   * @note Because this function is intended for testing, any error in checkFn
-   *       will cause the returned promise to be rejected instead of waiting for
-   *       the next event, since this is probably a bug in the test.
+   * @note As of bug 1588193, this function no longer rejects the returned
+   *       promise in the case of a checkFn error. Instead, since checkFn is now
+   *       called through eval in the content process, the error is thrown in
+   *       the listener created by ContentEventListenerChild. Work to improve
+   *       error handling (eg. to reject the promise as before and to preserve
+   *       the filename/stack) is being tracked in bug 1593811.
    *
    * @returns {Promise}
    */
@@ -1159,46 +1181,20 @@ var BrowserTestUtils = {
     eventName,
     capture = false,
     checkFn,
-    wantsUntrusted = false
+    wantUntrusted = false
   ) {
-    let parameters = {
-      eventName,
-      capture,
-      checkFnSource: checkFn ? checkFn.toSource() : null,
-      wantsUntrusted,
-    };
-    /* eslint-disable no-eval */
-    return ContentTask.spawn(browser, parameters, function({
-      eventName,
-      capture,
-      checkFnSource,
-      wantsUntrusted,
-    }) {
-      let checkFn;
-      if (checkFnSource) {
-        checkFn = eval(`(() => (${checkFnSource}))()`);
-      }
-      return new Promise((resolve, reject) => {
-        addEventListener(
-          eventName,
-          function listener(event) {
-            let completion = resolve;
-            try {
-              if (checkFn && !checkFn(event)) {
-                return;
-              }
-            } catch (e) {
-              completion = () => reject(e);
-            }
-            removeEventListener(eventName, listener, capture);
-            completion();
-          },
-          capture,
-          wantsUntrusted
-        );
-      });
+    return new Promise(resolve => {
+      let removeEventListener = this.addContentEventListener(
+        browser,
+        eventName,
+        () => {
+          removeEventListener();
+          resolve();
+        },
+        { capture, wantUntrusted },
+        checkFn
+      );
     });
-    /* eslint-enable no-eval */
   },
 
   /**
@@ -1226,10 +1222,6 @@ var BrowserTestUtils = {
    * fire until it is removed. A callable object is returned that,
    * when called, removes the event listener. Note that this function
    * works even if the browser's frameloader is swapped.
-   * Note: This will only listen for events that either have the browsing
-   * context of the browser element at the time of the call, or that are fired
-   * on windows that were created after any call to the function since the start
-   * of the test. This could be improved if needed.
    *
    * @param {xul:browser} browser
    *        The browser element to listen for events in.
@@ -1259,7 +1251,10 @@ var BrowserTestUtils = {
   ) {
     let id = gListenerId++;
     let contentEventListeners = this._contentEventListeners;
-    contentEventListeners.set(id, { listener, browser });
+    contentEventListeners.set(id, {
+      listener,
+      browsingContext: browser.browsingContext,
+    });
 
     let eventListenerState = this._contentEventListenerSharedState;
     eventListenerState.set(id, {
@@ -1273,35 +1268,6 @@ var BrowserTestUtils = {
       eventListenerState
     );
     Services.ppmm.sharedData.flush();
-
-    if (!this._contentEventListenerActorRegistered) {
-      this._contentEventListenerActorRegistered = true;
-      registerContentEventListenerActor();
-
-      // We hadn't registered the actor yet, so any existing window
-      // for browser's BC will not have been created yet. Explicitly
-      // make sure the actors are created and ready to go now. This
-      // happens after the updating of sharedData so that the actors
-      // don't have to get created and do nothing, and then later have
-      // to be updated.
-      // Note: As mentioned in the comment at the start of this function,
-      // this will miss any windows that existed at the time that the function
-      // was initially called during this test, but that did not have the
-      // browser's browsing context.
-      let contextsToVisit = [browser.browsingContext];
-      while (contextsToVisit.length) {
-        let currentContext = contextsToVisit.pop();
-        let global = currentContext.currentWindowGlobal;
-        if (!global) {
-          continue;
-        }
-        let actor = browser.browsingContext.currentWindowGlobal.getActor(
-          "ContentEventListener"
-        );
-        actor.sendAsyncMessage("ContentEventListener:LateCreate");
-        contextsToVisit.push(...currentContext.getChildren());
-      }
-    }
 
     let unregisterFunction = function() {
       if (!eventListenerState.has(id)) {
@@ -1323,12 +1289,12 @@ var BrowserTestUtils = {
    * BrowserTestUtilsParent.jsm when a content event we were listening for
    * happens.
    */
-  _receivedContentEventListener(listenerId, browser) {
+  _receivedContentEventListener(listenerId, browsingContext) {
     let listenerData = this._contentEventListeners.get(listenerId);
     if (!listenerData) {
       return;
     }
-    if (listenerData.browser != browser) {
+    if (listenerData.browsingContext != browsingContext) {
       return;
     }
     listenerData.listener();
@@ -1517,11 +1483,21 @@ var BrowserTestUtils = {
    *        Additional arguments, similar to the EventUtils.jsm version
    * @param {BrowserContext|MozFrameLoaderOwner} browsingContext
    *        Browsing context or browser element, must not be null
+   * @param {boolean} handlingUserInput
+   *        Whether the synthesize should be perfomed while simulating
+   *        user interaction (making windowUtils.isHandlingUserInput be true).
    *
    * @returns {Promise}
    * @resolves True if the mouse event was cancelled.
    */
-  synthesizeMouse(target, offsetX, offsetY, event, browsingContext) {
+  synthesizeMouse(
+    target,
+    offsetX,
+    offsetY,
+    event,
+    browsingContext,
+    handlingUserInput
+  ) {
     let targetFn = null;
     if (typeof target == "function") {
       targetFn = target.toString();
@@ -1537,6 +1513,7 @@ var BrowserTestUtils = {
       x: offsetX,
       y: offsetY,
       event,
+      handlingUserInput,
     });
   },
 
@@ -1676,6 +1653,10 @@ var BrowserTestUtils = {
    * @param (BrowsingContext) browsingContext
    *        The context where the frame leaves. Default to
    *        top level context if not supplied.
+   * @param (object?) options
+   *        An object with any of the following fields:
+   *          crashType: "CRASH_INVALID_POINTER_DEREF" | "CRASH_OOM"
+   *            The type of crash. If unspecified, default to "CRASH_INVALID_POINTER_DEREF"
    *
    * @returns (Promise)
    * @resolves An Object with key-value pairs representing the data from the
@@ -1685,7 +1666,8 @@ var BrowserTestUtils = {
     browser,
     shouldShowTabCrashPage = true,
     shouldClearMinidumps = true,
-    browsingContext
+    browsingContext,
+    options = {}
   ) {
     let extra = {};
 
@@ -1820,7 +1802,9 @@ var BrowserTestUtils = {
     this.sendAsyncMessage(
       browsingContext || browser.browsingContext,
       "BrowserTestUtils:CrashFrame",
-      {}
+      {
+        crashType: options.crashType || "",
+      }
     );
 
     await Promise.all(expectedPromises);
@@ -2216,7 +2200,7 @@ var BrowserTestUtils = {
 
   /**
    * Opens a tab with a given uri and params object. If the params object is not set
-   * or the params parameter does not include a triggeringPricnipal then this function
+   * or the params parameter does not include a triggeringPrincipal then this function
    * provides a params object using the systemPrincipal as the default triggeringPrincipal.
    *
    * @param {xul:tabbrowser} tabbrowser

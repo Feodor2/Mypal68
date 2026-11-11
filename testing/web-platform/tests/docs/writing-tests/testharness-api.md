@@ -256,11 +256,8 @@ wrapping everything in functions for isolation becomes
 burdensome. For these cases `testharness.js` support "single page
 tests".
 
-In order for a test to be interpreted as a single page test, then
-it must simply not call `test()` or `async_test()` anywhere on the page, and
-must call the `done()` function to indicate that the test is complete. All
-the `assert_*` functions are available as normal, but are called without
-the normal step function wrapper. For example:
+In order for a test to be interpreted as a single page test, it should set the
+`single_test` [setup option](#setup) to `true`.
 
 ```html
 <!doctype html>
@@ -269,6 +266,7 @@ the normal step function wrapper. For example:
 <script src="/resources/testharnessreport.js"></script>
 <body>
   <script>
+    setup({ single_test: true });
     assert_equals(document.body, document.getElementsByTagName("body")[0])
     done()
  </script>
@@ -296,6 +294,41 @@ NOTE: All asserts must be located in a `test()` or a step of an
 `async_test()`, unless the test is a single page test. Asserts outside
 these places won't be detected correctly by the harness and may cause
 unexpected exceptions that will lead to an error in the harness.
+
+## Preconditions ##
+
+When a test would be invalid unless certain conditions are met, but yet
+doesn't explicitly depend on those preconditions, `assert_precondition` can be
+used. For example:
+
+```js
+async_test((t) => {
+  const video = document.createElement("video");
+  assert_precondition(video.canPlayType("video/webm"));
+  video.src = "multitrack.webm";
+  // test something specific to multiple audio tracks in a WebM container
+  t.done();
+}, "WebM with multiple audio tracks");
+```
+
+A failing `assert_precondition` call is reported as a status of
+`PRECONDITION_FAILED` for the subtest.
+
+`assert_precondition` can also be used during test setup. For example:
+
+```js
+setup(() => {
+  assert_precondition("onfoo" in document.body, "'foo' event supported");
+});
+async_test(() => { /* test #1 waiting for "foo" event */ });
+async_test(() => { /* test #2 waiting for "foo" event */ });
+```
+
+A failing `assert_precondition` during setup is reported as a status of
+`PRECONDITION_FAILED` for the test, and the subtests will not run.
+
+See also the `.optional` [file name convention](file-names.md), which is
+appropriate when the precondition is explicitly optional behavior.
 
 ## Cleanup ##
 
@@ -416,6 +449,13 @@ needed when e.g. testing the `window.onerror` handler.
 
 `timeout_multiplier` - Multiplier to apply to per-test timeouts.
 
+`single_test` - Test authors may set this property to `true` to enable [the
+"single page test" mode of testharness.js](#single-page-tests); the current
+test must not declare any subtests; testharness.js will interpret all events
+which normally influence the harness status (e.g. uncaught exceptions,
+unhandled promise rejections, and timeouts) in terms of a single
+implicitly-defined subtest.
+
 ## Determining when all tests are complete ##
 
 By default the test harness will assume there are no more results to come
@@ -504,7 +544,8 @@ the following methods:
 Tests have the following properties:
 
   * `status` - A status code. This can be compared to the `PASS`, `FAIL`,
-               `TIMEOUT` and `NOTRUN` properties on the test object
+               `PRECONDITION_FAILED`, `TIMEOUT` and `NOTRUN` properties on the
+               test object
 
   * `message` - A message indicating the reason for failure. In the future this
                 will always be a string
@@ -512,9 +553,11 @@ Tests have the following properties:
  The status object gives the overall status of the harness. It has the
  following properties:
 
- * `status` - Can be compared to the `OK`, `ERROR` and `TIMEOUT` properties
+ * `status` - Can be compared to the `OK`, `PRECONDITION_FAILED`, `ERROR` and
+              `TIMEOUT` properties
 
- * `message` - An error message set when the status is `ERROR`
+ * `message` - An error message set when the status is `PRECONDITION_FAILED`
+               or `ERROR`.
 
 ## External API ##
 
@@ -688,6 +731,10 @@ workers and want to ensure they run in series:
 ```
 
 ## List of Assertions ##
+
+### `assert_precondition(condition, description)`
+asserts that `condition` is truthy.
+See [preconditions](#preconditions) for usage.
 
 ### `assert_true(actual, description)`
 asserts that `actual` is strictly true

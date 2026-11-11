@@ -12,11 +12,12 @@
 
 #include "jstypes.h"  // JS_PUBLIC_API
 
+#include "builtin/AtomicsObject.h"
 #include "ds/TraceableFifo.h"
 #include "frontend/NameCollections.h"
 #include "gc/Memory.h"
 #include "irregexp/RegExpTypes.h"
-#include "js/CharacterEncoding.h"
+#include "jit/PcScriptCache.h"
 #include "js/ContextOptions.h"  // JS::ContextOptions
 #include "js/Exception.h"
 #include "js/GCVector.h"
@@ -29,7 +30,6 @@
 #include "threading/ProtectedData.h"
 #include "util/StructuredSpewer.h"
 #include "vm/Activation.h"  // js::Activation
-#include "vm/ErrorReporting.h"
 #include "vm/MallocProvider.h"
 #include "vm/Runtime.h"
 #include "vm/SharedStencil.h"  // js::SharedImmutableScriptDataTable
@@ -44,10 +44,6 @@ namespace js {
 class AutoAllocInAtomsZone;
 class AutoMaybeLeaveAtomsZone;
 class AutoRealm;
-
-namespace frontend {
-class WellKnownParserAtoms;
-}  // namespace frontend
 
 namespace jit {
 class ICScript;
@@ -242,6 +238,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
     return thing->compartment() == compartment();
   }
 
+  void onOutOfMemory();
   void* onOutOfMemory(js::AllocFunction allocFunc, arena_id_t arena,
                       size_t nbytes, void* reallocPtr = nullptr) {
     if (isHelperThreadContext()) {
@@ -256,7 +253,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   /* Clear the pending exception (if any) due to OOM. */
   void recoverFromOutOfMemory();
 
-  void reportAllocationOverflow() { js::ReportAllocationOverflow(this); }
+  void reportAllocationOverflow();
 
   // Accessors for immutable runtime data.
   JSAtomState& names() { return *runtime_->commonNames; }
@@ -273,6 +270,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   JS::StackKind stackKindForCurrentPrincipal();
   JS::NativeStackLimit stackLimitForCurrentPrincipal();
   JS::NativeStackLimit stackLimit(JS::StackKind kind) {
+    MOZ_ASSERT(isMainThreadContext());
     return nativeStackLimit[kind];
   }
   JS::NativeStackLimit stackLimitForJitCode(JS::StackKind kind);
@@ -352,8 +350,6 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   inline js::Handle<js::GlobalObject*> global() const;
 
   js::AtomsTable& atoms() { return runtime_->atoms(); }
-
-  const JS::Zone* atomsZone() { return runtime_->atomsZone(); }
 
   js::SymbolRegistry& symbolRegistry() { return runtime_->symbolRegistry(); }
 
@@ -463,7 +459,10 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   mozilla::Maybe<JS::NativeStackBase> nativeStackBase_;
 
  public:
-  JS::NativeStackBase nativeStackBase() const { return *nativeStackBase_; }
+  JS::NativeStackBase nativeStackBase() const {
+    MOZ_ASSERT(isMainThreadContext());
+    return *nativeStackBase_;
+  }
 
  public:
   /* If non-null, report JavaScript entry points to this monitor. */
@@ -856,8 +855,12 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
 
  public:
   void* addressOfInterruptBits() { return &interruptBits_; }
-  void* addressOfJitStackLimit() { return &jitStackLimit; }
+  void* addressOfJitStackLimit() {
+    MOZ_ASSERT(isMainThreadContext());
+    return &jitStackLimit;
+  }
   void* addressOfJitStackLimitNoInterrupt() {
+    MOZ_ASSERT(isMainThreadContext());
     return &jitStackLimitNoInterrupt;
   }
   void* addressOfZone() { return &zone_; }

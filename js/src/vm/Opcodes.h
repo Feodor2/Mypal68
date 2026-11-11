@@ -8,6 +8,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "js/TypeDecls.h"
+
 // clang-format off
 /*
  * [SMDOC] Bytecode Definitions

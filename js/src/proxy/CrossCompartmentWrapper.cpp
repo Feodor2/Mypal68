@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "builtin/FinalizationRegistryObject.h"
+#include "gc/GC.h"
 #include "gc/PublicIterators.h"
 #include "js/friend/WindowProxy.h"  // js::IsWindow, js::IsWindowProxy
 #include "js/Wrapper.h"
@@ -573,7 +574,7 @@ void js::RemapDeadWrapper(JSContext* cx, HandleObject wobj,
   }
 
   if (!wobj->is<WrapperObject>()) {
-    MOZ_ASSERT(js::IsDOMRemoteProxyObject(wobj));
+    MOZ_ASSERT(js::IsDOMRemoteProxyObject(wobj) || IsDeadProxyObject(wobj));
     return;
   }
 

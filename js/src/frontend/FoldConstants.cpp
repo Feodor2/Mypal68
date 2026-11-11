@@ -18,7 +18,6 @@
 #include "js/friend/StackLimits.h"  // js::AutoCheckRecursionLimit
 #include "js/Stack.h"               // JS::NativeStackLimit
 #include "util/StringBuffer.h"      // StringBuffer
-#include "vm/StringType.h"
 
 using namespace js;
 using namespace js::frontend;
@@ -451,10 +450,12 @@ restart:
     case ParseNodeKind::SuperCallExpr:
     case ParseNodeKind::SuperBase:
     case ParseNodeKind::SetThis:
+#ifdef ENABLE_DECORATORS
+    case ParseNodeKind::DecoratorList:
+#endif
       MOZ_CRASH(
           "ContainsHoistedDeclaration should have indicated false on "
           "some parent node without recurring to test this node");
-
     case ParseNodeKind::LastUnused:
     case ParseNodeKind::Limit:
       MOZ_CRASH("unexpected sentinel ParseNodeKind in node");
@@ -491,7 +492,7 @@ static bool FoldType(FoldInfo info, ParseNode** pnp, ParseNodeKind kind) {
       case ParseNodeKind::StringExpr:
         if (pn->isKind(ParseNodeKind::NumberExpr)) {
           TaggedParserAtomIndex atom =
-              pn->as<NumericLiteral>().toAtom(info.cx, info.parserAtoms);
+              pn->as<NumericLiteral>().toAtom(info.ec, info.parserAtoms);
           if (!atom) {
             return false;
           }
@@ -1123,7 +1124,7 @@ static bool FoldElement(FoldInfo info, ParseNode** nodePtr) {
       // Optimization 2: We have something like expr[3.14]. The number
       // isn't an array index, so it converts to a string ("3.14"),
       // enabling optimization 3 below.
-      name = numeric->toAtom(info.cx, info.parserAtoms);
+      name = numeric->toAtom(info.ec, info.parserAtoms);
       if (!name) {
         return false;
       }
@@ -1259,7 +1260,7 @@ static bool FoldAdd(FoldInfo info, ParseNode** nodePtr) {
 
       // Replace with concatenation if we multiple nodes.
       if (accum) {
-        auto combination = accum->finishParserAtom(info.parserAtoms);
+        auto combination = accum->finishParserAtom(info.parserAtoms, info.ec);
         if (!combination) {
           return false;
         }

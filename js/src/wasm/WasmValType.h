@@ -33,25 +33,18 @@ using mozilla::Maybe;
 // A PackedTypeCode represents any value type in an compact POD format.
 union PackedTypeCode {
  public:
-  using PackedRepr = uintptr_t;
+  using PackedRepr = uint32_t;
 
  private:
-#ifdef JS_64BIT
   static constexpr size_t TypeCodeBits = 8;
-  static constexpr size_t TypeIndexBits = 21;
+  static constexpr size_t TypeIndexBits = 20;
   static constexpr size_t NullableBits = 1;
   static constexpr size_t PointerTagBits = 2;
-#else
-  static constexpr size_t TypeCodeBits = 8;
-  static constexpr size_t TypeIndexBits = 14;
-  static constexpr size_t NullableBits = 1;
-  static constexpr size_t PointerTagBits = 2;
-#endif
 
   static_assert(TypeCodeBits + TypeIndexBits + NullableBits + PointerTagBits <=
                     (sizeof(PackedRepr) * 8),
                 "enough bits");
-  static_assert(MaxTypeIndex < (1 << TypeIndexBits), "enough bits");
+  static_assert(MaxTypes < (1 << TypeIndexBits), "enough bits");
 
   PackedRepr bits_;
   struct {
@@ -168,7 +161,7 @@ union PackedTypeCode {
 
 WASM_DECLARE_CACHEABLE_POD(PackedTypeCode);
 
-static_assert(sizeof(PackedTypeCode) == sizeof(uintptr_t), "packed");
+static_assert(sizeof(PackedTypeCode) == sizeof(uint32_t), "packed");
 static_assert(std::is_pod_v<PackedTypeCode>,
               "must be POD to be simply serialized/deserialized");
 
@@ -312,6 +305,41 @@ class FieldTypeTraits {
         return false;
     }
   }
+
+  static bool isNumberTypeCode(TypeCode tc) {
+    switch (tc) {
+      case TypeCode::I32:
+      case TypeCode::I64:
+      case TypeCode::F32:
+      case TypeCode::F64:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  static bool isPackedTypeCode(TypeCode tc) {
+    switch (tc) {
+#ifdef ENABLE_WASM_GC
+      case TypeCode::I8:
+      case TypeCode::I16:
+        return true;
+#endif
+      default:
+        return false;
+    }
+  }
+
+  static bool isVectorTypeCode(TypeCode tc) {
+    switch (tc) {
+#ifdef ENABLE_WASM_SIMD
+      case TypeCode::V128:
+        return true;
+#endif
+      default:
+        return false;
+    }
+  }
 };
 
 class ValTypeTraits {
@@ -345,6 +373,31 @@ class ValTypeTraits {
       case AbstractReferenceTypeIndexCode:
 #endif
         return true;
+      default:
+        return false;
+    }
+  }
+
+  static bool isNumberTypeCode(TypeCode tc) {
+    switch (tc) {
+      case TypeCode::I32:
+      case TypeCode::I64:
+      case TypeCode::F32:
+      case TypeCode::F64:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  static bool isPackedTypeCode(TypeCode tc) { return false; }
+
+  static bool isVectorTypeCode(TypeCode tc) {
+    switch (tc) {
+#ifdef ENABLE_WASM_SIMD
+      case TypeCode::V128:
+        return true;
+#endif
       default:
         return false;
     }
@@ -462,6 +515,27 @@ class PackedType : public T {
     return tc_.bits();
   }
 
+  bool isNumber() const {
+    if (!tc_.isValid()) {
+      return false;
+    }
+    return T::isNumberTypeCode(tc_.typeCode());
+  }
+
+  bool isPacked() const {
+    if (!tc_.isValid()) {
+      return false;
+    }
+    return T::isPackedTypeCode(tc_.typeCode());
+  }
+
+  bool isVector() const {
+    if (!tc_.isValid()) {
+      return false;
+    }
+    return T::isVectorTypeCode(tc_.typeCode());
+  }
+
   bool isRefType() const {
     MOZ_ASSERT(isValid());
     return tc_.isRefType();
@@ -522,16 +596,6 @@ class PackedType : public T {
   RefType::Kind refTypeKind() const {
     MOZ_ASSERT(isRefType());
     return RefType(tc_).kind();
-  }
-
-  void renumber(const RenumberVector& renumbering) {
-    if (!isTypeIndex()) {
-      return;
-    }
-
-    uint32_t newIndex = renumbering[typeIndex()];
-    MOZ_ASSERT(newIndex != UINT32_MAX);
-    *this = RefType::fromTypeIndex(newIndex, isNullable());
   }
 
   // Some types are encoded as JS::Value when they escape from Wasm (when passed
@@ -611,6 +675,11 @@ class PackedType : public T {
       default:
         return true;
     }
+  }
+
+  PackedType<FieldTypeTraits> fieldType() const {
+    MOZ_ASSERT(isValid());
+    return PackedType<FieldTypeTraits>(tc_);
   }
 
   bool operator==(const PackedType& that) const {
@@ -699,8 +768,8 @@ extern bool ToRefType(JSContext* cx, JSLinearString* typeLinearStr,
                       RefType* out);
 
 extern UniqueChars ToString(RefType type);
-
 extern UniqueChars ToString(ValType type);
+extern UniqueChars ToString(FieldType type);
 
 extern UniqueChars ToString(const Maybe<ValType>& type);
 

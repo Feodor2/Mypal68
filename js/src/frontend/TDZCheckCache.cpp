@@ -18,7 +18,7 @@ TDZCheckCache::TDZCheckCache(BytecodeEmitter* bce)
       cache_(bce->cx->frontendCollectionPool()) {}
 
 bool TDZCheckCache::ensureCache(BytecodeEmitter* bce) {
-  return cache_ || cache_.acquire(bce->cx);
+  return cache_ || cache_.acquire(bce->ec);
 }
 
 Maybe<MaybeCheckTDZ> TDZCheckCache::needsTDZCheck(BytecodeEmitter* bce,
@@ -43,7 +43,7 @@ Maybe<MaybeCheckTDZ> TDZCheckCache::needsTDZCheck(BytecodeEmitter* bce,
   }
 
   if (!cache_->add(p, name, rv)) {
-    ReportOutOfMemory(bce->cx);
+    ReportOutOfMemory(bce->ec);
     return Nothing();
   }
 
@@ -65,7 +65,7 @@ bool TDZCheckCache::noteTDZCheck(BytecodeEmitter* bce,
     p->value() = check;
   } else {
     if (!cache_->add(p, name, check)) {
-      ReportOutOfMemory(bce->cx);
+      ReportOutOfMemory(bce->ec);
       return false;
     }
   }

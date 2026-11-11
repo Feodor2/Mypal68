@@ -6,7 +6,6 @@
 
 #include "mozilla/BinarySearch.h"
 #include "mozilla/Casting.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ScopeExit.h"  // mozilla::MakeScopeExit
 #include "mozilla/Utf8.h"       // mozilla::Utf8Unit
@@ -41,49 +40,35 @@
 #include "builtin/RegExp.h"
 #include "builtin/SelfHostingDefines.h"
 #include "builtin/String.h"
-#include "builtin/Symbol.h"
 #ifdef ENABLE_RECORD_TUPLE
 #  include "builtin/TupleObject.h"
 #endif
-#include "builtin/WeakMapObject.h"
 #include "frontend/BytecodeCompilation.h"  // CompileGlobalScriptToStencil
 #include "frontend/CompilationStencil.h"   // js::frontend::CompilationStencil
-#include "gc/Marking.h"
-#include "gc/Policy.h"
 #include "jit/AtomicOperations.h"
 #include "jit/InlinableNatives.h"
-#include "js/CallAndConstruct.h"  // JS::Construct, JS::IsCallable, JS::IsConstructor
-#include "js/CharacterEncoding.h"
 #include "js/CompilationAndEvaluation.h"
 #include "js/Conversions.h"
-#include "js/Date.h"
 #include "js/ErrorReport.h"  // JS::PrintError
-#include "js/Exception.h"
-#include "js/experimental/JSStencil.h"  // RefPtrTraits<JS::Stencil>
+#include "js/experimental/JSStencil.h"
 #include "js/experimental/TypedData.h"  // JS_GetArrayBufferViewType
 #include "js/friend/ErrorMessages.h"    // js::GetErrorMessage, JSMSG_*
 #include "js/HashTable.h"
-#include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_DefinePropertyById
 #include "js/PropertySpec.h"
 #include "js/ScalarType.h"  // js::Scalar::Type
 #include "js/SourceText.h"  // JS::SourceText
-#include "js/StableStringChars.h"
 #include "js/TracingAPI.h"
 #include "js/Transcoding.h"
 #include "js/Warnings.h"  // JS::{,Set}WarningReporter
 #include "js/Wrapper.h"
-#include "util/StringBuffer.h"
 #include "vm/ArgumentsObject.h"
 #include "vm/AsyncFunction.h"
 #include "vm/AsyncIteration.h"
 #include "vm/BigIntType.h"
-#include "vm/BytecodeIterator.h"
-#include "vm/BytecodeLocation.h"
 #include "vm/Compression.h"
 #include "vm/DateObject.h"
 #include "vm/ErrorReporting.h"  // js::MaybePrintAndClearPendingException
 #include "vm/FrameIter.h"       // js::ScriptFrameIter
-#include "vm/FunctionFlags.h"   // js::FunctionFlags
 #include "vm/GeneratorObject.h"
 #include "vm/Interpreter.h"
 #include "vm/Iteration.h"
@@ -101,18 +86,11 @@
 #include "vm/Uint8Clamped.h"
 #include "vm/WrapperObject.h"
 
-#include "gc/GC-inl.h"
-#include "vm/BooleanObject-inl.h"
-#include "vm/BytecodeIterator-inl.h"
-#include "vm/BytecodeLocation-inl.h"
 #include "vm/Compartment-inl.h"
 #include "vm/JSAtom-inl.h"
 #include "vm/JSFunction-inl.h"
 #include "vm/JSObject-inl.h"
-#include "vm/JSScript-inl.h"
 #include "vm/NativeObject-inl.h"
-#include "vm/NumberObject-inl.h"
-#include "vm/StringObject-inl.h"
 #include "vm/TypedArrayObject-inl.h"
 
 using namespace js;
@@ -2236,7 +2214,8 @@ static const JSFunctionSpec intrinsic_functions[] = {
                     StringFromCodePoint),
     JS_FN("std_String_includes", str_includes, 1, 0),
     JS_FN("std_String_indexOf", str_indexOf, 1, 0),
-    JS_FN("std_String_startsWith", str_startsWith, 1, 0),
+    JS_INLINABLE_FN("std_String_startsWith", str_startsWith, 1, 0,
+                    StringStartsWith),
 #ifdef ENABLE_RECORD_TUPLE
     JS_FN("std_Tuple_unchecked", tuple_construct, 1, 0),
 #endif
@@ -2269,7 +2248,7 @@ class CheckTenuredTracer : public JS::CallbackTracer {
       JS::TraceChildren(this, stack.popCopy());
     }
   }
-  void onChild(JS::GCCellPtr thing) override {
+  void onChild(JS::GCCellPtr thing, const char* name) override {
     gc::Cell* cell = thing.asCell();
     MOZ_RELEASE_ASSERT(cell->isTenured(), "Expected tenured cell");
     if (!visited.has(cell)) {
@@ -2469,6 +2448,7 @@ bool JSRuntime::initSelfHostingStencil(JSContext* cx,
 
   // Try initializing from Stencil XDR.
   bool decodeOk = false;
+  MainThreadErrorContext ec(cx);
   if (xdrCache.Length() > 0) {
     // Allow the VM to directly use bytecode from the XDR buffer without
     // copying it. The buffer must outlive all runtimes (including workers).
@@ -2489,7 +2469,7 @@ bool JSRuntime::initSelfHostingStencil(JSContext* cx,
     if (!stencil) {
       return false;
     }
-    if (!stencil->deserializeStencils(cx, *input, xdrCache, &decodeOk)) {
+    if (!stencil->deserializeStencils(cx, &ec, *input, xdrCache, &decodeOk)) {
       return false;
     }
 
@@ -2529,11 +2509,11 @@ bool JSRuntime::initSelfHostingStencil(JSContext* cx,
   if (!input) {
     return false;
   }
-  MainThreadErrorContext ec(cx);
+  frontend::NoScopeBindingCache scopeCache;
   RefPtr<frontend::CompilationStencil> stencil =
       frontend::CompileGlobalScriptToStencil(
           cx, &ec, cx->stackLimitForCurrentPrincipal(), cx->tempLifoAlloc(),
-          *input, srcBuf, ScopeKind::Global);
+          *input, &scopeCache, srcBuf, ScopeKind::Global);
   if (!stencil) {
     return false;
   }
@@ -2638,7 +2618,8 @@ ScriptSourceObject* GlobalObject::getOrCreateSelfHostingScriptSourceObject(
     return nullptr;
   }
 
-  if (!source->initFromOptions(cx, options)) {
+  MainThreadErrorContext ec(cx);
+  if (!source->initFromOptions(cx, &ec, options)) {
     return nullptr;
   }
 

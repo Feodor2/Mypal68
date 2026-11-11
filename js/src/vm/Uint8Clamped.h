@@ -7,8 +7,6 @@
 
 #include <stdint.h>
 
-#include "jstypes.h"
-
 namespace js {
 
 extern uint32_t ClampDoubleToUint8(const double x);

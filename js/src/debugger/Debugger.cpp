@@ -37,6 +37,7 @@
 #include "debugger/Object.h"              // for DebuggerObject
 #include "debugger/Script.h"              // for DebuggerScript
 #include "debugger/Source.h"              // for DebuggerSource
+#include "frontend/BytecodeCompiler.h"    // for IsIdentifier
 #include "frontend/CompilationStencil.h"  // for CompilationStencil
 #include "frontend/Parser.h"              // for Parser
 #include "gc/GC.h"                        // for IterateScripts
@@ -62,6 +63,7 @@
 #include "js/Debug.h"                 // for Builder::Object, Builder
 #include "js/friend/ErrorMessages.h"  // for GetErrorMessage, JSMSG_*
 #include "js/GCAPI.h"                 // for GarbageCollectionEvent
+#include "js/GCVariant.h"             // for GCVariant
 #include "js/HeapAPI.h"               // for ExposeObjectToActiveJS
 #include "js/Promise.h"               // for AutoDebuggerJobQueueInterruption
 #include "js/PropertyAndElement.h"    // for JS_GetProperty
@@ -79,6 +81,7 @@
 #include "vm/BytecodeUtil.h"          // for JSDVG_IGNORE_STACK
 #include "vm/Compartment.h"           // for CrossCompartmentKey
 #include "vm/EnvironmentObject.h"     // for IsSyntacticEnvironment
+#include "vm/ErrorContext.h"          // for MainThreadErrorContext
 #include "vm/ErrorReporting.h"        // for ReportErrorToGlobal
 #include "vm/GeneratorObject.h"       // for AbstractGeneratorObject
 #include "vm/GlobalObject.h"          // for GlobalObject
@@ -88,6 +91,7 @@
 #include "vm/JSContext.h"             // for JSContext
 #include "vm/JSFunction.h"            // for JSFunction
 #include "vm/JSObject.h"              // for JSObject, RequireObject,
+#include "vm/JSScript.h"              // for BaseScript, ScriptSourceObject
 #include "vm/ObjectOperations.h"      // for DefineDataProperty
 #include "vm/PlainObject.h"           // for js::PlainObject
 #include "vm/PromiseObject.h"         // for js::PromiseObject
@@ -3843,7 +3847,7 @@ void DebugAPI::slowPathTraceGeneratorFrame(JSTracer* tracer,
   // precisely, but they're both generic tracers, so we just show them all the
   // door. This means the generator -> Debugger.Frame edge is going to be
   // invisible to some traversals. We'll cope with that when it's a problem.
-  if (tracer->isGenericTracer()) {
+  if (!tracer->isMarkingTracer()) {
     return;
   }
 
@@ -5828,15 +5832,15 @@ class MOZ_STACK_CLASS Debugger::ObjectQuery {
     {
       // We can't tolerate the GC moving things around while we're
       // searching the heap. Check that nothing we do causes a GC.
-      Maybe<JS::AutoCheckCannotGC> maybeNoGC;
       RootedObject dbgObj(cx, dbg->object);
-      JS::ubi::RootList rootList(cx, maybeNoGC);
-      if (!rootList.init(dbgObj)) {
+      JS::ubi::RootList rootList(cx);
+      auto [ok, nogc] = rootList.init(dbgObj);
+      if (!ok) {
         ReportOutOfMemory(cx);
         return false;
       }
 
-      Traversal traversal(cx, *this, maybeNoGC.ref());
+      Traversal traversal(cx, *this, nogc);
       traversal.wantNames = false;
 
       return traversal.addStart(JS::ubi::Node(&rootList)) &&
@@ -6103,20 +6107,21 @@ bool Debugger::isCompilableUnit(JSContext* cx, unsigned argc, Value* vp) {
 
   bool result = true;
 
+  MainThreadErrorContext ec(cx);
   CompileOptions options(cx);
   Rooted<frontend::CompilationInput> input(cx,
                                            frontend::CompilationInput(options));
-  if (!input.get().initForGlobal(cx)) {
+  if (!input.get().initForGlobal(cx, &ec)) {
     return false;
   }
 
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
+  frontend::NoScopeBindingCache scopeCache;
   frontend::CompilationState compilationState(cx, allocScope, input.get());
-  if (!compilationState.init(cx)) {
+  if (!compilationState.init(cx, &ec, &scopeCache)) {
     return false;
   }
 
-  MainThreadErrorContext ec(cx);
   JS::AutoSuppressWarningReporter suppressWarnings(cx);
   frontend::Parser<frontend::FullParseHandler, char16_t> parser(
       cx, &ec, cx->stackLimitForCurrentPrincipal(), options,

@@ -10,8 +10,6 @@
 
 namespace js {
 
-class GlobalObject;
-
 // Abstract base class for WeakMapObject and WeakSetObject.
 class WeakCollectionObject : public NativeObject {
  public:

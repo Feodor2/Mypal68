@@ -4,9 +4,8 @@
 
 #include "vm/RegExpStatics.h"
 
-#include "gc/GCContext.h"
-
-#include "vm/NativeObject-inl.h"
+#include "gc/Zone.h"
+#include "vm/RegExpShared.h"
 
 using namespace js;
 

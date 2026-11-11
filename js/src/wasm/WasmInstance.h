@@ -445,7 +445,16 @@ class alignas(16) Instance {
   static void* structNew(Instance* instance, void* structDescr);
   static void* exceptionNew(Instance* instance, JSObject* tag);
   static int32_t throwException(Instance* instance, JSObject* exn);
-  static void* arrayNew(Instance* instance, uint32_t length, void* arrayDescr);
+  static void* arrayNew(Instance* instance, uint32_t numElements,
+                        void* arrayDescr);
+  static void* arrayNewData(Instance* instance, uint32_t segByteOffset,
+                            uint32_t numElements, void* arrayDescr,
+                            uint32_t segIndex);
+  static void* arrayNewElem(Instance* instance, uint32_t segElemIndex,
+                            uint32_t size, void* arrayDescr, uint32_t segIndex);
+  static int32_t arrayCopy(Instance* instance, void* dstArray,
+                           uint32_t dstIndex, void* srcArray, uint32_t srcIndex,
+                           uint32_t numElements, uint32_t elementSize);
   static int32_t refTest(Instance* instance, void* refPtr, void* rttPtr);
   static int32_t intrI8VecMul(Instance* instance, uint32_t dest, uint32_t src1,
                               uint32_t src2, uint32_t len, uint8_t* memBase);

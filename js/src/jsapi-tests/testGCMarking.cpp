@@ -7,6 +7,7 @@
 #include "js/RootingAPI.h"
 #include "js/SliceBudget.h"
 #include "jsapi-tests/tests.h"
+#include "vm/Compartment.h"
 #include "vm/Realm.h"
 
 using namespace js;
@@ -71,7 +72,7 @@ static bool ConstructCCW(JSContext* cx, const JSClass* globalClasp,
 }
 
 class CCWTestTracer final : public JS::CallbackTracer {
-  void onChild(JS::GCCellPtr thing) override {
+  void onChild(JS::GCCellPtr thing, const char* name) override {
     numberOfThingsTraced++;
 
     printf("*thingp         = %p\n", thing.asCell());

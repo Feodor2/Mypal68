@@ -11,14 +11,15 @@
 #include "gc/Tracer.h"
 #include "js/AllocPolicy.h"
 #include "js/GCHashTable.h"
-#include "js/HeapAPI.h"
 #include "js/RootingAPI.h"
 #include "js/shadow/Symbol.h"  // JS::shadow::Symbol
 #include "js/Symbol.h"
 #include "js/TypeDecls.h"
-#include "js/Utility.h"
-#include "vm/Printer.h"
 #include "vm/StringType.h"
+
+namespace js {
+class GenericPrinter;
+}
 
 namespace JS {
 
@@ -82,9 +83,7 @@ class Symbol
 
   static const JS::TraceKind TraceKind = JS::TraceKind::Symbol;
 
-  void traceChildren(JSTracer* trc) {
-    js::TraceNullableCellHeaderEdge(trc, this, "symbol description");
-  }
+  void traceChildren(JSTracer* trc);
   void finalize(JS::GCContext* gcx) {}
 
   // Override base class implementation to tell GC about well-known symbols.

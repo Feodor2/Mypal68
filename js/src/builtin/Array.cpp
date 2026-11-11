@@ -21,13 +21,11 @@
 #include "ds/Sort.h"
 #include "gc/Allocator.h"
 #include "jit/InlinableNatives.h"
-#include "js/CallAndConstruct.h"  // JS::Construct, JS::IsCallable, JS::IsConstructor
 #include "js/Class.h"
 #include "js/Conversions.h"
 #include "js/experimental/JitInfo.h"  // JSJitGetterOp, JSJitInfo
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/StackLimits.h"    // js::AutoCheckRecursionLimit
-#include "js/PropertyAndElement.h"    // JS_DefineFunctions
 #include "js/PropertySpec.h"
 #include "util/Poison.h"
 #include "util/StringBuffer.h"
@@ -36,7 +34,6 @@
 #include "vm/EqualityOperations.h"
 #include "vm/Interpreter.h"
 #include "vm/Iteration.h"
-#include "vm/JSAtom.h"
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
@@ -54,7 +51,6 @@
 #include "vm/ArgumentsObject-inl.h"
 #include "vm/ArrayObject-inl.h"
 #include "vm/GeckoProfiler-inl.h"
-#include "vm/Interpreter-inl.h"
 #include "vm/IsGivenTypeObject-inl.h"
 #include "vm/JSAtom-inl.h"
 #include "vm/NativeObject-inl.h"

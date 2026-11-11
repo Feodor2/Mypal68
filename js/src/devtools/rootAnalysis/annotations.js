@@ -15,7 +15,7 @@ var ignoreIndirectCalls = {
 };
 
 // Types that when constructed with no arguments, are "safe" values (they do
-// not contain GC pointers).
+// not contain GC pointers, or values with nontrivial destructors.)
 var typesWithSafeConstructors = new Set([
     "mozilla::Maybe",
     "mozilla::dom::Nullable",
@@ -30,7 +30,13 @@ var resetterMethods = {
     'js::UniquePtr': new Set(["reset"]),
     'mozilla::dom::Nullable': new Set(["SetNull"]),
     'mozilla::dom::TypedArray_base': new Set(["Reset"]),
+    'RefPtr': new Set(["forget"]),
+    'nsCOMPtr': new Set(["forget"]),
 };
+
+function isRefcountedDtor(name) {
+    return name.includes("::~RefPtr(") || name.includes("::~nsCOMPtr(");
+}
 
 function indirectCallCannotGC(fullCaller, fullVariable)
 {
@@ -38,8 +44,8 @@ function indirectCallCannotGC(fullCaller, fullVariable)
 
     // This is usually a simple variable name, but sometimes a full name gets
     // passed through. And sometimes that name is truncated. Examples:
-    //   _ZL13gAbortHandler|mozalloc_oom.cpp:void (* gAbortHandler)(size_t)
-    //   _ZL14pMutexUnlockFn|umutex.cpp:void (* pMutexUnlockFn)(const void*
+    //   _ZL13gAbortHandler$mozalloc_oom.cpp:void (* gAbortHandler)(size_t)
+    //   _ZL14pMutexUnlockFn$umutex.cpp:void (* pMutexUnlockFn)(const void*
     var name = readable(fullVariable);
 
     if (name in ignoreIndirectCalls)
@@ -54,12 +60,6 @@ function indirectCallCannotGC(fullCaller, fullVariable)
     // hook called during script finalization which cannot GC.
     if (/CallDestroyScriptHook/.test(caller))
         return true;
-
-    // template method called during marking and hence cannot GC
-    if (name == "op" && caller.includes("bool js::WeakMap<Key, Value, HashPolicy>::keyNeedsMark(JSObject*)"))
-    {
-        return true;
-    }
 
     // Call through a 'callback' function pointer, in a place where we're going
     // to be throwing a JS exception.
@@ -295,7 +295,7 @@ var ignoreFunctions = {
     "uint8 nsAutoOwningEventTarget::IsCurrentThread() const": true,
 };
 
-function extraGCFunctions() {
+function extraGCFunctions(readableNames) {
     return ["ffi_call"].filter(f => f in readableNames);
 }
 
@@ -322,7 +322,7 @@ function isICU(name)
            name.match(/u(prv_malloc|prv_realloc|prv_free|case_toFullLower)_\d+/)
 }
 
-function ignoreGCFunction(mangled)
+function ignoreGCFunction(mangled, readableNames)
 {
     // Field calls will not be in readableNames
     if (!(mangled in readableNames))

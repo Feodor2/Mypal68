@@ -6,16 +6,17 @@
 
 #include "js/CompilationAndEvaluation.h"
 
-#include "mozilla/Maybe.h"      // mozilla::None, mozilla::Some
-#include "mozilla/TextUtils.h"  // mozilla::IsAscii
-#include "mozilla/Utf8.h"       // mozilla::Utf8Unit
+#include "mozilla/Maybe.h"  // mozilla::None, mozilla::Some
+#include "mozilla/Utf8.h"   // mozilla::Utf8Unit
 
 #include <utility>  // std::move
 
 #include "jsapi.h"    // JS_WrapValue
 #include "jstypes.h"  // JS_PUBLIC_API
 
+#include "debugger/DebugAPI.h"
 #include "frontend/BytecodeCompilation.h"  // frontend::CompileGlobalScript
+#include "frontend/BytecodeCompiler.h"     // frontend::IsIdentifier
 #include "frontend/CompilationStencil.h"  // for frontened::{CompilationStencil, BorrowingCompilationStencil, CompilationGCOutput}
 #include "frontend/Parser.h"       // frontend::Parser, frontend::ParseGoal
 #include "js/CharacterEncoding.h"  // JS::UTF8Chars, JS::UTF8CharsToNewTwoByteCharsZ
@@ -29,13 +30,11 @@
 #include "util/CompleteFile.h"     // js::FileContents, js::ReadCompleteFile
 #include "util/StringBuffer.h"     // js::StringBuffer
 #include "vm/EnvironmentObject.h"  // js::CreateNonSyntacticEnvironmentChain
-#include "vm/ErrorReporting.h"     // js::MainThreadErrorContext
-#include "vm/FunctionFlags.h"      // js::FunctionFlags
+#include "vm/ErrorContext.h"       // js::MainThreadErrorContext
 #include "vm/Interpreter.h"        // js::Execute
 #include "vm/JSContext.h"          // JSContext
 
-#include "debugger/DebugAPI-inl.h"  // js::DebugAPI
-#include "vm/JSContext-inl.h"       // JSContext::check
+#include "vm/JSContext-inl.h"  // JSContext::check
 
 using mozilla::Utf8Unit;
 
@@ -81,63 +80,6 @@ JSScript* JS::Compile(JSContext* cx, const ReadOnlyCompileOptions& options,
   return CompileSourceBuffer(cx, options, srcBuf);
 }
 
-template <typename Unit>
-static JSScript* CompileSourceBufferAndStartIncrementalEncoding(
-    JSContext* cx, const ReadOnlyCompileOptions& options,
-    SourceText<Unit>& srcBuf) {
-  MOZ_ASSERT(!cx->zone()->isAtomsZone());
-  AssertHeapIsIdle();
-  CHECK_THREAD(cx);
-
-  ScopeKind scopeKind =
-      options.nonSyntacticScope ? ScopeKind::NonSyntactic : ScopeKind::Global;
-
-  MainThreadErrorContext ec(cx);
-  Rooted<frontend::CompilationInput> input(cx,
-                                           frontend::CompilationInput(options));
-  auto stencil = frontend::CompileGlobalScriptToExtensibleStencil(
-      cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), srcBuf,
-      scopeKind);
-  if (!stencil) {
-    return nullptr;
-  }
-
-  RootedScript script(cx);
-  {
-    frontend::BorrowingCompilationStencil borrowingStencil(*stencil);
-
-    Rooted<frontend::CompilationGCOutput> gcOutput(cx);
-    if (!frontend::InstantiateStencils(cx, input.get(), borrowingStencil,
-                                       gcOutput.get())) {
-      return nullptr;
-    }
-
-    script = gcOutput.get().script;
-    if (!script) {
-      return nullptr;
-    }
-  }
-
-  if (!script->scriptSource()->startIncrementalEncoding(cx,
-                                                        std::move(stencil))) {
-    return nullptr;
-  }
-
-  return script;
-}
-
-JSScript* JS::CompileAndStartIncrementalEncoding(
-    JSContext* cx, const ReadOnlyCompileOptions& options,
-    SourceText<char16_t>& srcBuf) {
-  return CompileSourceBufferAndStartIncrementalEncoding(cx, options, srcBuf);
-}
-
-JSScript* JS::CompileAndStartIncrementalEncoding(
-    JSContext* cx, const ReadOnlyCompileOptions& options,
-    SourceText<Utf8Unit>& srcBuf) {
-  return CompileSourceBufferAndStartIncrementalEncoding(cx, options, srcBuf);
-}
-
 JS_PUBLIC_API bool JS::StartIncrementalEncoding(JSContext* cx,
                                                 RefPtr<JS::Stencil>&& stencil) {
   MOZ_ASSERT(cx);
@@ -156,7 +98,8 @@ JS_PUBLIC_API bool JS::StartIncrementalEncoding(JSContext* cx,
       return false;
     }
 
-    if (!initial->steal(cx, std::move(stencil))) {
+    MainThreadErrorContext ec(cx);
+    if (!initial->steal(&ec, std::move(stencil))) {
       return false;
     }
   }
@@ -220,20 +163,21 @@ JS_PUBLIC_API bool JS_Utf8BufferIsCompilableUnit(JSContext* cx,
   using frontend::ParseGoal;
   using frontend::Parser;
 
+  MainThreadErrorContext ec(cx);
   CompileOptions options(cx);
   Rooted<frontend::CompilationInput> input(cx,
                                            frontend::CompilationInput(options));
-  if (!input.get().initForGlobal(cx)) {
+  if (!input.get().initForGlobal(cx, &ec)) {
     return false;
   }
 
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
+  js::frontend::NoScopeBindingCache scopeCache;
   frontend::CompilationState compilationState(cx, allocScope, input.get());
-  if (!compilationState.init(cx)) {
+  if (!compilationState.init(cx, &ec, &scopeCache)) {
     return false;
   }
 
-  MainThreadErrorContext ec(cx);
   JS::AutoSuppressWarningReporter suppressWarnings(cx);
   Parser<FullParseHandler, char16_t> parser(
       cx, &ec, cx->stackLimitForCurrentPrincipal(), options, chars.get(),

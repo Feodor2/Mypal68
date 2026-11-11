@@ -11,14 +11,13 @@
 #include "js/Class.h"
 #include "js/ErrorReport.h"
 #include "js/Exception.h"
-#include "js/friend/DumpFunctions.h"
 #include "js/TypeDecls.h"
 #include "js/Value.h"
-#include "js/Wrapper.h"
 #include "vm/JSFunction.h"
 #include "vm/ObjectOperations.h"
 
 #include "vm/JSObject-inl.h"
+#include "vm/Realm-inl.h"
 
 using namespace js;
 using namespace JS;

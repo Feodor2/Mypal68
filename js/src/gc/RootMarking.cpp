@@ -8,22 +8,17 @@
 
 #include "jstypes.h"
 
-#include "builtin/MapObject.h"
 #include "debugger/DebugAPI.h"
 #include "gc/ClearEdgesTracer.h"
 #include "gc/GCInternals.h"
-#include "gc/Marking.h"
+#include "gc/PublicIterators.h"
 #include "jit/JitFrames.h"
 #include "jit/JitRuntime.h"
-#include "js/HashTable.h"
 #include "js/ValueArray.h"
+#include "vm/BigIntType.h"
+#include "vm/Compartment.h"
 #include "vm/HelperThreadState.h"
 #include "vm/JSContext.h"
-#include "vm/JSONParser.h"
-
-#include "gc/Nursery-inl.h"
-#include "gc/PrivateIterators-inl.h"
-#include "vm/JSObject-inl.h"
 
 using namespace js;
 using namespace js::gc;
@@ -230,7 +225,7 @@ void js::gc::GCRuntime::traceRuntimeForMajorGC(JSTracer* trc,
 
   // We only need to trace atoms when we're marking; atoms are never moved by
   // compacting GC.
-  if (atomsZone->isGCMarking()) {
+  if (atomsZone()->isGCMarking()) {
     traceRuntimeAtoms(trc);
   }
 
@@ -403,7 +398,7 @@ IncrementalProgress GCRuntime::traceEmbeddingGrayRoots(JSTracer* trc,
 
 #ifdef DEBUG
 class AssertNoRootsTracer final : public JS::CallbackTracer {
-  void onChild(JS::GCCellPtr thing) override {
+  void onChild(JS::GCCellPtr thing, const char* name) override {
     MOZ_CRASH("There should not be any roots during runtime shutdown");
   }
 
@@ -420,6 +415,7 @@ void js::gc::GCRuntime::finishRoots() {
 
   rt->finishParserAtoms();
   rt->finishAtoms();
+  restoreSharedAtomsZone();
 
   rootsHash.ref().clear();
 

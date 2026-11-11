@@ -12,36 +12,28 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ThreadLocal.h"
 
-#if defined(XP_DARWIN)
-#  include <mach/mach.h>
-#elif defined(XP_UNIX)
-#  include <sys/resource.h>
-#endif  // defined(XP_DARWIN) || defined(XP_UNIX) || defined(XP_WIN)
 #include <locale.h>
 #include <string.h>
-#ifdef JS_CAN_CHECK_THREADSAFE_ACCESSES
-#  include <sys/mman.h>
-#endif
 
 #include "jsfriendapi.h"
 #include "jsmath.h"
 
 #include "frontend/CompilationStencil.h"
+#include "gc/GC.h"
 #include "gc/PublicIterators.h"
 #include "jit/IonCompileTask.h"
 #include "jit/JitRuntime.h"
 #include "jit/Simulator.h"
 #include "js/AllocationLogging.h"  // JS_COUNT_CTOR, JS_COUNT_DTOR
-#include "js/Date.h"
+#include "js/experimental/JSStencil.h"
+#include "js/experimental/SourceHook.h"
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/Interrupt.h"
 #include "js/MemoryMetrics.h"
-#include "js/SliceBudget.h"
 #include "js/Stack.h"  // JS::NativeStackLimitMin
 #include "js/Wrapper.h"
-#include "util/WindowsWrapper.h"
+#include "js/WrapperCallbacks.h"
 #include "vm/DateTime.h"
-#include "vm/JSAtom.h"
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
 #include "vm/PromiseObject.h"  // js::PromiseObject
@@ -49,7 +41,7 @@
 #include "wasm/WasmSignalHandlers.h"
 
 #include "debugger/DebugAPI-inl.h"
-#include "gc/GC-inl.h"
+#include "gc/ArenaList-inl.h"
 #include "vm/JSContext-inl.h"
 #include "vm/Realm-inl.h"
 
@@ -130,7 +122,6 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
       lcovOutput_(),
       jitRuntime_(nullptr),
       gc(thisFromCtor()),
-      gcInitialized(false),
       emptyString(nullptr),
 #if !JS_HAS_INTL_API
       thousandsSeparator(nullptr),
@@ -200,18 +191,6 @@ bool JSRuntime::init(JSContext* cx, uint32_t maxbytes) {
     return false;
   }
 
-  UniquePtr<Zone> atomsZone = MakeUnique<Zone>(this, Zone::AtomsZone);
-  if (!atomsZone || !atomsZone->init()) {
-    return false;
-  }
-
-  MOZ_ASSERT(atomsZone->isAtomsZone());
-  gc.atomsZone = atomsZone.release();
-
-  // The garbage collector depends on everything before this point being
-  // initialized.
-  gcInitialized = true;
-
   if (!InitRuntimeNumberState(this)) {
     return false;
   }
@@ -243,7 +222,7 @@ void JSRuntime::destroyRuntime() {
   // Clear all stencils from caches to remove ScriptDataTable entries.
   caches().purgeStencils();
 
-  if (gcInitialized) {
+  if (gc.wasInitialized()) {
     /*
      * Finish any in-progress GCs first.
      */
@@ -743,6 +722,13 @@ bool js::CurrentThreadCanAccessRuntime(const JSRuntime* rt) {
 bool js::CurrentThreadCanAccessZone(Zone* zone) {
   return CurrentThreadCanAccessRuntime(zone->runtime_);
 }
+
+#ifdef DEBUG
+bool js::CurrentThreadIsMainThread() {
+  JSContext* cx = TlsContext.get();
+  return cx && cx->isMainThreadContext();
+}
+#endif
 
 JS_PUBLIC_API void JS::SetJSContextProfilerSampleBufferRangeStart(
     JSContext* cx, uint64_t rangeStart) {

@@ -12,9 +12,8 @@
 
 #include "jstypes.h"  // JS_PUBLIC_API
 
-#include "js/CompileOptions.h"  // JS::CompileOptions, JS::ReadOnlyCompileOptions, JS::InstantiateOptions
 #include "js/RootingAPI.h"  // JS::Handle, JS::MutableHandle
-#include "js/Value.h"  // JS::Value and specializations of JS::*Handle-related types
+#include "js/TypeDecls.h"
 
 struct JS_PUBLIC_API JSContext;
 class JS_PUBLIC_API JSFunction;
@@ -26,6 +25,9 @@ union Utf8Unit;
 }
 
 namespace JS {
+
+class JS_PUBLIC_API InstantiateOptions;
+class JS_PUBLIC_API ReadOnlyCompileOptions;
 
 template <typename UnitT>
 class SourceText;
@@ -145,25 +147,6 @@ extern JS_PUBLIC_API JSScript* Compile(JSContext* cx,
 extern JS_PUBLIC_API JSScript* Compile(JSContext* cx,
                                        const ReadOnlyCompileOptions& options,
                                        SourceText<mozilla::Utf8Unit>& srcBuf);
-
-/**
- * Compile the provided script using the given options, and register an encoder
- * on is script source, such that all functions can be encoded as they are
- * parsed. This strategy is used to avoid blocking the main thread in a
- * non-interruptible way.
- *
- * See also JS::FinishIncrementalEncoding.
- *
- * Return the script on success, or return null on failure (usually with an
- * error reported)
- */
-extern JS_PUBLIC_API JSScript* CompileAndStartIncrementalEncoding(
-    JSContext* cx, const ReadOnlyCompileOptions& options,
-    SourceText<char16_t>& srcBuf);
-
-extern JS_PUBLIC_API JSScript* CompileAndStartIncrementalEncoding(
-    JSContext* cx, const ReadOnlyCompileOptions& options,
-    SourceText<mozilla::Utf8Unit>& srcBuf);
 
 /**
  * Compile the UTF-8 contents of the given file into a script.  It is an error

@@ -30,6 +30,7 @@
 
 #include "gc/ObjectKind-inl.h"
 #include "vm/NativeObject-inl.h"
+#include "wasm/WasmInstance-inl.h"
 
 using namespace js;
 using namespace js::jit;
@@ -2063,6 +2064,18 @@ bool WarpCacheIRTranspiler::emitStringFromCodePointResult(
   add(fromCodePoint);
 
   pushResult(fromCodePoint);
+  return true;
+}
+
+bool WarpCacheIRTranspiler::emitStringStartsWithResult(
+    StringOperandId strId, StringOperandId searchStrId) {
+  MDefinition* str = getOperand(strId);
+  MDefinition* searchStr = getOperand(searchStrId);
+
+  auto* startsWith = MStringStartsWith::New(alloc(), str, searchStr);
+  add(startsWith);
+
+  pushResult(startsWith);
   return true;
 }
 
@@ -4847,8 +4860,10 @@ bool WarpCacheIRTranspiler::emitCallWasmFunction(ObjOperandId calleeId,
              static_cast<int32_t>(callInfo_->argc()));
 #endif
   JSObject* instanceObject = tenuredObjectStubField(instanceOffset);
+  auto* wasmInstanceObj = &instanceObject->as<WasmInstanceObject>();
   const wasm::FuncExport* funcExport = wasmFuncExportField(funcExportOffset);
-  const wasm::FuncType& sig = funcExport->funcType();
+  const wasm::FuncType& sig =
+      wasmInstanceObj->instance().metadata().getFuncExportType(*funcExport);
 
   if (!updateCallInfo(callee, flags)) {
     return false;
@@ -4860,7 +4875,6 @@ bool WarpCacheIRTranspiler::emitCallWasmFunction(ObjOperandId calleeId,
 
   MOZ_ASSERT(callInfo_->argFormat() == CallInfo::ArgFormat::Standard);
 
-  auto* wasmInstanceObj = &instanceObject->as<WasmInstanceObject>();
   auto* call = MIonToWasmCall::New(alloc(), wasmInstanceObj, *funcExport);
   if (!call) {
     return false;

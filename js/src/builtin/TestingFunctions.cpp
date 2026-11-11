@@ -7,7 +7,6 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Casting.h"
 #include "mozilla/FloatingPoint.h"
-#include "vm/ErrorContext.h"
 #ifdef JS_HAS_INTL_API
 #  include "mozilla/intl/ICU4CLibrary.h"
 #  include "mozilla/intl/Locale.h"
@@ -42,7 +41,6 @@
 #include "fdlibm.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
-#include "jsmath.h"
 
 #ifdef JS_HAS_INTL_API
 #  include "builtin/intl/CommonFunctions.h"
@@ -50,7 +48,6 @@
 #  include "builtin/intl/SharedIntlData.h"
 #endif
 #include "builtin/Promise.h"
-#include "builtin/SelfHostingDefines.h"
 #include "builtin/TestingUtility.h"  // js::ParseCompileOptions, js::ParseDebugMetadata
 #include "frontend/BytecodeCompilation.h"  // frontend::CompileGlobalScriptToExtensibleStencil, frontend::DelazifyCanonicalScriptedFunction
 #include "frontend/BytecodeCompiler.h"  // frontend::ParseModuleToExtensibleStencil
@@ -73,7 +70,6 @@
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"
 #include "js/Date.h"
-#include "js/Debug.h"
 #include "js/experimental/CodeCoverage.h"      // js::GetCodeCoverageSummary
 #include "js/experimental/JSStencil.h"         // JS::Stencil
 #include "js/experimental/PCCountProfiling.h"  // JS::{Start,Stop}PCCountProfiling, JS::PurgePCCounts, JS::GetPCCountScript{Count,Summary,Contents}
@@ -88,7 +84,6 @@
 #include "js/Printf.h"
 #include "js/PropertyAndElement.h"  // JS_DefineProperties, JS_DefineProperty, JS_DefinePropertyById, JS_Enumerate, JS_GetProperty, JS_GetPropertyById, JS_HasProperty, JS_SetElement, JS_SetProperty
 #include "js/PropertySpec.h"
-#include "js/RegExpFlags.h"  // JS::RegExpFlag, JS::RegExpFlags
 #include "js/SourceText.h"
 #include "js/StableStringChars.h"
 #include "js/Stack.h"
@@ -104,13 +99,12 @@
 #include "util/DifferentialTesting.h"
 #include "util/StringBuffer.h"
 #include "util/Text.h"
-#include "vm/AsyncFunction.h"
-#include "vm/AsyncIteration.h"
+#include "vm/DateTime.h"
+#include "vm/ErrorContext.h"
 #include "vm/ErrorObject.h"
 #include "vm/GlobalObject.h"
 #include "vm/HelperThreadState.h"
 #include "vm/Interpreter.h"
-#include "vm/Iteration.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/PlainObject.h"    // js::PlainObject
@@ -128,7 +122,6 @@
 #include "wasm/WasmIonCompile.h"
 #include "wasm/WasmJS.h"
 #include "wasm/WasmModule.h"
-#include "wasm/WasmSignalHandlers.h"
 #include "wasm/WasmValType.h"
 #include "wasm/WasmValue.h"
 
@@ -153,8 +146,6 @@ using mozilla::Tuple;
 
 using JS::AutoStableStringChars;
 using JS::CompileOptions;
-using JS::RegExpFlag;
-using JS::RegExpFlags;
 using JS::SourceOwnership;
 using JS::SourceText;
 
@@ -544,6 +535,15 @@ static bool GetBuildConfiguration(JSContext* cx, unsigned argc, Value* vp) {
   value = BooleanValue(false);
 #endif
   if (!JS_SetProperty(cx, info, "new-set-methods", value)) {
+    return false;
+  }
+
+#ifdef ENABLE_DECORATORS
+  value = BooleanValue(true);
+#else
+  value = BooleanValue(false);
+#endif
+  if (!JS_SetProperty(cx, info, "decorators", value)) {
     return false;
   }
 
@@ -2627,7 +2627,7 @@ class HasChildTracer final : public JS::CallbackTracer {
   RootedValue child_;
   bool found_;
 
-  void onChild(JS::GCCellPtr thing) override {
+  void onChild(JS::GCCellPtr thing, const char* name) override {
     if (thing.asCell() == child_.toGCThing()) {
       found_ = true;
     }
@@ -6135,21 +6135,21 @@ static bool ShortestPaths(JSContext* cx, unsigned argc, Value* vp) {
   Vector<Vector<Vector<JS::ubi::EdgeName>>> names(cx);
 
   {
-    mozilla::Maybe<JS::AutoCheckCannotGC> maybeNoGC;
     mozilla::Maybe<JS::ubi::Node> maybeRoot;
 
-    JS::ubi::RootList rootList(cx, maybeNoGC, true);
+    JS::ubi::RootList rootList(cx, true);
     if (start.isNull()) {
-      if (!rootList.init()) {
+      auto [ok, nogc] = rootList.init();
+      (void) nogc; // Old compilers get anxious about nogc being unused.
+      if (!ok) {
         ReportOutOfMemory(cx);
         return false;
       }
       maybeRoot.emplace(&rootList);
     } else {
-      maybeNoGC.emplace(cx);
       maybeRoot.emplace(start);
     }
-    JS::AutoCheckCannotGC& noGC = maybeNoGC.ref();
+    JS::AutoCheckCannotGC noGC(cx);
 
     JS::ubi::NodeSet targets;
 
@@ -6557,7 +6557,8 @@ static bool CompileToStencil(JSContext* cx, uint32_t argc, Value* vp) {
     return false;
   }
 
-  if (!SetSourceOptions(cx, stencil->source, displayURL, sourceMapURL)) {
+  MainThreadErrorContext ec(cx);
+  if (!SetSourceOptions(cx, &ec, stencil->source, displayURL, sourceMapURL)) {
     return false;
   }
 
@@ -6694,22 +6695,24 @@ static bool CompileToStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
 
   /* Compile the script text to stencil. */
   MainThreadErrorContext ec(cx);
+  frontend::NoScopeBindingCache scopeCache;
   Rooted<frontend::CompilationInput> input(cx,
                                            frontend::CompilationInput(options));
   UniquePtr<frontend::ExtensibleCompilationStencil> stencil;
   if (isModule) {
     stencil = frontend::ParseModuleToExtensibleStencil(
-        cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), srcBuf);
+        cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), &scopeCache,
+        srcBuf);
   } else {
     stencil = frontend::CompileGlobalScriptToExtensibleStencil(
-        cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), srcBuf,
-        ScopeKind::Global);
+        cx, &ec, cx->stackLimitForCurrentPrincipal(), input.get(), &scopeCache,
+        srcBuf, ScopeKind::Global);
   }
   if (!stencil) {
     return false;
   }
 
-  if (!SetSourceOptions(cx, stencil->source, displayURL, sourceMapURL)) {
+  if (!SetSourceOptions(cx, &ec, stencil->source, displayURL, sourceMapURL)) {
     return false;
   }
 
@@ -6772,9 +6775,10 @@ static bool EvalStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
   }
 
   /* Prepare the CompilationStencil for decoding. */
+  MainThreadErrorContext ec(cx);
   Rooted<frontend::CompilationInput> input(cx,
                                            frontend::CompilationInput(options));
-  if (!input.get().initForGlobal(cx)) {
+  if (!input.get().initForGlobal(cx, &ec)) {
     return false;
   }
   frontend::CompilationStencil stencil(nullptr);
@@ -6782,7 +6786,8 @@ static bool EvalStencilXDR(JSContext* cx, uint32_t argc, Value* vp) {
   /* Deserialize the stencil from XDR. */
   JS::TranscodeRange xdrRange(xdrObj->buffer(), xdrObj->bufferLength());
   bool succeeded = false;
-  if (!stencil.deserializeStencils(cx, input.get(), xdrRange, &succeeded)) {
+  if (!stencil.deserializeStencils(cx, &ec, input.get(), xdrRange,
+                                   &succeeded)) {
     return false;
   }
   if (!succeeded) {
@@ -7974,7 +7979,8 @@ static bool GetICUOptions(JSContext* cx, unsigned argc, Value* vp) {
 
   intl::FormatBuffer<char16_t, intl::INITIAL_CHAR_BUFFER_SIZE> buf(cx);
 
-  if (auto ok = mozilla::intl::TimeZone::GetDefaultTimeZone(buf); ok.isErr()) {
+  if (auto ok = DateTimeInfo::timeZoneId(DateTimeInfo::ShouldRFP::No, buf);
+      ok.isErr()) {
     intl::ReportInternalError(cx, ok.unwrapErr());
     return false;
   }

@@ -34,6 +34,7 @@
 #include "js/ScalarType.h"  // js::Scalar::Type
 #include "js/Value.h"
 #include "js/Vector.h"
+#include "vm/BigIntType.h"
 #include "vm/EnvironmentObject.h"
 #include "vm/FunctionFlags.h"  // js::FunctionFlags
 #include "vm/JSContext.h"
@@ -2728,6 +2729,7 @@ class MCompare : public MBinaryInstruction, public ComparePolicy::Data {
   [[nodiscard]] MDefinition* tryFoldTypeOf(TempAllocator& alloc);
   [[nodiscard]] MDefinition* tryFoldCharCompare(TempAllocator& alloc);
   [[nodiscard]] MDefinition* tryFoldStringCompare(TempAllocator& alloc);
+  [[nodiscard]] MDefinition* tryFoldStringSubstring(TempAllocator& alloc);
 
  public:
   bool congruentTo(const MDefinition* ins) const override {
@@ -2736,6 +2738,34 @@ class MCompare : public MBinaryInstruction, public ComparePolicy::Data {
     }
     return compareType() == ins->toCompare()->compareType() &&
            jsop() == ins->toCompare()->jsop();
+  }
+
+  [[nodiscard]] bool writeRecoverData(
+      CompactBufferWriter& writer) const override;
+  bool canRecoverOnBailout() const override {
+    switch (compareType_) {
+      case Compare_Undefined:
+      case Compare_Null:
+      case Compare_Int32:
+      case Compare_UInt32:
+      case Compare_Double:
+      case Compare_Float32:
+      case Compare_String:
+      case Compare_Symbol:
+      case Compare_Object:
+      case Compare_BigInt:
+      case Compare_BigInt_Int32:
+      case Compare_BigInt_Double:
+      case Compare_BigInt_String:
+        return true;
+
+      case Compare_Int64:
+      case Compare_UInt64:
+      case Compare_UIntPtr:
+      case Compare_RefOrNull:
+        return false;
+    }
+    MOZ_CRASH("unexpected compare type");
   }
 };
 
@@ -4794,7 +4824,7 @@ class MMathFunction : public MUnaryInstruction,
 
   [[nodiscard]] bool writeRecoverData(
       CompactBufferWriter& writer) const override;
-  bool canRecoverOnBailout() const override;
+  bool canRecoverOnBailout() const override { return true; }
 
   ALLOW_CLONE(MMathFunction)
 };
@@ -10339,6 +10369,7 @@ class MIonToWasmCall final : public MVariadicInstruction,
   void initArg(size_t i, MDefinition* arg) { initOperand(i, arg); }
 
   WasmInstanceObject* instanceObject() const { return instanceObj_; }
+  wasm::Instance* instance() const { return &instanceObj_->instance(); }
   const wasm::FuncExport& funcExport() const { return funcExport_; }
   bool possiblyCalls() const override { return true; }
 #ifdef DEBUG

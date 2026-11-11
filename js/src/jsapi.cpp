@@ -14,6 +14,7 @@
 #include "mozilla/Sprintf.h"
 
 #include <algorithm>
+#include <cstdarg>
 #ifdef __linux__
 #  include <dlfcn.h>
 #endif
@@ -32,6 +33,7 @@
 #include "builtin/Promise.h"
 #include "builtin/Symbol.h"
 #include "frontend/BytecodeCompiler.h"
+#include "gc/GC.h"
 #include "gc/GCContext.h"
 #include "gc/Marking.h"
 #include "gc/PublicIterators.h"
@@ -55,7 +57,7 @@
 #include "js/Proxy.h"
 #include "js/ScriptPrivate.h"
 #include "js/StableStringChars.h"
-#include "js/Stack.h"  // JS::NativeStackSize, JS::NativeStackLimitMax
+#include "js/Stack.h"  // JS::NativeStackSize, JS::NativeStackLimitMax, JS::GetNativeStackLimit
 #include "js/StreamConsumer.h"
 #include "js/String.h"  // JS::MaxStringLength
 #include "js/Symbol.h"
@@ -84,6 +86,7 @@
 #include "vm/Runtime.h"
 #include "vm/SavedStacks.h"
 #include "vm/StringType.h"
+#include "vm/Time.h"
 #include "vm/ToSource.h"
 #include "vm/WrapperObject.h"
 #include "wasm/WasmModule.h"
@@ -1443,23 +1446,14 @@ static void SetNativeStackSize(JSContext* cx, JS::StackKind kind,
   // the stack grows downward toward zero. Let's set a limit just a bit above
   // this so that we catch an overflow before a Wasm trap occurs.
   cx->nativeStackLimit[kind] = 1024;
-#else  // __wasi__
-#  if JS_STACK_GROWTH_DIRECTION > 0
+#else   // __wasi__
   if (stackSize == 0) {
     cx->nativeStackLimit[kind] = JS::NativeStackLimitMax;
   } else {
-    MOZ_ASSERT(cx->nativeStackBase() <= size_t(-1) - stackSize);
-    cx->nativeStackLimit[kind] = cx->nativeStackBase() + stackSize - 1;
+    cx->nativeStackLimit[kind] =
+        JS::GetNativeStackLimit(cx->nativeStackBase(), stackSize - 1);
   }
-#  else   // stack grows up
-  if (stackSize == 0) {
-    cx->nativeStackLimit[kind] = JS::NativeStackLimitMax;
-  } else {
-    MOZ_ASSERT(cx->nativeStackBase() >= stackSize);
-    cx->nativeStackLimit[kind] = cx->nativeStackBase() - (stackSize - 1);
-  }
-#  endif  // stack grows down
-#endif    // !__wasi__
+#endif  // !__wasi__
 }
 
 JS_PUBLIC_API void JS_SetNativeStackQuota(
@@ -1467,6 +1461,7 @@ JS_PUBLIC_API void JS_SetNativeStackQuota(
     JS::NativeStackSize trustedScriptStackSize,
     JS::NativeStackSize untrustedScriptStackSize) {
   MOZ_ASSERT(!cx->activation());
+  MOZ_ASSERT(cx->isMainThreadContext());
 
   if (!trustedScriptStackSize) {
     trustedScriptStackSize = systemCodeStackSize;
@@ -1484,9 +1479,7 @@ JS_PUBLIC_API void JS_SetNativeStackQuota(
   SetNativeStackSize(cx, JS::StackForTrustedScript, trustedScriptStackSize);
   SetNativeStackSize(cx, JS::StackForUntrustedScript, untrustedScriptStackSize);
 
-  if (cx->isMainThreadContext()) {
-    cx->initJitStackLimit();
-  }
+  cx->initJitStackLimit();
 }
 
 /************************************************************************/
@@ -3823,12 +3816,12 @@ JSErrorNotes::JSErrorNotes() : notes_() {}
 JSErrorNotes::~JSErrorNotes() = default;
 
 static UniquePtr<JSErrorNotes::Note> CreateErrorNoteVA(
-    JSContext* cx, const char* filename, unsigned sourceId, unsigned lineno,
+    ErrorContext* ec, const char* filename, unsigned sourceId, unsigned lineno,
     unsigned column, JSErrorCallback errorCallback, void* userRef,
     const unsigned errorNumber, ErrorArgumentsType argumentsType, va_list ap) {
   auto note = MakeUnique<JSErrorNotes::Note>();
   if (!note) {
-    ReportOutOfMemory(cx);
+    ReportOutOfMemory(ec);
     return nullptr;
   }
 
@@ -3838,8 +3831,7 @@ static UniquePtr<JSErrorNotes::Note> CreateErrorNoteVA(
   note->lineno = lineno;
   note->column = column;
 
-  MainThreadErrorContext ec(cx);
-  if (!ExpandErrorArgumentsVA(&ec, errorCallback, userRef, errorNumber, nullptr,
+  if (!ExpandErrorArgumentsVA(ec, errorCallback, userRef, errorNumber, nullptr,
                               argumentsType, note.get(), ap)) {
     return nullptr;
   }
@@ -3847,26 +3839,50 @@ static UniquePtr<JSErrorNotes::Note> CreateErrorNoteVA(
   return note;
 }
 
+bool JSErrorNotes::addNoteVA(ErrorContext* ec, const char* filename,
+                             unsigned sourceId, unsigned lineno,
+                             unsigned column, JSErrorCallback errorCallback,
+                             void* userRef, const unsigned errorNumber,
+                             ErrorArgumentsType argumentsType, va_list ap) {
+  auto note =
+      CreateErrorNoteVA(ec, filename, sourceId, lineno, column, errorCallback,
+                        userRef, errorNumber, argumentsType, ap);
+
+  if (!note) {
+    return false;
+  }
+  if (!notes_.append(std::move(note))) {
+    ReportOutOfMemory(ec);
+    return false;
+  }
+  return true;
+}
+
 bool JSErrorNotes::addNoteASCII(JSContext* cx, const char* filename,
+                                unsigned sourceId, unsigned lineno,
+                                unsigned column, JSErrorCallback errorCallback,
+                                void* userRef, const unsigned errorNumber,
+                                ...) {
+  MainThreadErrorContext ec(cx);
+  va_list ap;
+  va_start(ap, errorNumber);
+  bool ok = addNoteVA(&ec, filename, sourceId, lineno, column, errorCallback,
+                      userRef, errorNumber, ArgumentsAreASCII, ap);
+  va_end(ap);
+  return ok;
+}
+
+bool JSErrorNotes::addNoteASCII(ErrorContext* ec, const char* filename,
                                 unsigned sourceId, unsigned lineno,
                                 unsigned column, JSErrorCallback errorCallback,
                                 void* userRef, const unsigned errorNumber,
                                 ...) {
   va_list ap;
   va_start(ap, errorNumber);
-  auto note =
-      CreateErrorNoteVA(cx, filename, sourceId, lineno, column, errorCallback,
-                        userRef, errorNumber, ArgumentsAreASCII, ap);
+  bool ok = addNoteVA(ec, filename, sourceId, lineno, column, errorCallback,
+                      userRef, errorNumber, ArgumentsAreASCII, ap);
   va_end(ap);
-
-  if (!note) {
-    return false;
-  }
-  if (!notes_.append(std::move(note))) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-  return true;
+  return ok;
 }
 
 bool JSErrorNotes::addNoteLatin1(JSContext* cx, const char* filename,
@@ -3874,42 +3890,51 @@ bool JSErrorNotes::addNoteLatin1(JSContext* cx, const char* filename,
                                  unsigned column, JSErrorCallback errorCallback,
                                  void* userRef, const unsigned errorNumber,
                                  ...) {
+  MainThreadErrorContext ec(cx);
   va_list ap;
   va_start(ap, errorNumber);
-  auto note =
-      CreateErrorNoteVA(cx, filename, sourceId, lineno, column, errorCallback,
-                        userRef, errorNumber, ArgumentsAreLatin1, ap);
+  bool ok = addNoteVA(&ec, filename, sourceId, lineno, column, errorCallback,
+                      userRef, errorNumber, ArgumentsAreLatin1, ap);
   va_end(ap);
+  return ok;
+}
 
-  if (!note) {
-    return false;
-  }
-  if (!notes_.append(std::move(note))) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-  return true;
+bool JSErrorNotes::addNoteLatin1(ErrorContext* ec, const char* filename,
+                                 unsigned sourceId, unsigned lineno,
+                                 unsigned column, JSErrorCallback errorCallback,
+                                 void* userRef, const unsigned errorNumber,
+                                 ...) {
+  va_list ap;
+  va_start(ap, errorNumber);
+  bool ok = addNoteVA(ec, filename, sourceId, lineno, column, errorCallback,
+                      userRef, errorNumber, ArgumentsAreLatin1, ap);
+  va_end(ap);
+  return ok;
 }
 
 bool JSErrorNotes::addNoteUTF8(JSContext* cx, const char* filename,
                                unsigned sourceId, unsigned lineno,
                                unsigned column, JSErrorCallback errorCallback,
                                void* userRef, const unsigned errorNumber, ...) {
+  MainThreadErrorContext ec(cx);
   va_list ap;
   va_start(ap, errorNumber);
-  auto note =
-      CreateErrorNoteVA(cx, filename, sourceId, lineno, column, errorCallback,
-                        userRef, errorNumber, ArgumentsAreUTF8, ap);
+  bool ok = addNoteVA(&ec, filename, sourceId, lineno, column, errorCallback,
+                      userRef, errorNumber, ArgumentsAreUTF8, ap);
   va_end(ap);
+  return ok;
+}
 
-  if (!note) {
-    return false;
-  }
-  if (!notes_.append(std::move(note))) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-  return true;
+bool JSErrorNotes::addNoteUTF8(ErrorContext* ec, const char* filename,
+                               unsigned sourceId, unsigned lineno,
+                               unsigned column, JSErrorCallback errorCallback,
+                               void* userRef, const unsigned errorNumber, ...) {
+  va_list ap;
+  va_start(ap, errorNumber);
+  bool ok = addNoteVA(ec, filename, sourceId, lineno, column, errorCallback,
+                      userRef, errorNumber, ArgumentsAreUTF8, ap);
+  va_end(ap);
+  return ok;
 }
 
 JS_PUBLIC_API size_t JSErrorNotes::length() { return notes_.length(); }

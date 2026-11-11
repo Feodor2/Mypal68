@@ -9,7 +9,6 @@
 
 #include "gc/Barrier.h"
 #include "gc/Marking.h"
-#include "vm/EnvironmentObject.h"
 #include "vm/GlobalObject.h"
 #include "vm/Iteration.h"
 

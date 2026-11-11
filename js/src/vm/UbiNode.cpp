@@ -5,26 +5,25 @@
 #include "js/UbiNode.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Range.h"
 
 #include <algorithm>
 
 #include "debugger/Debugger.h"
+#include "gc/GC.h"
 #include "jit/JitCode.h"
 #include "js/Debug.h"
 #include "js/TracingAPI.h"
 #include "js/TypeDecls.h"
 #include "js/UbiNodeUtils.h"
 #include "js/Utility.h"
-#include "js/Vector.h"
 #include "util/Text.h"
 #include "vm/BigIntType.h"
+#include "vm/Compartment.h"
 #include "vm/EnvironmentObject.h"
 #include "vm/GetterSetter.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
-#include "vm/JSScript.h"
 #include "vm/PropMap.h"
 #include "vm/Scope.h"
 #include "vm/Shape.h"
@@ -195,7 +194,7 @@ class EdgeVectorTracer final : public JS::CallbackTracer {
   // True if we should populate the edge's names.
   bool wantNames;
 
-  void onChild(JS::GCCellPtr thing) override {
+  void onChild(JS::GCCellPtr thing, const char* name) override {
     if (!okay) {
       return;
     }
@@ -213,8 +212,8 @@ class EdgeVectorTracer final : public JS::CallbackTracer {
     if (wantNames) {
       // Ask the tracer to compute an edge name for us.
       char buffer[1024];
-      context().getEdgeName(buffer, sizeof(buffer));
-      const char* name = buffer;
+      context().getEdgeName(name, buffer, sizeof(buffer));
+      name = buffer;
 
       // Convert the name to char16_t characters.
       name16 = js_pod_malloc<char16_t>(strlen(name) + 1);
@@ -359,38 +358,35 @@ const char16_t Concrete<js::RegExpShared>::concreteTypeName[] =
 namespace JS {
 namespace ubi {
 
-RootList::RootList(JSContext* cx, Maybe<AutoCheckCannotGC>& noGC,
-                   bool wantNames /* = false */)
-    : noGC(noGC), cx(cx), edges(), wantNames(wantNames) {}
+RootList::RootList(JSContext* cx, bool wantNames /* = false */)
+    : cx(cx), edges(), wantNames(wantNames), inited(false) {}
 
-bool RootList::init() {
+std::pair<bool, JS::AutoCheckCannotGC> RootList::init() {
   EdgeVectorTracer tracer(cx->runtime(), &edges, wantNames);
   js::TraceRuntime(&tracer);
-  if (!tracer.okay) {
-    return false;
-  }
-  noGC.emplace();
-  return true;
+  inited = tracer.okay;
+  return {tracer.okay, JS::AutoCheckCannotGC(cx)};
 }
 
-bool RootList::init(CompartmentSet& debuggees) {
+std::pair<bool, JS::AutoCheckCannotGC> RootList::init(
+    CompartmentSet& debuggees) {
   EdgeVector allRootEdges;
   EdgeVectorTracer tracer(cx->runtime(), &allRootEdges, wantNames);
 
   ZoneSet debuggeeZones;
   for (auto range = debuggees.all(); !range.empty(); range.popFront()) {
     if (!debuggeeZones.put(range.front()->zone())) {
-      return false;
+      return {false, JS::AutoCheckCannotGC(cx)};
     }
   }
 
   js::TraceRuntime(&tracer);
   if (!tracer.okay) {
-    return false;
+    return {false, JS::AutoCheckCannotGC(cx)};
   }
   js::gc::TraceIncomingCCWs(&tracer, debuggees);
   if (!tracer.okay) {
-    return false;
+    return {false, JS::AutoCheckCannotGC(cx)};
   }
 
   for (EdgeVector::Range r = allRootEdges.all(); !r.empty(); r.popFront()) {
@@ -407,15 +403,15 @@ bool RootList::init(CompartmentSet& debuggees) {
     }
 
     if (!edges.append(std::move(edge))) {
-      return false;
+      return {false, JS::AutoCheckCannotGC(cx)};
     }
   }
 
-  noGC.emplace();
-  return true;
+  inited = true;
+  return {true, JS::AutoCheckCannotGC(cx)};
 }
 
-bool RootList::init(HandleObject debuggees) {
+std::pair<bool, JS::AutoCheckCannotGC> RootList::init(HandleObject debuggees) {
   MOZ_ASSERT(debuggees && JS::dbg::IsDebugger(*debuggees));
   js::Debugger* dbg = js::Debugger::fromJSObject(debuggees.get());
 
@@ -424,12 +420,13 @@ bool RootList::init(HandleObject debuggees) {
   for (js::WeakGlobalObjectSet::Range r = dbg->allDebuggees(); !r.empty();
        r.popFront()) {
     if (!debuggeeCompartments.put(r.front()->compartment())) {
-      return false;
+      return {false, JS::AutoCheckCannotGC(cx)};
     }
   }
 
-  if (!init(debuggeeCompartments)) {
-    return false;
+  auto [ok, nogc] = init(debuggeeCompartments);
+  if (!ok) {
+    return {false, nogc};
   }
 
   // Ensure that each of our debuggee globals are in the root list.
@@ -437,15 +434,15 @@ bool RootList::init(HandleObject debuggees) {
        r.popFront()) {
     if (!addRoot(JS::ubi::Node(static_cast<JSObject*>(r.front())),
                  u"debuggee global")) {
-      return false;
+      return {false, nogc};
     }
   }
 
-  return true;
+  inited = true;
+  return {true, nogc};
 }
 
 bool RootList::addRoot(Node node, const char16_t* edgeName) {
-  MOZ_ASSERT(noGC.isSome());
   MOZ_ASSERT_IF(wantNames, edgeName);
 
   UniqueTwoByteChars name;

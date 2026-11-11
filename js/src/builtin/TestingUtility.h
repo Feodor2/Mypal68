@@ -5,16 +5,20 @@
 #ifndef builtin_TestingUtility_h
 #define builtin_TestingUtility_h
 
-#include "js/CompileOptions.h"  // JS::CompileOptions
-#include "js/RootingAPI.h"      // JS::Handle, JS::MutableHandle
-#include "js/Utility.h"         // JS::UniqueChars
+#include "js/RootingAPI.h"  // JS::Handle, JS::MutableHandle
+#include "js/Utility.h"     // JS::UniqueChars
 
 struct JSContext;
 class JSObject;
 class JSString;
 
+namespace JS {
+class JS_PUBLIC_API CompileOptions;
+}
+
 namespace js {
 
+class ErrorContext;
 class ScriptSource;
 
 // Populate `options` fields from `opt` object.
@@ -40,7 +44,8 @@ class ScriptSource;
     JS::MutableHandle<JSString*> displayURL,
     JS::MutableHandle<JSString*> sourceMapURL);
 
-[[nodiscard]] bool SetSourceOptions(JSContext* cx, ScriptSource* source,
+[[nodiscard]] bool SetSourceOptions(JSContext* cx, ErrorContext* ec,
+                                    ScriptSource* source,
                                     JS::Handle<JSString*> displayURL,
                                     JS::Handle<JSString*> sourceMapURL);
 

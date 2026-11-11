@@ -19,7 +19,6 @@
 
 #include "builtin/ModuleObject.h"  // ModuleObject, Handle<ModuleObject*>
 #include "frontend/ParserAtom.h"   // frontend::TaggedParserAtomIndex
-#include "gc/Allocator.h"          // AllowGC
 #include "gc/Barrier.h"            // HeapPtr
 #include "gc/Cell.h"               // TenuredCellWithNonGCPointer
 #include "js/GCPolicyAPI.h"        // GCPolicy, IgnoreGCPolicy
@@ -36,23 +35,18 @@
 #include "wasm/WasmJS.h"    // WasmInstanceObject
 
 class JSAtom;
-class JSFunction;
 class JSScript;
 class JSTracer;
 struct JSContext;
-
-namespace JS {
-class Zone;
-}  // namespace JS
 
 namespace js {
 
 class GenericPrinter;
 
 namespace frontend {
-struct CompilationAtomCache;
 class ScopeStencil;
 struct ScopeStencilRef;
+class RuntimeScopeBindingCache;
 }  // namespace frontend
 
 template <typename NameT>
@@ -126,7 +120,11 @@ class AbstractBindingName<JSAtom> {
   bool isTopLevelFunction() const { return bits_ & TopLevelFunctionFlag; }
 
  public:
-  void trace(JSTracer* trc);
+  void trace(JSTracer* trc) {
+    if (JSAtom* atom = name()) {
+      TraceManuallyBarrieredEdge(trc, &atom, "binding name");
+    }
+  }
 };
 
 template <>
@@ -188,6 +186,23 @@ class AbstractBindingName<frontend::TaggedParserAtomIndex> {
 };
 
 using BindingName = AbstractBindingName<JSAtom>;
+
+static inline void TraceBindingNames(JSTracer* trc, BindingName* names,
+                                     uint32_t length) {
+  for (uint32_t i = 0; i < length; i++) {
+    JSAtom* name = names[i].name();
+    MOZ_ASSERT(name);
+    TraceManuallyBarrieredEdge(trc, &name, "scope name");
+  }
+};
+static inline void TraceNullableBindingNames(JSTracer* trc, BindingName* names,
+                                             uint32_t length) {
+  for (uint32_t i = 0; i < length; i++) {
+    if (JSAtom* name = names[i].name()) {
+      TraceManuallyBarrieredEdge(trc, &name, "scope name");
+    }
+  }
+};
 
 const size_t ScopeDataAlignBytes = size_t(1) << gc::CellFlagBitsReservedForGC;
 
@@ -299,6 +314,7 @@ class Scope : public gc::TenuredCellWithNonGCPointer<BaseScopeData> {
   friend class GCMarker;
   friend class frontend::ScopeStencil;
   friend class js::AbstractBindingIter<JSAtom>;
+  friend class js::frontend::RuntimeScopeBindingCache;
 
  protected:
   // The raw data pointer, stored in the cell header.
@@ -1529,7 +1545,9 @@ class AbstractBindingIter<JSAtom> : public BaseAbstractBindingIter<JSAtom> {
 
   using Base::Base;
 
-  void trace(JSTracer* trc);
+  inline void trace(JSTracer* trc) {
+    TraceNullableBindingNames(trc, names_, length_);
+  }
 };
 
 template <>

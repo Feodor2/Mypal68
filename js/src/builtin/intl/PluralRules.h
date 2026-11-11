@@ -7,7 +7,6 @@
 
 #include "builtin/SelfHostingDefines.h"
 #include "js/Class.h"
-#include "js/RootingAPI.h"
 #include "vm/NativeObject.h"
 
 namespace mozilla::intl {

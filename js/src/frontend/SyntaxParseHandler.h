@@ -173,7 +173,7 @@ class SyntaxParseHandler {
   }
 
  public:
-  SyntaxParseHandler(JSContext* cx, CompilationState& compilationState) {
+  SyntaxParseHandler(ErrorContext* ec, CompilationState& compilationState) {
     MOZ_ASSERT(!compilationState.input.isDelazifying());
   }
 
@@ -330,6 +330,9 @@ class SyntaxParseHandler {
     return NodeGeneric;
   }
   ClassNodeType newClass(Node name, Node heritage, Node methodBlock,
+#ifdef ENABLE_DECORATORS
+                         ListNodeType decorators,
+#endif
                          const TokenPos& pos) {
     return NodeGeneric;
   }
@@ -383,12 +386,22 @@ class SyntaxParseHandler {
   }
   [[nodiscard]] Node newClassMethodDefinition(
       Node key, FunctionNodeType funNode, AccessorType atype, bool isStatic,
-      mozilla::Maybe<FunctionNodeType> initializerIfPrivate) {
+      mozilla::Maybe<FunctionNodeType> initializerIfPrivate
+#ifdef ENABLE_DECORATORS
+      ,
+      ListNodeType decorators
+#endif
+  ) {
     return NodeGeneric;
   }
   [[nodiscard]] Node newClassFieldDefinition(Node name,
                                              FunctionNodeType initializer,
-                                             bool isStatic) {
+                                             bool isStatic
+#ifdef ENABLE_DECORATORS
+                                             ,
+                                             ListNodeType decorators
+#endif
+  ) {
     return NodeGeneric;
   }
 

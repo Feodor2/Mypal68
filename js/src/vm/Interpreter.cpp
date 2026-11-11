@@ -25,7 +25,9 @@
 #include "builtin/Array.h"
 #include "builtin/Eval.h"
 #include "builtin/ModuleObject.h"
+#include "builtin/Object.h"
 #include "builtin/Promise.h"
+#include "gc/GC.h"
 #include "jit/AtomicOperations.h"
 #include "jit/BaselineJIT.h"
 #include "jit/Jit.h"
@@ -57,6 +59,7 @@
 #include "vm/SharedStencil.h"  // GCThingIndex
 #include "vm/StringType.h"
 #include "vm/ThrowMsgKind.h"  // ThrowMsgKind
+#include "vm/Time.h"
 #ifdef ENABLE_RECORD_TUPLE
 #  include "vm/RecordType.h"
 #  include "vm/TupleType.h"

@@ -408,7 +408,7 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
     // `atomIndices()` uses uint32_t instead of GCThingIndex, because
     // GCThingIndex isn't trivial type.
     if (!perScriptData().atomIndices()->add(p, atom, index.index)) {
-      ReportOutOfMemory(cx);
+      ReportOutOfMemory(ec);
       return false;
     }
 
@@ -810,7 +810,8 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   // emitIterator expects the iterable to already be on the stack.
   // It will replace that stack value with the corresponding iterator
   [[nodiscard]] bool emitIterator(
-      SelfHostedIter selfHostedIter = SelfHostedIter::Deny);
+      SelfHostedIter selfHostedIter = SelfHostedIter::Deny,
+      bool isIteratorMethodOnStack = false);
 
   [[nodiscard]] bool emitAsyncIterator(
       SelfHostedIter selfHostedIter = SelfHostedIter::Deny);
@@ -931,6 +932,7 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   [[nodiscard]] bool emitSelfHostedResumeGenerator(CallNode* callNode);
   [[nodiscard]] bool emitSelfHostedForceInterpreter();
   [[nodiscard]] bool emitSelfHostedAllowContentIter(CallNode* callNode);
+  [[nodiscard]] bool emitSelfHostedAllowContentIterWith(CallNode* callNode);
   [[nodiscard]] bool emitSelfHostedDefineDataProperty(CallNode* callNode);
   [[nodiscard]] bool emitSelfHostedGetPropertySuper(CallNode* callNode);
   [[nodiscard]] bool emitSelfHostedHasOwn(CallNode* callNode);

@@ -10,10 +10,9 @@
 #define vm_HelperThreads_h
 
 #include "mozilla/Variant.h"
-#include "NamespaceImports.h"
 
-#include "js/experimental/JSStencil.h"
 #include "js/OffThreadScriptCompilation.h"
+#include "js/shadow/Zone.h"
 #include "js/Transcoding.h"
 #include "js/UniquePtr.h"
 #include "threading/LockGuard.h"
@@ -26,7 +25,7 @@ union Utf8Unit;
 
 namespace JS {
 class OffThreadToken {};
-class ReadOnlyCompileOptions;
+class JS_PUBLIC_API ReadOnlyCompileOptions;
 class Zone;
 
 template <typename UnitT>
@@ -38,6 +37,10 @@ namespace js {
 class AutoLockHelperThreadState;
 struct PromiseHelperTask;
 class SourceCompressionTask;
+
+namespace frontend {
+struct CompilationStencil;
+}
 
 namespace gc {
 class GCRuntime;
@@ -243,9 +246,9 @@ JS::OffThreadToken* StartOffThreadDecodeMultiStencils(
 
 // Start off-thread delazification task, to race the delazification of inner
 // functions.
-[[nodiscard]] bool StartOffThreadDelazification(
-    JSContext* cx, const JS::ReadOnlyCompileOptions& options,
-    const frontend::CompilationStencil& stencil);
+void StartOffThreadDelazification(JSContext* cx,
+                                  const JS::ReadOnlyCompileOptions& options,
+                                  const frontend::CompilationStencil& stencil);
 
 // Drain the task queues and wait for all helper threads to finish running.
 //

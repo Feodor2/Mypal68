@@ -7,8 +7,6 @@
 
 #include "gc/Marking.h"
 
-#include "mozilla/Maybe.h"
-
 #include <type_traits>
 
 #include "gc/RelocationOverlay.h"
@@ -155,16 +153,16 @@ inline void PreWriteBarrierDuringFlattening(JSString* str) {
   MOZ_ASSERT(str);
   MOZ_ASSERT(!JS::RuntimeHeapIsMajorCollecting());
 
-  if (IsInsideNursery(str) || str->isPermanentAndMayBeShared()) {
+  if (IsInsideNursery(str)) {
     return;
   }
 
   auto* cell = reinterpret_cast<TenuredCell*>(str);
   JS::shadow::Zone* zone = cell->shadowZoneFromAnyThread();
 
-  MOZ_ASSERT(CurrentThreadCanAccessRuntime(zone->runtimeFromAnyThread()));
-
   if (zone->needsIncrementalBarrier()) {
+    MOZ_ASSERT(!str->isPermanentAndMayBeShared());
+    MOZ_ASSERT(CurrentThreadCanAccessRuntime(zone->runtimeFromAnyThread()));
     PerformIncrementalBarrierDuringFlattening(str);
   }
 }

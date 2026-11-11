@@ -7,7 +7,6 @@
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT, MOZ_CRASH
 #include "mozilla/MaybeOneOf.h"  // mozilla::MaybeOneOf
-#include "mozilla/RefPtr.h"      // RefPtr
 #include "mozilla/Result.h"      // mozilla::{Result, Ok, Err}, MOZ_TRY
 #include "mozilla/Utf8.h"        // mozilla::Utf8Unit
 
@@ -16,8 +15,7 @@
 #include <string.h>     // memcpy
 #include <type_traits>  // std::enable_if_t
 
-#include "js/AllocPolicy.h"     // ReportOutOfMemory
-#include "js/CompileOptions.h"  // JS::DecodeOptions
+#include "js/AllocPolicy.h"  // ReportOutOfMemory
 #include "js/Transcoding.h"  // JS::TranscodeResult, JS::TranscodeBuffer, JS::TranscodeRange, IsTranscodingBytecodeAligned, IsTranscodingBytecodeOffsetAligned
 #include "js/TypeDecls.h"    // JS::Latin1Char
 #include "js/UniquePtr.h"    // UniquePtr
@@ -35,15 +33,18 @@ using XDRResult = XDRResultT<mozilla::Ok>;
 
 class XDRBufferBase {
  public:
-  explicit XDRBufferBase(JSContext* cx, size_t cursor = 0)
-      : context_(cx), cursor_(cursor) {}
+  explicit XDRBufferBase(JSContext* cx, ErrorContext* ec, size_t cursor = 0)
+      : context_(cx), err_(ec), cursor_(cursor) {}
 
   JSContext* cx() const { return context_; }
+
+  ErrorContext* ec() const { return err_; }
 
   size_t cursor() const { return cursor_; }
 
  protected:
   JSContext* const context_;
+  ErrorContext* const err_;
   size_t cursor_;
 };
 
@@ -53,13 +54,14 @@ class XDRBuffer;
 template <>
 class XDRBuffer<XDR_ENCODE> : public XDRBufferBase {
  public:
-  XDRBuffer(JSContext* cx, JS::TranscodeBuffer& buffer, size_t cursor = 0)
-      : XDRBufferBase(cx, cursor), buffer_(buffer) {}
+  XDRBuffer(JSContext* cx, ErrorContext* ec, JS::TranscodeBuffer& buffer,
+            size_t cursor = 0)
+      : XDRBufferBase(cx, ec, cursor), buffer_(buffer) {}
 
   uint8_t* write(size_t n) {
     MOZ_ASSERT(n != 0);
     if (!buffer_.growByUninitialized(n)) {
-      ReportOutOfMemory(cx());
+      ReportOutOfMemory(ec());
       return nullptr;
     }
     uint8_t* ptr = &buffer_[cursor_];
@@ -72,7 +74,7 @@ class XDRBuffer<XDR_ENCODE> : public XDRBufferBase {
     if (extra) {
       size_t padding = 4 - extra;
       if (!buffer_.appendN(0, padding)) {
-        ReportOutOfMemory(cx());
+        ReportOutOfMemory(ec());
         return false;
       }
       cursor_ += padding;
@@ -99,13 +101,15 @@ class XDRBuffer<XDR_ENCODE> : public XDRBufferBase {
 template <>
 class XDRBuffer<XDR_DECODE> : public XDRBufferBase {
  public:
-  XDRBuffer(JSContext* cx, const JS::TranscodeRange& range)
-      : XDRBufferBase(cx), buffer_(range) {}
+  XDRBuffer(JSContext* cx, ErrorContext* ec, const JS::TranscodeRange& range)
+      : XDRBufferBase(cx, ec), buffer_(range) {}
 
   // This isn't used by XDRStencilDecoder.
   // Defined just for XDRState, shared with XDRStencilEncoder.
-  XDRBuffer(JSContext* cx, JS::TranscodeBuffer& buffer, size_t cursor = 0)
-      : XDRBufferBase(cx, cursor), buffer_(buffer.begin(), buffer.length()) {}
+  XDRBuffer(JSContext* cx, ErrorContext* ec, JS::TranscodeBuffer& buffer,
+            size_t cursor = 0)
+      : XDRBufferBase(cx, ec, cursor),
+        buffer_(buffer.begin(), buffer.length()) {}
 
   bool align32() {
     size_t extra = cursor_ % 4;
@@ -198,12 +202,13 @@ class XDRState : public XDRCoderBase {
   XDRBuffer<mode>* buf;
 
  public:
-  XDRState(JSContext* cx, JS::TranscodeBuffer& buffer, size_t cursor = 0)
-      : mainBuf(cx, buffer, cursor), buf(&mainBuf) {}
+  XDRState(JSContext* cx, ErrorContext* ec, JS::TranscodeBuffer& buffer,
+           size_t cursor = 0)
+      : mainBuf(cx, ec, buffer, cursor), buf(&mainBuf) {}
 
   template <typename RangeType>
-  XDRState(JSContext* cx, const RangeType& range)
-      : mainBuf(cx, range), buf(&mainBuf) {}
+  XDRState(JSContext* cx, ErrorContext* ec, const RangeType& range)
+      : mainBuf(cx, ec, range), buf(&mainBuf) {}
 
   // No default copy constructor or copying assignment, because |buf|
   // is an internal pointer.
@@ -213,6 +218,8 @@ class XDRState : public XDRCoderBase {
   ~XDRState() = default;
 
   JSContext* cx() const { return mainBuf.cx(); }
+
+  ErrorContext* ec() const { return mainBuf.ec(); }
 
   template <typename T = mozilla::Ok>
   XDRResultT<T> fail(JS::TranscodeResult code) {

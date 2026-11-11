@@ -5,9 +5,15 @@
 #ifndef gc_Zone_h
 #define gc_Zone_h
 
-#include "mozilla/Atomics.h"
-#include "mozilla/HashFunctions.h"
-#include "mozilla/SegmentedVector.h"
+#include "mozilla/Array.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
+#include "mozilla/LinkedList.h"
+#include "mozilla/MemoryReporting.h"
+#include "mozilla/PodOperations.h"
+#include "mozilla/TimeStamp.h"
+
+#include "jstypes.h"
 
 #include "ds/Bitmap.h"
 #include "gc/ArenaList.h"
@@ -20,7 +26,8 @@
 #include "js/GCHashTable.h"
 #include "js/Vector.h"
 #include "vm/AtomsTable.h"
-#include "vm/JSFunction.h"
+#include "vm/JSObject.h"
+#include "vm/JSScript.h"
 #include "vm/ShapeZone.h"
 
 namespace js {
@@ -363,10 +370,18 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
     return needsIncrementalBarrier() || wasGCStarted();
   }
 
-  bool shouldMarkInZone() const {
-    // We only need to check needsIncrementalBarrier() for the pre-barrier
-    // verifier. During marking isGCMarking() will always be true.
-    return needsIncrementalBarrier() || isGCMarking();
+  GCState initialMarkingState() const;
+
+  bool shouldMarkInZone(js::gc::MarkColor color) const {
+    // Check whether the zone is in one or both of the MarkBlackOnly and
+    // MarkBlackAndGray states, depending on the mark color. Also check for
+    // VerifyPreBarriers when the mark color is black (we don't do any gray
+    // marking when verifying pre-barriers).
+    if (color == js::gc::MarkColor::Black) {
+      return isGCMarkingOrVerifyingPreBarriers();
+    }
+
+    return isGCMarkingBlackAndGray();
   }
 
   // Was this zone collected in the last GC.

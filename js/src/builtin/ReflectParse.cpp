@@ -5,7 +5,6 @@
 /* JS reflection package. */
 
 #include "mozilla/DebugOnly.h"
-#include "mozilla/Maybe.h"
 
 #include <stdlib.h>
 #include <utility>
@@ -13,25 +12,27 @@
 #include "jspubtd.h"
 
 #include "builtin/Array.h"
-#include "builtin/Reflect.h"
 #include "frontend/CompilationStencil.h"
 #include "frontend/ModuleSharedContext.h"
 #include "frontend/ParseNode.h"
 #include "frontend/Parser.h"
-#include "js/CharacterEncoding.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/StackLimits.h"    // js::AutoCheckRecursionLimit
 #include "js/PropertyAndElement.h"    // JS_DefineFunction
 #include "js/StableStringChars.h"
-#include "vm/BigIntType.h"
+#include "vm/ErrorContext.h"
 #include "vm/FunctionFlags.h"  // js::FunctionFlags
+#include "vm/Interpreter.h"
 #include "vm/JSAtom.h"
 #include "vm/JSObject.h"
 #include "vm/ModuleBuilder.h"  // js::ModuleBuilder
 #include "vm/PlainObject.h"    // js::PlainObject
 #include "vm/RegExpObject.h"
 
+#include "vm/JSAtom-inl.h"
+#include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
+#include "vm/ObjectOperations-inl.h"
 
 using namespace js;
 using namespace js::frontend;
@@ -271,6 +272,7 @@ class NodeBuilder {
   using CallbackArray = RootedValueArray<AST_LIMIT>;
 
   JSContext* cx;
+  ErrorContext* ec;
   frontend::Parser<frontend::FullParseHandler, char16_t>* parser;
   bool saveLoc;            /* save source location information?     */
   char const* src;         /* source filename or null               */
@@ -279,8 +281,9 @@ class NodeBuilder {
   RootedValue userv;       /* user-specified builder object or null */
 
  public:
-  NodeBuilder(JSContext* c, bool l, char const* s)
+  NodeBuilder(JSContext* c, ErrorContext* e, bool l, char const* s)
       : cx(c),
+        ec(e),
         parser(nullptr),
         saveLoc(l),
         src(s),
@@ -777,7 +780,7 @@ bool NodeBuilder::createNode(ASTType type, TokenPos* pos,
 bool NodeBuilder::newArray(NodeVector& elts, MutableHandleValue dst) {
   const size_t len = elts.length();
   if (len > UINT32_MAX) {
-    ReportAllocationOverflow(cx);
+    ReportAllocationOverflow(ec);
     return false;
   }
   RootedObject array(cx, NewDenseFullyAllocatedArray(cx, uint32_t(len)));
@@ -1750,6 +1753,7 @@ namespace {
  */
 class ASTSerializer {
   JSContext* cx;
+  ErrorContext* ec;
   Parser<FullParseHandler, char16_t>* parser;
   NodeBuilder builder;
   DebugOnly<uint32_t> lineno;
@@ -1856,10 +1860,12 @@ class ASTSerializer {
   bool functionBody(ParseNode* pn, TokenPos* pos, MutableHandleValue dst);
 
  public:
-  ASTSerializer(JSContext* c, bool l, char const* src, uint32_t ln)
+  ASTSerializer(JSContext* c, ErrorContext* e, bool l, char const* src,
+                uint32_t ln)
       : cx(c),
+        ec(e),
         parser(nullptr),
-        builder(c, l, src)
+        builder(c, e, l, src)
 #ifdef DEBUG
         ,
         lineno(ln)
@@ -3627,7 +3633,7 @@ bool ASTSerializer::literal(ParseNode* pn, MutableHandleValue dst) {
 
     case ParseNodeKind::RegExpExpr: {
       RegExpObject* re = pn->as<RegExpLiteral>().create(
-          cx, parser->parserAtoms(),
+          cx, ec, parser->parserAtoms(),
           parser->getCompilationState().input.atomCache,
           parser->getCompilationState());
       if (!re) {
@@ -4100,7 +4106,8 @@ static bool reflect_parse(JSContext* cx, uint32_t argc, Value* vp) {
   }
 
   /* Extract the builder methods first to report errors before parsing. */
-  ASTSerializer serialize(cx, loc, filename.get(), lineno);
+  MainThreadErrorContext ec(cx);
+  ASTSerializer serialize(cx, &ec, loc, filename.get(), lineno);
   if (!serialize.init(builder)) {
     return false;
   }
@@ -4123,22 +4130,22 @@ static bool reflect_parse(JSContext* cx, uint32_t argc, Value* vp) {
 
   Rooted<CompilationInput> input(cx, CompilationInput(options));
   if (target == ParseGoal::Script) {
-    if (!input.get().initForGlobal(cx)) {
+    if (!input.get().initForGlobal(cx, &ec)) {
       return false;
     }
   } else {
-    if (!input.get().initForModule(cx)) {
+    if (!input.get().initForModule(cx, &ec)) {
       return false;
     }
   }
 
   LifoAllocScope allocScope(&cx->tempLifoAlloc());
+  frontend::NoScopeBindingCache scopeCache;
   frontend::CompilationState compilationState(cx, allocScope, input.get());
-  if (!compilationState.init(cx)) {
+  if (!compilationState.init(cx, &ec, &scopeCache)) {
     return false;
   }
 
-  MainThreadErrorContext ec(cx);
   Parser<FullParseHandler, char16_t> parser(
       cx, &ec, cx->stackLimitForCurrentPrincipal(), options,
       chars.begin().get(), chars.length(),
@@ -4162,7 +4169,7 @@ static bool reflect_parse(JSContext* cx, uint32_t argc, Value* vp) {
     uint32_t len = chars.length();
     SourceExtent extent =
         SourceExtent::makeGlobalExtent(len, options.lineno, options.column);
-    ModuleSharedContext modulesc(cx, options, builder, extent);
+    ModuleSharedContext modulesc(cx, &ec, options, builder, extent);
     pn = parser.moduleBody(&modulesc);
     if (!pn) {
       return false;

@@ -17,6 +17,8 @@ using CompartmentSet =
 
 namespace js {
 
+class TaggedProto;
+
 // Internal Tracing API
 //
 // Tracing is an abstract visitation of each edge in a JS heap graph.[1] The
@@ -53,6 +55,21 @@ namespace js {
 //     called "tracing" forever and changing it would be extremely difficult at
 //     this point.
 
+class GCMarker;
+
+// Debugging functions to check tracing invariants.
+#ifdef DEBUG
+template <typename T>
+void CheckTracedThing(JSTracer* trc, T* thing);
+template <typename T>
+void CheckTracedThing(JSTracer* trc, const T& thing);
+#else
+template <typename T>
+inline void CheckTracedThing(JSTracer* trc, T* thing) {}
+template <typename T>
+inline void CheckTracedThing(JSTracer* trc, const T& thing) {}
+#endif
+
 namespace gc {
 
 // Our barrier templates are parameterized on the pointer types so that we can
@@ -75,8 +92,21 @@ typename PtrBaseGCType<T>::type* ConvertToBase(T* thingp) {
 }
 
 // Internal methods to trace edges.
-template <typename T>
-bool TraceEdgeInternal(JSTracer* trc, T* thingp, const char* name);
+
+#define DEFINE_TRACE_FUNCTION(name, type, _1, _2)                        \
+  MOZ_ALWAYS_INLINE bool TraceEdgeInternal(JSTracer* trc, type** thingp, \
+                                           const char* name) {           \
+    CheckTracedThing(trc, *thingp);                                      \
+    trc->on##name##Edge(thingp, name);                                   \
+    return *thingp;                                                      \
+  }
+JS_FOR_EACH_TRACEKIND(DEFINE_TRACE_FUNCTION)
+#undef DEFINE_TRACE_FUNCTION
+
+bool TraceEdgeInternal(JSTracer* trc, Value* thingp, const char* name);
+bool TraceEdgeInternal(JSTracer* trc, jsid* thingp, const char* name);
+bool TraceEdgeInternal(JSTracer* trc, TaggedProto* thingp, const char* name);
+
 template <typename T>
 void TraceRangeInternal(JSTracer* trc, size_t len, T* vec, const char* name);
 template <typename T>
@@ -85,8 +115,10 @@ bool TraceWeakMapKeyInternal(JSTracer* trc, Zone* zone, T* thingp,
 
 #ifdef DEBUG
 void AssertRootMarkingPhase(JSTracer* trc);
+void AssertShouldMarkInZone(GCMarker* marker, gc::Cell* thing);
 #else
 inline void AssertRootMarkingPhase(JSTracer* trc) {}
+inline void AssertShouldMarkInZone(GCMarker* marker, gc::Cell* thing) {}
 #endif
 
 }  // namespace gc
@@ -349,47 +381,13 @@ void GetTraceThingInfo(char* buf, size_t bufsize, void* thing,
 
 // Overloaded function to call the correct GenericTracer method based on the
 // argument type.
-inline JSObject* DispatchToOnEdge(GenericTracer* trc, JSObject* obj) {
-  return trc->onObjectEdge(obj);
-}
-inline JSString* DispatchToOnEdge(GenericTracer* trc, JSString* str) {
-  return trc->onStringEdge(str);
-}
-inline JS::Symbol* DispatchToOnEdge(GenericTracer* trc, JS::Symbol* sym) {
-  return trc->onSymbolEdge(sym);
-}
-inline JS::BigInt* DispatchToOnEdge(GenericTracer* trc, JS::BigInt* bi) {
-  return trc->onBigIntEdge(bi);
-}
-inline js::BaseScript* DispatchToOnEdge(GenericTracer* trc,
-                                        js::BaseScript* script) {
-  return trc->onScriptEdge(script);
-}
-inline js::Shape* DispatchToOnEdge(GenericTracer* trc, js::Shape* shape) {
-  return trc->onShapeEdge(shape);
-}
-inline js::BaseShape* DispatchToOnEdge(GenericTracer* trc,
-                                       js::BaseShape* base) {
-  return trc->onBaseShapeEdge(base);
-}
-inline js::GetterSetter* DispatchToOnEdge(GenericTracer* trc,
-                                          js::GetterSetter* gs) {
-  return trc->onGetterSetterEdge(gs);
-}
-inline js::PropMap* DispatchToOnEdge(GenericTracer* trc, js::PropMap* map) {
-  return trc->onPropMapEdge(map);
-}
-inline js::jit::JitCode* DispatchToOnEdge(GenericTracer* trc,
-                                          js::jit::JitCode* code) {
-  return trc->onJitCodeEdge(code);
-}
-inline js::Scope* DispatchToOnEdge(GenericTracer* trc, js::Scope* scope) {
-  return trc->onScopeEdge(scope);
-}
-inline js::RegExpShared* DispatchToOnEdge(GenericTracer* trc,
-                                          js::RegExpShared* shared) {
-  return trc->onRegExpSharedEdge(shared);
-}
+#define DEFINE_DISPATCH_FUNCTION(name, type, _1, _2)         \
+  inline void DispatchToOnEdge(JSTracer* trc, type** thingp, \
+                               const char* name) {           \
+    trc->on##name##Edge(thingp, name);                       \
+  }
+JS_FOR_EACH_TRACEKIND(DEFINE_DISPATCH_FUNCTION)
+#undef DEFINE_DISPATCH_FUNCTION
 
 }  // namespace gc
 }  // namespace js

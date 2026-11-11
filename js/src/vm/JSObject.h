@@ -5,22 +5,15 @@
 #ifndef vm_JSObject_h
 #define vm_JSObject_h
 
-#include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 
 #include "jsfriendapi.h"
 
-#include "gc/Barrier.h"
-#include "js/Conversions.h"
 #include "js/friend/ErrorMessages.h"  // JSErrNum
 #include "js/GCVector.h"
-#include "js/HeapAPI.h"
 #include "js/shadow/Zone.h"  // JS::shadow::Zone
 #include "js/Wrapper.h"
-#include "vm/Printer.h"
-#include "vm/PropertyResult.h"
 #include "vm/Shape.h"
-#include "vm/StringType.h"
 
 namespace JS {
 struct ClassInfo;
@@ -41,7 +34,6 @@ class RelocationOverlay;
 
 class GlobalObject;
 class NativeObject;
-class NewObjectCache;
 
 enum class IntegrityLevel { Sealed, Frozen };
 
@@ -104,7 +96,6 @@ class JSObject
  private:
   friend class js::GCMarker;
   friend class js::GlobalObject;
-  friend class js::NewObjectCache;
   friend class js::Nursery;
   friend class js::gc::RelocationOverlay;
   friend bool js::PreventExtensions(JSContext* cx, JS::HandleObject obj,

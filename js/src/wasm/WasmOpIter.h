@@ -189,10 +189,13 @@ enum class OpKind {
   StructGet,
   StructSet,
   ArrayNew,
+  ArrayNewFixed,
   ArrayNewDefault,
+  ArrayNewData,
   ArrayGet,
   ArraySet,
   ArrayLen,
+  ArrayCopy,
   RefTest,
   RefCast,
   BrOnCast,
@@ -413,7 +416,16 @@ class MOZ_STACK_CLASS OpIter : private Policy {
     controlStack_.back().setPolymorphicBase();
   }
 
-  inline bool checkIsSubtypeOf(ValType actual, ValType expected);
+  inline bool checkIsSubtypeOf(FieldType actual, FieldType expected);
+
+  inline bool checkIsSubtypeOf(RefType actual, RefType expected) {
+    return checkIsSubtypeOf(ValType(actual).fieldType(),
+                            ValType(expected).fieldType());
+  }
+  inline bool checkIsSubtypeOf(ValType actual, ValType expected) {
+    return checkIsSubtypeOf(actual.fieldType(), expected.fieldType());
+  }
+
   inline bool checkIsSubtypeOf(ResultType params, ResultType results);
 
 #ifdef ENABLE_WASM_FUNCTION_REFERENCES
@@ -616,14 +628,25 @@ class MOZ_STACK_CLASS OpIter : private Policy {
                                    FieldExtension extension, Value* ptr);
   [[nodiscard]] bool readStructSet(uint32_t* typeIndex, uint32_t* fieldIndex,
                                    Value* ptr, Value* val);
-  [[nodiscard]] bool readArrayNew(uint32_t* typeIndex, Value* length,
+  [[nodiscard]] bool readArrayNew(uint32_t* typeIndex, Value* numElements,
                                   Value* argValue);
-  [[nodiscard]] bool readArrayNewDefault(uint32_t* typeIndex, Value* length);
+  [[nodiscard]] bool readArrayNewFixed(uint32_t* typeIndex,
+                                       uint32_t* numElements);
+  [[nodiscard]] bool readArrayNewDefault(uint32_t* typeIndex,
+                                         Value* numElements);
+  [[nodiscard]] bool readArrayNewData(uint32_t* typeIndex, uint32_t* segIndex,
+                                      Value* offset, Value* numElements);
+  [[nodiscard]] bool readArrayNewElem(uint32_t* typeIndex, uint32_t* segIndex,
+                                      Value* offset, Value* numElements);
   [[nodiscard]] bool readArrayGet(uint32_t* typeIndex, FieldExtension extension,
                                   Value* index, Value* ptr);
   [[nodiscard]] bool readArraySet(uint32_t* typeIndex, Value* val, Value* index,
                                   Value* ptr);
   [[nodiscard]] bool readArrayLen(uint32_t* typeIndex, Value* ptr);
+  [[nodiscard]] bool readArrayCopy(int32_t* elemSize, bool* elemsAreRefTyped,
+                                   Value* dstArray, Value* dstIndex,
+                                   Value* srcArray, Value* srcIndex,
+                                   Value* numElements);
   [[nodiscard]] bool readRefTest(uint32_t* typeIndex, Value* ref);
   [[nodiscard]] bool readRefCast(uint32_t* typeIndex, Value* ref);
   [[nodiscard]] bool readBrOnCast(uint32_t* relativeDepth, uint32_t* typeIndex,
@@ -735,7 +758,8 @@ class MOZ_STACK_CLASS OpIter : private Policy {
 };
 
 template <typename Policy>
-inline bool OpIter<Policy>::checkIsSubtypeOf(ValType actual, ValType expected) {
+inline bool OpIter<Policy>::checkIsSubtypeOf(FieldType actual,
+                                             FieldType expected) {
   return CheckIsSubtypeOf(d_, env_, lastOpcodeOffset(), actual, expected,
                           &cache_);
 }
@@ -3043,8 +3067,8 @@ inline bool OpIter<Policy>::readStructSet(uint32_t* typeIndex,
 }
 
 template <typename Policy>
-inline bool OpIter<Policy>::readArrayNew(uint32_t* typeIndex, Value* length,
-                                         Value* argValue) {
+inline bool OpIter<Policy>::readArrayNew(uint32_t* typeIndex,
+                                         Value* numElements, Value* argValue) {
   MOZ_ASSERT(Classify(op_) == OpKind::ArrayNew);
 
   if (!readArrayTypeIndex(typeIndex)) {
@@ -3053,7 +3077,7 @@ inline bool OpIter<Policy>::readArrayNew(uint32_t* typeIndex, Value* length,
 
   const ArrayType& arr = env_.types->arrayType(*typeIndex);
 
-  if (!popWithType(ValType::I32, length)) {
+  if (!popWithType(ValType::I32, numElements)) {
     return false;
   }
 
@@ -3065,8 +3089,36 @@ inline bool OpIter<Policy>::readArrayNew(uint32_t* typeIndex, Value* length,
 }
 
 template <typename Policy>
+inline bool OpIter<Policy>::readArrayNewFixed(uint32_t* typeIndex,
+                                              uint32_t* numElements) {
+  MOZ_ASSERT(Classify(op_) == OpKind::ArrayNewFixed);
+
+  if (!readArrayTypeIndex(typeIndex)) {
+    return false;
+  }
+
+  const ArrayType& arrayType = env_.types->arrayType(*typeIndex);
+
+  if (!readVarU32(numElements)) {
+    return false;
+  }
+
+  // For use with Ion, it may be necessary to add a third parameter
+  // of type `Vector<Value>*` into which this loop copies values.
+  ValType widenedElementType = arrayType.elementType_.widenToValType();
+  for (uint32_t i = 0; i < *numElements; i++) {
+    Value v;
+    if (!popWithType(widenedElementType, &v)) {
+      return false;
+    }
+  }
+
+  return push(RefType::fromTypeIndex(*typeIndex, false));
+}
+
+template <typename Policy>
 inline bool OpIter<Policy>::readArrayNewDefault(uint32_t* typeIndex,
-                                                Value* length) {
+                                                Value* numElements) {
   MOZ_ASSERT(Classify(op_) == OpKind::ArrayNewDefault);
 
   if (!readArrayTypeIndex(typeIndex)) {
@@ -3075,12 +3127,88 @@ inline bool OpIter<Policy>::readArrayNewDefault(uint32_t* typeIndex,
 
   const ArrayType& arr = env_.types->arrayType(*typeIndex);
 
-  if (!popWithType(ValType::I32, length)) {
+  if (!popWithType(ValType::I32, numElements)) {
     return false;
   }
 
   if (!arr.elementType_.isDefaultable()) {
     return fail("array must be defaultable");
+  }
+
+  return push(RefType::fromTypeIndex(*typeIndex, false));
+}
+
+template <typename Policy>
+inline bool OpIter<Policy>::readArrayNewData(uint32_t* typeIndex,
+                                             uint32_t* segIndex, Value* offset,
+                                             Value* numElements) {
+  MOZ_ASSERT(Classify(op_) == OpKind::ArrayNewData);
+
+  if (!readArrayTypeIndex(typeIndex)) {
+    return false;
+  }
+
+  if (!readVarU32(segIndex)) {
+    return fail("unable to read segment index");
+  }
+
+  const ArrayType& arrayType = env_.types->arrayType(*typeIndex);
+  FieldType elemType = arrayType.elementType_;
+  if (!elemType.isNumber() && !elemType.isPacked() && !elemType.isVector()) {
+    return fail("element type must be i8/i16/i32/i64/f32/f64/v128");
+  }
+  if (env_.dataCount.isNothing()) {
+    return fail("datacount section missing");
+  }
+  if (*segIndex >= *env_.dataCount) {
+    return fail("segment index is out of range");
+  }
+
+  if (!popWithType(ValType::I32, offset)) {
+    return false;
+  }
+  if (!popWithType(ValType::I32, numElements)) {
+    return false;
+  }
+
+  return push(RefType::fromTypeIndex(*typeIndex, false));
+}
+
+template <typename Policy>
+inline bool OpIter<Policy>::readArrayNewElem(uint32_t* typeIndex,
+                                             uint32_t* segIndex, Value* offset,
+                                             Value* numElements) {
+  MOZ_ASSERT(Classify(op_) == OpKind::ArrayNewData);
+
+  if (!readArrayTypeIndex(typeIndex)) {
+    return false;
+  }
+
+  if (!readVarU32(segIndex)) {
+    return fail("unable to read segment index");
+  }
+
+  const ArrayType& arrayType = env_.types->arrayType(*typeIndex);
+  FieldType dstElemType = arrayType.elementType_;
+  if (!dstElemType.isRefType()) {
+    return fail("element type is not a reftype");
+  }
+  if (*segIndex >= env_.elemSegments.length()) {
+    return fail("segment index is out of range");
+  }
+
+  const ElemSegment* elemSeg = env_.elemSegments[*segIndex];
+  RefType srcElemType = elemSeg->elemType;
+  // srcElemType needs to be a subtype (child) of dstElemType
+  if (!checkIsSubtypeOf(srcElemType, dstElemType.refType())) {
+    return fail("incompatible element types");
+  }
+
+  if (!popWithType(ValType::I32, offset)) {
+    return false;
+  }
+  if (!popWithType(ValType::I32, numElements)) {
+    return false;
   }
 
   return push(RefType::fromTypeIndex(*typeIndex, false));
@@ -3162,6 +3290,66 @@ inline bool OpIter<Policy>::readArrayLen(uint32_t* typeIndex, Value* ptr) {
   }
 
   return push(ValType::I32);
+}
+
+template <typename Policy>
+inline bool OpIter<Policy>::readArrayCopy(int32_t* elemSize,
+                                          bool* elemsAreRefTyped,
+                                          Value* dstArray, Value* dstIndex,
+                                          Value* srcArray, Value* srcIndex,
+                                          Value* numElements) {
+  // *elemSize is set to 1/2/4/8/16, and *elemsAreRefTyped is set to indicate
+  // *ref-typeness of elements.
+  MOZ_ASSERT(Classify(op_) == OpKind::ArrayCopy);
+
+  uint32_t dstTypeIndex, srcTypeIndex;
+  if (!readArrayTypeIndex(&dstTypeIndex)) {
+    return false;
+  }
+  if (!readArrayTypeIndex(&srcTypeIndex)) {
+    return false;
+  }
+
+  // `dstTypeIndex`/`srcTypeIndex` are ensured by the above to both be array
+  // types.  Reject if:
+  // * the dst array is not of mutable type
+  // * the element types are incompatible
+  const ArrayType& dstArrayType = env_.types->arrayType(dstTypeIndex);
+  const ArrayType& srcArrayType = env_.types->arrayType(srcTypeIndex);
+  FieldType dstElemType = dstArrayType.elementType_;
+  FieldType srcElemType = srcArrayType.elementType_;
+  if (!dstArrayType.isMutable_) {
+    return fail("destination array is not mutable");
+  }
+
+  if (!checkIsSubtypeOf(srcElemType, dstElemType)) {
+    return fail("incompatible element types");
+  }
+  bool dstIsRefType = dstElemType.isRefType();
+  MOZ_ASSERT(dstIsRefType == srcElemType.isRefType());
+
+  *elemSize = int32_t(dstElemType.size());
+  *elemsAreRefTyped = dstIsRefType;
+  MOZ_ASSERT(*elemSize >= 1 && *elemSize <= 16);
+  MOZ_ASSERT_IF(*elemsAreRefTyped, *elemSize == 4 || *elemSize == 8);
+
+  if (!popWithType(ValType::I32, numElements)) {
+    return false;
+  }
+  if (!popWithType(ValType::I32, srcIndex)) {
+    return false;
+  }
+  if (!popWithType(RefType::fromTypeIndex(srcTypeIndex, true), srcArray)) {
+    return false;
+  }
+  if (!popWithType(ValType::I32, dstIndex)) {
+    return false;
+  }
+  if (!popWithType(RefType::fromTypeIndex(dstTypeIndex, true), dstArray)) {
+    return false;
+  }
+
+  return true;
 }
 
 template <typename Policy>

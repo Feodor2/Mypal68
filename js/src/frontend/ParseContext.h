@@ -6,7 +6,6 @@
 #define frontend_ParseContext_h
 
 #include "ds/Nestable.h"
-#include "frontend/BytecodeCompiler.h"
 #include "frontend/ErrorReporter.h"
 #include "frontend/NameAnalysisTypes.h"  // DeclaredNameInfo, FunctionBoxVector
 #include "frontend/NameCollections.h"
@@ -120,7 +119,7 @@ class ParseContext : public Nestable<ParseContext> {
 
     bool maybeReportOOM(ParseContext* pc, bool result) {
       if (!result) {
-        ReportOutOfMemory(pc->sc()->cx_);
+        ReportOutOfMemory(pc->sc()->ec_);
       }
       return result;
     }
@@ -145,7 +144,7 @@ class ParseContext : public Nestable<ParseContext> {
         return false;
       }
 
-      return declared_.acquire(pc->sc()->cx_);
+      return declared_.acquire(pc->sc()->ec_);
     }
 
     bool isEmpty() const { return declared_->all().empty(); }
@@ -454,7 +453,7 @@ class ParseContext : public Nestable<ParseContext> {
     return *closedOverBindingsForLazy_;
   }
 
-  enum class BreakStatementError {
+  enum class BreakStatementError : uint8_t {
     // Unlabeled break must be inside loop or switch.
     ToughBreak,
     LabelNotFound,
@@ -465,7 +464,7 @@ class ParseContext : public Nestable<ParseContext> {
   [[nodiscard]] inline JS::Result<Ok, BreakStatementError> checkBreakStatement(
       TaggedParserAtomIndex label);
 
-  enum class ContinueStatementError {
+  enum class ContinueStatementError : uint8_t {
     NotInALoop,
     LabelNotFound,
   };

@@ -5,6 +5,7 @@
 #ifndef vm_ErrorContext_h
 #define vm_ErrorContext_h
 
+#include "js/ErrorReport.h"
 #include "vm/ErrorReporting.h"
 #include "vm/MallocProvider.h"
 
@@ -50,7 +51,11 @@ class ErrorContext {
   virtual void* onOutOfMemory(js::AllocFunction allocFunc, arena_id_t arena,
                               size_t nbytes, void* reallocPtr = nullptr) = 0;
   virtual void onAllocationOverflow() = 0;
+
+  virtual void onOutOfMemory() = 0;
   virtual void onOverRecursed() = 0;
+
+  virtual void recoverFromOutOfMemory() = 0;
 
   virtual const JSErrorFormatString* gcSafeCallback(
       JSErrorCallback callback, void* userRef, const unsigned errorNumber) = 0;
@@ -82,7 +87,11 @@ class MainThreadErrorContext : public ErrorContext {
   void* onOutOfMemory(js::AllocFunction allocFunc, arena_id_t arena,
                       size_t nbytes, void* reallocPtr = nullptr) override;
   void onAllocationOverflow() override;
+
+  void onOutOfMemory() override;
   void onOverRecursed() override;
+
+  void recoverFromOutOfMemory() override;
 
   const JSErrorFormatString* gcSafeCallback(
       JSErrorCallback callback, void* userRef,
@@ -120,7 +129,11 @@ class OffThreadErrorContext : public ErrorContext {
   void* onOutOfMemory(js::AllocFunction allocFunc, arena_id_t arena,
                       size_t nbytes, void* reallocPtr = nullptr) override;
   void onAllocationOverflow() override;
+
+  void onOutOfMemory() override;
   void onOverRecursed() override;
+
+  void recoverFromOutOfMemory() override;
 
   const JSErrorFormatString* gcSafeCallback(
       JSErrorCallback callback, void* userRef,

@@ -6,20 +6,45 @@
 
 loadRelativeToScript('callgraph.js');
 
-var theFunctionNameToFind;
-if (scriptArgs[0] == '--function' || scriptArgs[0] == '-f') {
-    theFunctionNameToFind = scriptArgs[1];
-    scriptArgs = scriptArgs.slice(2);
-}
+var options = parse_options([
+    {
+        name: '--function',
+        type: 'string'
+    },
+    {
+        name: 'typeInfo_filename',
+        type: 'string',
+        default: "typeInfo.txt"
+    },
+    {
+        name: 'callgraphOut_filename',
+        type: 'string',
+        default: "rawcalls.txt"
+    },
+    {
+        name: 'gcEdgesOut_filename',
+        type: 'string',
+        default: "gcEdges.json"
+    },
+    {
+        name: 'batch',
+        default: 1,
+        type: 'number'
+    },
+    {
+        name: 'numBatches',
+        default: 1,
+        type: 'number'
+    },
+]);
 
-var typeInfo_filename = scriptArgs[0] || "typeInfo.txt";
-var callgraphOut_filename = scriptArgs[1] || "callgraph.txt";
-
-var origOut = os.file.redirect(callgraphOut_filename);
+var origOut = os.file.redirect(options.callgraphOut_filename);
 
 var memoized = new Map();
 
 var unmangled2id = new Set();
+
+var gcEdges = {};
 
 // Insert a string into the name table and return the ID. Do not use for
 // functions, which must be handled specially.
@@ -101,7 +126,7 @@ function getAnnotations(functionName, body) {
 
 // Scan through a function body, pulling out all annotations and calls and
 // recording them in callgraph.txt.
-function processBody(functionName, body)
+function processBody(functionName, body, functionBodies)
 {
     if (!('PEdge' in body))
         return;
@@ -134,6 +159,13 @@ function processBody(functionName, body)
         var edgeAttrs = body.attrs[edge.Index[0]] | 0;
 
         for (var callee of getCallees(edge)) {
+            // Special-case some calls when we can derive more information about them, eg
+            // that they are a destructor that won't do anything.
+            if (callee.kind === "direct" && edgeIsNonReleasingDtor(body, edge, callee.name, functionBodies)) {
+                const block = blockIdentifier(body);
+                addToKeyedList(gcEdges, block, { Index: edge.Index, attrs: ATTR_GC_SUPPRESSED | ATTR_NONRELEASING });
+            }
+
             // Individual callees may have additional attrs. The only such
             // bit currently is that nsISupports.{AddRef,Release} are assumed
             // to never GC.
@@ -194,7 +226,7 @@ assert(ID.nogcfunc == functionId("(nogc-function)"));
 // garbage collection
 assert(ID.gc == functionId("(GC)"));
 
-var typeInfo = loadTypeInfo(typeInfo_filename);
+var typeInfo = loadTypeInfo(options.typeInfo_filename);
 
 loadTypes("src_comp.xdb");
 
@@ -252,8 +284,8 @@ printErr("Finished loading data structures");
 var minStream = xdb.min_data_stream();
 var maxStream = xdb.max_data_stream();
 
-if (theFunctionNameToFind) {
-    var index = xdb.lookup_key(theFunctionNameToFind);
+if (options.function) {
+    var index = xdb.lookup_key(options.function);
     if (!index) {
         printErr("Function not found");
         quit(1);
@@ -273,7 +305,7 @@ function process(functionName, functionBodies)
     }
 
     for (var body of functionBodies)
-        processBody(functionName, body);
+        processBody(functionName, body, functionBodies);
 
     // Not strictly necessary, but add an edge from the synthetic "(js-code)"
     // to RunScript to allow better stacks than just randomly selecting a
@@ -386,12 +418,19 @@ function process(functionName, functionBodies)
         printOnce(`D ${functionId("(js-code)")} ${functionId(functionName)}`);
 }
 
-for (var nameIndex = minStream; nameIndex <= maxStream; nameIndex++) {
+var start = batchStart(options.batch, options.numBatches, minStream, maxStream);
+var end = batchLast(options.batch, options.numBatches, minStream, maxStream);
+
+for (var nameIndex = start; nameIndex <= end; nameIndex++) {
     var name = xdb.read_key(nameIndex);
     var data = xdb.read_entry(name);
     process(name.readString(), JSON.parse(data.readString()));
     xdb.free_string(name);
     xdb.free_string(data);
 }
+
+os.file.close(os.file.redirect(options.gcEdgesOut_filename));
+
+print(JSON.stringify(gcEdges, null, 4));
 
 os.file.close(os.file.redirect(origOut));

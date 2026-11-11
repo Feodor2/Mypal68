@@ -35,6 +35,7 @@
 #include "util/Unicode.h"
 #include "vm/ArrayBufferObject.h"
 #include "vm/BytecodeUtil.h"
+#include "vm/Compartment.h"
 #include "vm/Iteration.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/ProxyObject.h"
@@ -6717,6 +6718,39 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStringFromCodePoint() {
   return AttachDecision::Attach;
 }
 
+AttachDecision InlinableNativeIRGenerator::tryAttachStringStartsWith() {
+  // Need one string argument.
+  if (argc_ != 1 || !args_[0].isString()) {
+    return AttachDecision::NoAction;
+  }
+
+  // Ensure |this| is a primitive string value.
+  if (!thisval_.isString()) {
+    return AttachDecision::NoAction;
+  }
+
+  // Initialize the input operand.
+  initializeInputOperand();
+
+  // Guard callee is the 'startsWith' native function.
+  emitNativeCalleeGuard();
+
+  // Guard this is a string.
+  ValOperandId thisValId =
+      writer.loadArgumentFixedSlot(ArgumentKind::This, argc_);
+  StringOperandId strId = writer.guardToString(thisValId);
+
+  // Guard string argument.
+  ValOperandId argId = writer.loadArgumentFixedSlot(ArgumentKind::Arg0, argc_);
+  StringOperandId searchStrId = writer.guardToString(argId);
+
+  writer.stringStartsWithResult(strId, searchStrId);
+  writer.returnFromIC();
+
+  trackAttached("StringStartsWith");
+  return AttachDecision::Attach;
+}
+
 AttachDecision InlinableNativeIRGenerator::tryAttachStringToLowerCase() {
   // Expecting no arguments.
   if (argc_ != 0) {
@@ -9301,12 +9335,10 @@ AttachDecision CallIRGenerator::tryAttachWasmCall(HandleFunction calleeFunc) {
   auto bestTier = inst.code().bestTier();
   const wasm::FuncExport& funcExport =
       inst.metadata(bestTier).lookupFuncExport(funcIndex);
+  const wasm::FuncType& sig = inst.metadata().getFuncExportType(funcExport);
 
   MOZ_ASSERT(!IsInsideNursery(inst.object()));
-  MOZ_ASSERT(funcExport.canHaveJitEntry(),
-             "Function should allow a Wasm JitEntry");
-
-  const wasm::FuncType& sig = funcExport.funcType();
+  MOZ_ASSERT(sig.canHaveJitEntry(), "Function should allow a Wasm JitEntry");
 
   // If there are too many arguments, don't optimize (we won't be able to store
   // the arguments in the LIR node).
@@ -9623,6 +9655,8 @@ AttachDecision InlinableNativeIRGenerator::tryAttachStub() {
       return tryAttachStringFromCharCode();
     case InlinableNative::StringFromCodePoint:
       return tryAttachStringFromCodePoint();
+    case InlinableNative::StringStartsWith:
+      return tryAttachStringStartsWith();
     case InlinableNative::StringToLowerCase:
       return tryAttachStringToLowerCase();
     case InlinableNative::StringToUpperCase:

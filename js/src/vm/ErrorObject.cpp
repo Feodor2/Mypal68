@@ -12,11 +12,9 @@
 #include <utility>
 
 #include "jsexn.h"
-#include "jsnum.h"
 #include "jspubtd.h"
 #include "NamespaceImports.h"
 
-#include "builtin/Array.h"
 #include "gc/AllocKind.h"
 #include "gc/GCContext.h"
 #include "js/CallArgs.h"
@@ -25,7 +23,6 @@
 #include "js/Class.h"
 #include "js/Conversions.h"
 #include "js/ErrorReport.h"
-#include "js/ForOfIterator.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/StackLimits.h"    // js::AutoCheckRecursionLimit
 #include "js/PropertySpec.h"
@@ -37,6 +34,7 @@
 #include "js/Wrapper.h"
 #include "util/StringBuffer.h"
 #include "vm/GlobalObject.h"
+#include "vm/Iteration.h"
 #include "vm/JSAtom.h"
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
@@ -50,10 +48,8 @@
 #include "vm/ToSource.h"       // js::ValueToSource
 #include "vm/WellKnownAtom.h"  // js_*_str
 
-#include "vm/ArrayObject-inl.h"
 #include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
-#include "vm/NativeObject-inl.h"
 #include "vm/ObjectOperations-inl.h"
 #include "vm/SavedStacks-inl.h"
 #include "vm/Shape-inl.h"
@@ -309,33 +305,6 @@ static bool Error(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-static ArrayObject* IterableToArray(JSContext* cx, HandleValue iterable) {
-  JS::ForOfIterator iterator(cx);
-  if (!iterator.init(iterable, JS::ForOfIterator::ThrowOnNonIterable)) {
-    return nullptr;
-  }
-
-  Rooted<ArrayObject*> array(cx, NewDenseEmptyArray(cx));
-  if (!array) {
-    return nullptr;
-  }
-
-  RootedValue nextValue(cx);
-  while (true) {
-    bool done;
-    if (!iterator.next(&nextValue, &done)) {
-      return nullptr;
-    }
-    if (done) {
-      return array;
-    }
-
-    if (!NewbornArrayPush(cx, array, nextValue)) {
-      return nullptr;
-    }
-  }
-}
-
 // AggregateError ( errors, message )
 static bool AggregateError(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -367,8 +336,8 @@ static bool AggregateError(JSContext* cx, unsigned argc, Value* vp) {
 
   // Step 4.
 
-  Rooted<ArrayObject*> errorsList(cx, IterableToArray(cx, args.get(0)));
-  if (!errorsList) {
+  Rooted<ArrayObject*> errorsList(cx);
+  if (!IterableToArray(cx, args.get(0), &errorsList)) {
     return false;
   }
 

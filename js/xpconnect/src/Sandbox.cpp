@@ -75,7 +75,6 @@
 #include "mozilla/dom/SelectionBinding.h"
 #include "mozilla/dom/TextDecoderBinding.h"
 #include "mozilla/dom/TextEncoderBinding.h"
-#include "mozilla/dom/UnionConversions.h"
 #include "mozilla/dom/URLBinding.h"
 #include "mozilla/dom/URLSearchParamsBinding.h"
 #include "mozilla/dom/XMLHttpRequest.h"
@@ -291,23 +290,6 @@ static bool SandboxCreateRTCIdentityProvider(JSContext* cx,
 }
 #endif
 
-static bool SetFetchRequestFromValue(JSContext* cx, RequestOrUSVString& request,
-                                     const MutableHandleValue& requestOrUrl) {
-  RequestOrUSVStringArgument requestHolder(request);
-  bool noMatch = true;
-  if (requestOrUrl.isObject() &&
-      !requestHolder.TrySetToRequest(cx, requestOrUrl, noMatch, false)) {
-    return false;
-  }
-  if (noMatch && !requestHolder.TrySetToUSVString(cx, requestOrUrl, noMatch)) {
-    return false;
-  }
-  if (noMatch) {
-    return false;
-  }
-  return true;
-}
-
 static bool SandboxFetch(JSContext* cx, JS::HandleObject scope,
                          const CallArgs& args) {
   if (args.length() < 1) {
@@ -315,14 +297,13 @@ static bool SandboxFetch(JSContext* cx, JS::HandleObject scope,
     return false;
   }
 
+  BindingCallContext callCx(cx, "fetch");
   RequestOrUSVString request;
-  if (!SetFetchRequestFromValue(cx, request, args[0])) {
-    JS_ReportErrorASCII(cx, "fetch requires a string or Request in argument 1");
+  if (!request.Init(callCx, args[0], "Argument 1")) {
     return false;
   }
   RootedDictionary<dom::RequestInit> options(cx);
-  BindingCallContext callCx(cx, "fetch");
-  if (!options.Init(cx, args.hasDefined(1) ? args[1] : JS::NullHandleValue,
+  if (!options.Init(callCx, args.hasDefined(1) ? args[1] : JS::NullHandleValue,
                     "Argument 2", false)) {
     return false;
   }
@@ -1484,7 +1465,7 @@ bool ParsePrincipal(JSContext* cx, HandleString codebase,
   // sandbox constructor. But creating a sandbox based on a string is a
   // deprecated API so no need to add features to it.
   nsCOMPtr<nsIPrincipal> prin =
-      BasePrincipal::CreateCodebasePrincipal(uri, aAttrs);
+      BasePrincipal::CreateContentPrincipal(uri, aAttrs);
   prin.forget(principal);
 
   if (!*principal) {
@@ -1567,7 +1548,7 @@ static bool GetExpandedPrincipal(JSContext* cx, HandleObject arrayObj,
   // check to make sure that it is the same as the OA found before.
   // In the second pass, we ignore objects, and use the OA found in pass 0
   // (or the previously computed OA if we have obtained it from the options)
-  // to construct codebase principals.
+  // to construct content principals.
   //
   // The effective OA selected above will also be set as the OA of the
   // expanded principal object.
@@ -1641,7 +1622,7 @@ static bool GetExpandedPrincipal(JSContext* cx, HandleObject arrayObj,
 
     nsCOMPtr<nsIPrincipal> principal;
     if (allowed.isString()) {
-      // In case of string let's try to fetch a codebase principal from it.
+      // In case of string let's try to fetch a content principal from it.
       RootedString str(cx, allowed.toString());
 
       // attrs here is either a default OriginAttributes in case the

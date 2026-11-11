@@ -7,23 +7,16 @@
 
 #include "mozilla/Array.h"
 
-#include <iterator>
-#include <new>
-
-#include "frontend/SourceNotes.h"  // SrcNote
+#include "frontend/ScopeBindingCache.h"
 #include "gc/Tracer.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
-#include "js/UniquePtr.h"
-#include "util/Memory.h"
-#include "vm/ArrayObject.h"
-#include "vm/JSAtom.h"
-#include "vm/JSObject.h"
 #include "vm/JSScript.h"
-#include "vm/NativeObject.h"
 #include "vm/StencilCache.h"  // js::StencilCache
 
 namespace js {
+
+class SrcNote;
 
 /*
  * GetSrcNote cache to avoid O(n^2) growth in finding a source note for a
@@ -260,6 +253,11 @@ class RuntimeCaches {
   EvalCache evalCache;
   StringToAtomCache stringToAtomCache;
 
+  // Delazification: Cache binding for runtime objects which are used during
+  // delazification to quickly resolve NameLocation of bindings without linearly
+  // iterating over the list of bindings.
+  frontend::RuntimeScopeBindingCache scopeCache;
+
   // This cache is used to store the result of delazification compilations which
   // might be happening off-thread. The main-thread will concurrently read the
   // content of this cache to avoid delazification, or fallback on running the
@@ -278,6 +276,7 @@ class RuntimeCaches {
     evalCache.clear();
     stringToAtomCache.purge();
     megamorphicCache.bumpGeneration();
+    scopeCache.purge();
   }
 
   void purgeStencils() { delazificationCache.clearAndDisable(); }

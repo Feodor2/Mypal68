@@ -8,7 +8,6 @@
 
 #include "vm/JSAtom-inl.h"
 
-#include "mozilla/EndianUtils.h"
 #include "mozilla/HashFunctions.h"  // mozilla::HashStringKnownLength
 #include "mozilla/RangedPtr.h"
 
@@ -39,7 +38,6 @@
 
 #include "gc/AtomMarking-inl.h"
 #include "vm/JSContext-inl.h"
-#include "vm/JSObject-inl.h"
 #include "vm/Realm-inl.h"
 #include "vm/StringType-inl.h"
 
@@ -214,10 +212,6 @@ bool JSRuntime::initializeAtoms(JSContext* cx) {
     return bool(atoms_);
   }
 
-#ifdef DEBUG
-  gc.assertNoPermanentSharedThings();
-#endif
-
   // NOTE: There's no GC, but `gc.freezePermanentSharedThings` below contains
   //       a function call that's marked as "Can GC".
   Rooted<UniquePtr<AtomSet>> atomSet(cx,
@@ -312,7 +306,9 @@ bool JSRuntime::initializeAtoms(JSContext* cx) {
     wellKnownSymbols = wks;
   }
 
-  gc.freezePermanentSharedThings();
+  if (!gc.freezeSharedAtomsZone()) {
+    return false;
+  }
 
   // The permanent atoms table has now been populated.
   permanentAtoms_ =

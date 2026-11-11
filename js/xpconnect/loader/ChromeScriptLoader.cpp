@@ -113,6 +113,9 @@ nsresult AsyncScriptCompiler::Start(
       nsIContentPolicy::TYPE_INTERNAL_CHROMEUTILS_COMPILED_SCRIPT);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // allow deprecated HTTP request from SystemPrincipal
+  nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+  loadInfo->SetAllowDeprecatedSystemRequests(true);
   nsCOMPtr<nsIIncrementalStreamLoader> loader;
   rv = NS_NewIncrementalStreamLoader(getter_AddRefs(loader), this);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -164,7 +167,7 @@ AsyncScriptCompiler::Run() {
     FinishCompile(jsapi.cx());
   } else {
     jsapi.Init();
-    JS::CancelCompileToStencilOffThread(jsapi.cx(), mToken);
+    JS::CancelOffThreadToken(jsapi.cx(), mToken);
 
     mPromise->MaybeReject(NS_ERROR_FAILURE);
   }
@@ -174,7 +177,7 @@ AsyncScriptCompiler::Run() {
 
 void AsyncScriptCompiler::FinishCompile(JSContext* aCx) {
   RefPtr<JS::Stencil> stencil =
-      JS::FinishCompileToStencilOffThread(aCx, mToken);
+      JS::FinishOffThreadStencil(aCx, mToken);
   if (stencil) {
     Finish(aCx, stencil);
   } else {

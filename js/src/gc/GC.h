@@ -9,20 +9,19 @@
 #ifndef gc_GC_h
 #define gc_GC_h
 
-#include "gc/AllocKind.h"
 #include "gc/GCEnum.h"
 #include "js/GCAPI.h"
 #include "js/HeapAPI.h"
 #include "js/RealmIterators.h"
-#include "js/RealmOptions.h"
 #include "js/TraceKind.h"
 
 class JSTracer;
 
-namespace js {
+namespace JS {
+class RealmOptions;
+}
 
-class FatInlineAtom;
-class NormalAtom;
+namespace js {
 
 class Nursery;
 
@@ -30,7 +29,6 @@ namespace gc {
 
 class Arena;
 class TenuredChunk;
-struct Cell;
 
 } /* namespace gc */
 

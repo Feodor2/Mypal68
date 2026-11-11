@@ -10,7 +10,6 @@
 #include "vm/EnvironmentObject.h"
 
 #include "vm/EnvironmentObject-inl.h"
-#include "vm/JSScript-inl.h"
 
 namespace js {
 

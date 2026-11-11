@@ -84,6 +84,7 @@
 #include "jit/TemplateObject-inl.h"
 #include "jit/VMFunctionList-inl.h"
 #include "vm/JSScript-inl.h"
+#include "wasm/WasmInstance-inl.h"
 
 using namespace js;
 using namespace js::jit;
@@ -9618,6 +9619,152 @@ static inline T CopyCharacters(const JSLinearString* str, size_t index) {
   return CopyCharacters<T>(str->twoByteChars(nogc) + index);
 }
 
+static void CompareCharacters(MacroAssembler& masm, Register input,
+                              const JSLinearString* str, Register output,
+                              JSOp op, Label* done, Label* oolEntry) {
+  MOZ_ASSERT(input != output);
+
+  size_t length = str->length();
+  MOZ_ASSERT(length > 0);
+
+  CharEncoding encoding =
+      str->hasLatin1Chars() ? CharEncoding::Latin1 : CharEncoding::TwoByte;
+  size_t encodingSize = encoding == CharEncoding::Latin1
+                            ? sizeof(JS::Latin1Char)
+                            : sizeof(char16_t);
+  size_t byteLength = length * encodingSize;
+
+  // Take the OOL path when the string is a rope or has a different character
+  // representation.
+  masm.branchIfRope(input, oolEntry);
+  if (encoding == CharEncoding::Latin1) {
+    masm.branchTwoByteString(input, oolEntry);
+  } else {
+    JS::AutoCheckCannotGC nogc;
+    if (mozilla::IsUtf16Latin1(str->twoByteRange(nogc))) {
+      masm.branchLatin1String(input, oolEntry);
+    } else {
+      // This case was already handled in the caller.
+#ifdef DEBUG
+      Label ok;
+      masm.branchTwoByteString(input, &ok);
+      masm.assumeUnreachable("Unexpected Latin-1 string");
+      masm.bind(&ok);
+#endif
+    }
+  }
+
+  // Load the input string's characters.
+  Register stringChars = output;
+  masm.loadStringChars(input, stringChars, encoding);
+
+  // Prefer a single compare-and-set instruction if possible.
+  if (byteLength == 1 || byteLength == 2 || byteLength == 4 ||
+      byteLength == 8) {
+    auto cond = JSOpToCondition(op, /* isSigned = */ false);
+
+    Address addr(stringChars, 0);
+    switch (byteLength) {
+      case 8: {
+        auto x = CopyCharacters<uint64_t>(str, 0);
+        masm.cmp64Set(cond, addr, Imm64(x), output);
+        break;
+      }
+      case 4: {
+        auto x = CopyCharacters<uint32_t>(str, 0);
+        masm.cmp32Set(cond, addr, Imm32(x), output);
+        break;
+      }
+      case 2: {
+        auto x = CopyCharacters<uint16_t>(str, 0);
+        masm.cmp16Set(cond, addr, Imm32(x), output);
+        break;
+      }
+      case 1: {
+        auto x = CopyCharacters<uint8_t>(str, 0);
+        masm.cmp8Set(cond, addr, Imm32(x), output);
+        break;
+      }
+    }
+  } else {
+    Label setNotEqualResult;
+
+    size_t pos = 0;
+    for (size_t stride : {8, 4, 2, 1}) {
+      while (byteLength >= stride) {
+        Address addr(stringChars, pos * encodingSize);
+        switch (stride) {
+          case 8: {
+            auto x = CopyCharacters<uint64_t>(str, pos);
+            masm.branch64(Assembler::NotEqual, addr, Imm64(x),
+                          &setNotEqualResult);
+            break;
+          }
+          case 4: {
+            auto x = CopyCharacters<uint32_t>(str, pos);
+            masm.branch32(Assembler::NotEqual, addr, Imm32(x),
+                          &setNotEqualResult);
+            break;
+          }
+          case 2: {
+            auto x = CopyCharacters<uint16_t>(str, pos);
+            masm.branch16(Assembler::NotEqual, addr, Imm32(x),
+                          &setNotEqualResult);
+            break;
+          }
+          case 1: {
+            auto x = CopyCharacters<uint8_t>(str, pos);
+            masm.branch8(Assembler::NotEqual, addr, Imm32(x),
+                         &setNotEqualResult);
+            break;
+          }
+        }
+
+        byteLength -= stride;
+        pos += stride / encodingSize;
+      }
+
+      // Prefer a single comparison for trailing bytes instead of doing
+      // multiple consecutive comparisons.
+      //
+      // For example when comparing against the string "example", emit two
+      // four-byte comparisons against "exam" and "mple" instead of doing
+      // three comparisons against "exam", "pl", and finally "e".
+      if (pos > 0 && byteLength > stride / 2) {
+        MOZ_ASSERT(stride == 8 || stride == 4);
+
+        size_t prev = pos - (stride - byteLength) / encodingSize;
+        Address addr(stringChars, prev * encodingSize);
+        switch (stride) {
+          case 8: {
+            auto x = CopyCharacters<uint64_t>(str, prev);
+            masm.branch64(Assembler::NotEqual, addr, Imm64(x),
+                          &setNotEqualResult);
+            break;
+          }
+          case 4: {
+            auto x = CopyCharacters<uint32_t>(str, prev);
+            masm.branch32(Assembler::NotEqual, addr, Imm32(x),
+                          &setNotEqualResult);
+            break;
+          }
+        }
+
+        // Break from the loop, because we've finished the complete string.
+        break;
+      }
+    }
+
+    // Falls through if both strings are equal.
+
+    masm.move32(Imm32(op == JSOp::Eq || op == JSOp::StrictEq), output);
+    masm.jump(done);
+
+    masm.bind(&setNotEqualResult);
+    masm.move32(Imm32(op == JSOp::Ne || op == JSOp::StrictNe), output);
+  }
+}
+
 void CodeGenerator::visitCompareSInline(LCompareSInline* lir) {
   JSOp op = lir->mir()->jsop();
   MOZ_ASSERT(IsEqualityOp(op));
@@ -9627,14 +9774,6 @@ void CodeGenerator::visitCompareSInline(LCompareSInline* lir) {
 
   const JSLinearString* str = lir->constant();
   MOZ_ASSERT(str->length() > 0);
-
-  size_t length = str->length();
-  CharEncoding encoding =
-      str->hasLatin1Chars() ? CharEncoding::Latin1 : CharEncoding::TwoByte;
-  size_t encodingSize = encoding == CharEncoding::Latin1
-                            ? sizeof(JS::Latin1Char)
-                            : sizeof(char16_t);
-  size_t byteLength = length * encodingSize;
 
   OutOfLineCode* ool = nullptr;
 
@@ -9668,7 +9807,7 @@ void CodeGenerator::visitCompareSInline(LCompareSInline* lir) {
                         &setNotEqualResult);
     }
 
-    if (encoding == CharEncoding::TwoByte) {
+    if (str->hasTwoByteChars()) {
       // Pure two-byte strings can't be equal to Latin-1 strings.
       JS::AutoCheckCannotGC nogc;
       if (!mozilla::IsUtf16Latin1(str->twoByteRange(nogc))) {
@@ -9686,137 +9825,8 @@ void CodeGenerator::visitCompareSInline(LCompareSInline* lir) {
   }
 
   masm.bind(&compareChars);
-  {
-    // Take the OOL path when the string is a rope or has a different character
-    // representation.
-    masm.branchIfRope(input, ool->entry());
-    if (encoding == CharEncoding::Latin1) {
-      masm.branchTwoByteString(input, ool->entry());
-    } else {
-      JS::AutoCheckCannotGC nogc;
-      if (mozilla::IsUtf16Latin1(str->twoByteRange(nogc))) {
-        masm.branchLatin1String(input, ool->entry());
-      } else {
-        // This case was already handled above.
-#ifdef DEBUG
-        Label ok;
-        masm.branchTwoByteString(input, &ok);
-        masm.assumeUnreachable("Unexpected Latin-1 string");
-        masm.bind(&ok);
-#endif
-      }
-    }
 
-    // Load the input string's characters.
-    Register stringChars = output;
-    masm.loadStringChars(input, stringChars, encoding);
-
-    // Prefer a single compare-and-set instruction if possible.
-    if (byteLength == 1 || byteLength == 2 || byteLength == 4 ||
-        byteLength == 8) {
-      auto cond = JSOpToCondition(op, /* isSigned = */ false);
-
-      Address addr(stringChars, 0);
-      switch (byteLength) {
-        case 8: {
-          auto x = CopyCharacters<uint64_t>(str, 0);
-          masm.cmp64Set(cond, addr, Imm64(x), output);
-          break;
-        }
-        case 4: {
-          auto x = CopyCharacters<uint32_t>(str, 0);
-          masm.cmp32Set(cond, addr, Imm32(x), output);
-          break;
-        }
-        case 2: {
-          auto x = CopyCharacters<uint16_t>(str, 0);
-          masm.cmp16Set(cond, addr, Imm32(x), output);
-          break;
-        }
-        case 1: {
-          auto x = CopyCharacters<uint8_t>(str, 0);
-          masm.cmp8Set(cond, addr, Imm32(x), output);
-          break;
-        }
-      }
-    } else {
-      Label setNotEqualResult;
-
-      size_t pos = 0;
-      for (size_t stride : {8, 4, 2, 1}) {
-        while (byteLength >= stride) {
-          Address addr(stringChars, pos * encodingSize);
-          switch (stride) {
-            case 8: {
-              auto x = CopyCharacters<uint64_t>(str, pos);
-              masm.branch64(Assembler::NotEqual, addr, Imm64(x),
-                            &setNotEqualResult);
-              break;
-            }
-            case 4: {
-              auto x = CopyCharacters<uint32_t>(str, pos);
-              masm.branch32(Assembler::NotEqual, addr, Imm32(x),
-                            &setNotEqualResult);
-              break;
-            }
-            case 2: {
-              auto x = CopyCharacters<uint16_t>(str, pos);
-              masm.branch16(Assembler::NotEqual, addr, Imm32(x),
-                            &setNotEqualResult);
-              break;
-            }
-            case 1: {
-              auto x = CopyCharacters<uint8_t>(str, pos);
-              masm.branch8(Assembler::NotEqual, addr, Imm32(x),
-                           &setNotEqualResult);
-              break;
-            }
-          }
-
-          byteLength -= stride;
-          pos += stride / encodingSize;
-        }
-
-        // Prefer a single comparison for trailing bytes instead of doing
-        // multiple consecutive comparisons.
-        //
-        // For example when comparing against the string "example", emit two
-        // four-byte comparisons against "exam" and "mple" instead of doing
-        // three comparisons against "exam", "pl", and finally "e".
-        if (pos > 0 && byteLength > stride / 2) {
-          MOZ_ASSERT(stride == 8 || stride == 4);
-
-          size_t prev = pos - (stride - byteLength) / encodingSize;
-          Address addr(stringChars, prev * encodingSize);
-          switch (stride) {
-            case 8: {
-              auto x = CopyCharacters<uint64_t>(str, prev);
-              masm.branch64(Assembler::NotEqual, addr, Imm64(x),
-                            &setNotEqualResult);
-              break;
-            }
-            case 4: {
-              auto x = CopyCharacters<uint32_t>(str, prev);
-              masm.branch32(Assembler::NotEqual, addr, Imm32(x),
-                            &setNotEqualResult);
-              break;
-            }
-          }
-
-          // Break from the loop, because we've finished the complete string.
-          break;
-        }
-      }
-
-      // Falls through if both strings are equal.
-
-      masm.move32(Imm32(op == JSOp::Eq || op == JSOp::StrictEq), output);
-      masm.jump(ool->rejoin());
-
-      masm.bind(&setNotEqualResult);
-      masm.move32(Imm32(op == JSOp::Ne || op == JSOp::StrictNe), output);
-    }
-  }
+  CompareCharacters(masm, input, str, output, op, ool->rejoin(), ool->entry());
 
   masm.bind(ool->rejoin());
 }
@@ -10898,6 +10908,81 @@ void CodeGenerator::visitFromCodePoint(LFromCodePoint* lir) {
   }
 
   masm.bind(done);
+}
+
+void CodeGenerator::visitStringStartsWith(LStringStartsWith* lir) {
+  pushArg(ToRegister(lir->searchString()));
+  pushArg(ToRegister(lir->string()));
+
+  using Fn = bool (*)(JSContext*, HandleString, HandleString, bool*);
+  callVM<Fn, js::StringStartsWith>(lir);
+}
+
+void CodeGenerator::visitStringStartsWithInline(LStringStartsWithInline* lir) {
+  Register string = ToRegister(lir->string());
+  Register output = ToRegister(lir->output());
+  Register temp = ToRegister(lir->temp0());
+
+  const JSLinearString* searchString = lir->searchString();
+
+  size_t length = searchString->length();
+  MOZ_ASSERT(length > 0);
+
+  using Fn = bool (*)(JSContext*, HandleString, HandleString, bool*);
+  auto* ool = oolCallVM<Fn, js::StringStartsWith>(
+      lir, ArgList(string, ImmGCPtr(searchString)), StoreRegisterTo(output));
+
+  masm.move32(Imm32(0), output);
+
+  // Can't be a prefix when the string is smaller than the search string.
+  masm.branch32(Assembler::Below, Address(string, JSString::offsetOfLength()),
+                Imm32(length), ool->rejoin());
+
+  // Unwind ropes at the start if possible.
+  Label compare;
+  masm.movePtr(string, temp);
+  masm.branchIfNotRope(temp, &compare);
+
+  Label unwindRope;
+  masm.bind(&unwindRope);
+  masm.loadRopeLeftChild(temp, output);
+  masm.movePtr(output, temp);
+
+  // If the left child is smaller than the search string, jump into the VM to
+  // linearize the string.
+  masm.branch32(Assembler::Below, Address(temp, JSString::offsetOfLength()),
+                Imm32(length), ool->entry());
+
+  // Otherwise keep unwinding ropes.
+  masm.branchIfRope(temp, &unwindRope);
+
+  masm.bind(&compare);
+
+  // If operands point to the same instance, it's trivially a prefix.
+  Label notPointerEqual;
+  masm.branchPtr(Assembler::NotEqual, temp, ImmGCPtr(searchString),
+                 &notPointerEqual);
+  masm.move32(Imm32(1), output);
+  masm.jump(ool->rejoin());
+  masm.bind(&notPointerEqual);
+
+  if (searchString->hasTwoByteChars()) {
+    // Pure two-byte strings can't be a prefix of Latin-1 strings.
+    JS::AutoCheckCannotGC nogc;
+    if (!mozilla::IsUtf16Latin1(searchString->twoByteRange(nogc))) {
+      Label compareChars;
+      masm.branchTwoByteString(temp, &compareChars);
+      masm.move32(Imm32(0), output);
+      masm.jump(ool->rejoin());
+      masm.bind(&compareChars);
+    }
+  }
+
+  // Otherwise start comparing character by character.
+  CompareCharacters(masm, temp, searchString, output, JSOp::Eq, ool->rejoin(),
+                    ool->entry());
+
+  masm.bind(ool->rejoin());
 }
 
 void CodeGenerator::visitStringConvertCase(LStringConvertCase* lir) {
@@ -16820,8 +16905,10 @@ void CodeGenerator::emitIonToWasmCallBase(LIonToWasmCallBase<NumDefs>* lir) {
     return;
   }
 
-  const wasm::FuncExport& funcExport = lir->mir()->funcExport();
-  const wasm::FuncType& sig = funcExport.funcType();
+  MIonToWasmCall* mir = lir->mir();
+  const wasm::FuncExport& funcExport = mir->funcExport();
+  const wasm::FuncType& sig =
+      mir->instance()->metadata().getFuncExportType(funcExport);
 
   WasmABIArgGenerator abi;
   for (size_t i = 0; i < lir->numOperands(); i++) {

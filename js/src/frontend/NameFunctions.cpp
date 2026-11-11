@@ -238,7 +238,7 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
           !buf_.append(parserAtoms_, funbox->displayAtom())) {
         return false;
       }
-      *retId = buf_.finishParserAtom(parserAtoms_);
+      *retId = buf_.finishParserAtom(parserAtoms_, ec_);
       return !!*retId;
     }
 
@@ -347,7 +347,7 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
       return true;
     }
 
-    *retId = buf_.finishParserAtom(parserAtoms_);
+    *retId = buf_.finishParserAtom(parserAtoms_, ec_);
     if (!*retId) {
       return false;
     }

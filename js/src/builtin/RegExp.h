@@ -5,7 +5,21 @@
 #ifndef builtin_RegExp_h
 #define builtin_RegExp_h
 
-#include "vm/RegExpObject.h"
+#include <stddef.h>
+#include <stdint.h>
+
+#include "NamespaceImports.h"
+
+#include "js/PropertySpec.h"
+#include "js/RootingAPI.h"
+#include "js/TypeDecls.h"
+#include "vm/RegExpShared.h"
+
+class JSLinearString;
+
+namespace JS {
+class Value;
+}
 
 /*
  * The following builtin natives are extern'd for pointer comparison in
@@ -13,6 +27,11 @@
  */
 
 namespace js {
+
+class ArrayObject;
+class MatchPairs;
+class RegExpObject;
+class RegExpStatics;
 
 JSObject* InitRegExpClass(JSContext* cx, HandleObject obj);
 

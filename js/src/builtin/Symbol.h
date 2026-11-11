@@ -6,7 +6,10 @@
 #define builtin_Symbol_h
 
 #include "vm/NativeObject.h"
-#include "vm/SymbolType.h"
+
+namespace JS {
+class Symbol;
+}
 
 namespace js {
 

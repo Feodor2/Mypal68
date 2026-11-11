@@ -12,23 +12,21 @@
 #include "mozilla/TextUtils.h"
 
 #include <string_view>  // std::basic_string_view
-#include <type_traits>  // std::is_same
 
 #include "jstypes.h"  // js::Bit
 
 #include "gc/Allocator.h"
-#include "gc/Barrier.h"
 #include "gc/Cell.h"
 #include "gc/MaybeRooted.h"
 #include "gc/Nursery.h"
 #include "gc/RelocationOverlay.h"
+#include "gc/StoreBuffer.h"
 #include "js/CharacterEncoding.h"
 #include "js/RootingAPI.h"
 #include "js/shadow/String.h"  // JS::shadow::String
 #include "js/String.h"         // JS::MaxStringLength
 #include "js/UniquePtr.h"
 #include "util/Text.h"
-#include "vm/Printer.h"
 
 class JSDependentString;
 class JSExtensibleString;
@@ -54,6 +52,7 @@ struct CompilationAtomCache;
 }  // namespace frontend
 
 class ArrayObject;
+class GenericPrinter;
 class PropertyName;
 class StringBuffer;
 

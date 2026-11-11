@@ -9,15 +9,12 @@
 
 #include "gc/FinalizationObservers.h"
 #include "gc/GCContext.h"
-#include "gc/Policy.h"
 #include "gc/PublicIterators.h"
 #include "jit/BaselineIC.h"
 #include "jit/BaselineJIT.h"
 #include "jit/Invalidation.h"
-#include "jit/Ion.h"
 #include "jit/JitZone.h"
 #include "vm/Runtime.h"
-#include "wasm/WasmInstance.h"
 
 #include "debugger/DebugAPI-inl.h"
 #include "gc/GC-inl.h"
@@ -192,7 +189,7 @@ JS::Zone::Zone(JSRuntime* rt, Kind kind)
   /* Ensure that there are no vtables to mess us up here. */
   MOZ_ASSERT(reinterpret_cast<JS::shadow::Zone*>(this) ==
              static_cast<JS::shadow::Zone*>(this));
-  MOZ_ASSERT_IF(isAtomsZone(), !rt->unsafeAtomsZone());
+  MOZ_ASSERT_IF(isAtomsZone(), rt->gc.zones().empty());
 
   updateGCStartThresholds(rt->gc);
 }
@@ -672,7 +669,7 @@ void* ZoneAllocator::onOutOfMemory(js::AllocFunction allocFunc,
 }
 
 void ZoneAllocator::reportAllocationOverflow() const {
-  js::ReportAllocationOverflow(nullptr);
+  js::ReportAllocationOverflow(static_cast<JSContext*>(nullptr));
 }
 
 ZoneList::ZoneList() : head(nullptr), tail(nullptr) {}
@@ -709,21 +706,42 @@ Zone* ZoneList::front() const {
   return head;
 }
 
-void ZoneList::append(Zone* zone) {
-  ZoneList singleZone(zone);
-  transferFrom(singleZone);
-}
+void ZoneList::prepend(Zone* zone) { prependList(ZoneList(zone)); }
 
-void ZoneList::transferFrom(ZoneList& other) {
+void ZoneList::append(Zone* zone) { appendList(ZoneList(zone)); }
+
+void ZoneList::prependList(ZoneList&& other) {
   check();
   other.check();
-  if (!other.head) {
+
+  if (other.isEmpty()) {
     return;
   }
 
   MOZ_ASSERT(tail != other.tail);
 
-  if (tail) {
+  if (!isEmpty()) {
+    other.tail->listNext_ = head;
+  } else {
+    tail = other.tail;
+  }
+  head = other.head;
+
+  other.head = nullptr;
+  other.tail = nullptr;
+}
+
+void ZoneList::appendList(ZoneList&& other) {
+  check();
+  other.check();
+
+  if (other.isEmpty()) {
+    return;
+  }
+
+  MOZ_ASSERT(tail != other.tail);
+
+  if (!isEmpty()) {
     tail->listNext_ = other.head;
   } else {
     head = other.head;

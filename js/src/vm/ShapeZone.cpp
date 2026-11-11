@@ -7,7 +7,6 @@
 #include "vm/ShapeZone.h"
 
 #include "gc/Marking-inl.h"
-#include "vm/JSContext-inl.h"
 #include "vm/Shape-inl.h"
 
 using namespace js;

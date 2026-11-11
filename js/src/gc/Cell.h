@@ -10,7 +10,6 @@
 
 #include <type_traits>
 
-#include "gc/GCEnum.h"
 #include "gc/Heap.h"
 #include "js/GCAnnotations.h"
 #include "js/shadow/Zone.h"  // JS::shadow::Zone
@@ -37,7 +36,6 @@ extern bool CurrentThreadIsIonCompiling();
 extern bool CurrentThreadIsGCMarking();
 extern bool CurrentThreadIsGCSweeping();
 extern bool CurrentThreadIsGCFinalizing();
-extern bool RuntimeIsVerifyingPreBarriers(JSRuntime* runtime);
 
 #endif
 
@@ -47,7 +45,6 @@ extern void TraceManuallyBarrieredGenericPointerEdge(JSTracer* trc,
 
 namespace gc {
 
-class Arena;
 enum class AllocKind : uint8_t;
 class StoreBuffer;
 class TenuredCell;
@@ -470,14 +467,9 @@ MOZ_ALWAYS_INLINE void ReadBarrier(T* thing) {
 }
 
 MOZ_ALWAYS_INLINE void ReadBarrierImpl(TenuredCell* thing) {
-  MOZ_ASSERT(!CurrentThreadIsIonCompiling());
-  MOZ_ASSERT(!CurrentThreadIsGCMarking());
+  MOZ_ASSERT(CurrentThreadIsMainThread());
+  MOZ_ASSERT(!JS::RuntimeHeapIsCollecting());
   MOZ_ASSERT(thing);
-
-  // Barriers should not be triggered on main thread while collecting.
-  mozilla::DebugOnly<JSRuntime*> runtime = thing->runtimeFromAnyThread();
-  MOZ_ASSERT_IF(CurrentThreadCanAccessRuntime(runtime),
-                !JS::RuntimeHeapIsCollecting());
 
   JS::shadow::Zone* shadowZone = thing->shadowZoneFromAnyThread();
   if (shadowZone->needsIncrementalBarrier()) {
@@ -486,8 +478,6 @@ MOZ_ALWAYS_INLINE void ReadBarrierImpl(TenuredCell* thing) {
   }
 
   if (thing->isMarkedGray()) {
-    // There shouldn't be anything marked gray unless we're on the main thread.
-    MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime));
     UnmarkGrayGCThingRecursively(thing);
   }
 }
@@ -502,19 +492,18 @@ MOZ_ALWAYS_INLINE void ReadBarrierImpl(Cell* thing) {
 }
 
 MOZ_ALWAYS_INLINE void PreWriteBarrierImpl(TenuredCell* thing) {
-  MOZ_ASSERT(!CurrentThreadIsIonCompiling());
-  MOZ_ASSERT(!CurrentThreadIsGCMarking());
+  MOZ_ASSERT(CurrentThreadIsMainThread() || CurrentThreadIsGCSweeping() ||
+             CurrentThreadIsGCFinalizing());
   MOZ_ASSERT(thing);
 
   // Barriers can be triggered on the main thread while collecting, but are
-  // disabled. For example, this happens when destroying HeapPtr wrappers.
+  // disabled. For example, this happens when sweeping HeapPtr wrappers. See
+  // AutoDisableBarriers.
 
   JS::shadow::Zone* zone = thing->shadowZoneFromAnyThread();
-  if (!zone->needsIncrementalBarrier()) {
-    return;
+  if (zone->needsIncrementalBarrier()) {
+    PerformIncrementalPreWriteBarrier(thing);
   }
-
-  PerformIncrementalPreWriteBarrier(thing);
 }
 
 MOZ_ALWAYS_INLINE void PreWriteBarrierImpl(Cell* thing) {

@@ -15,14 +15,11 @@
 #include "js/RootingAPI.h"          // JS::Rooted, JS::Handle
 #include "js/Utility.h"             // JS::UniqueChars
 #include "js/Value.h"               // JS::Value, JS::StringValue
-#include "vm/JSContext.h"           // JSContext
-#include "vm/JSObject.h"            // JSObject
-#include "vm/Realm.h"               // JSRealm
-#include "vm/StringType.h"          // JSString
+#include "vm/JSScript.h"
 
 bool js::ParseCompileOptions(JSContext* cx, JS::CompileOptions& options,
                              JS::Handle<JSObject*> opts,
-                             UniqueChars* fileNameBytes) {
+                             JS::UniqueChars* fileNameBytes) {
   JS::Rooted<JS::Value> v(cx);
   JS::Rooted<JSString*> s(cx);
 
@@ -175,24 +172,24 @@ bool js::ParseSourceOptions(JSContext* cx, JS::Handle<JSObject*> opts,
   return true;
 }
 
-bool js::SetSourceOptions(JSContext* cx, ScriptSource* source,
+bool js::SetSourceOptions(JSContext* cx, ErrorContext* ec, ScriptSource* source,
                           JS::Handle<JSString*> displayURL,
                           JS::Handle<JSString*> sourceMapURL) {
   if (displayURL && !source->hasDisplayURL()) {
-    UniqueTwoByteChars chars = JS_CopyStringCharsZ(cx, displayURL);
+    JS::UniqueTwoByteChars chars = JS_CopyStringCharsZ(cx, displayURL);
     if (!chars) {
       return false;
     }
-    if (!source->setDisplayURL(cx, std::move(chars))) {
+    if (!source->setDisplayURL(cx, ec, std::move(chars))) {
       return false;
     }
   }
   if (sourceMapURL && !source->hasSourceMapURL()) {
-    UniqueTwoByteChars chars = JS_CopyStringCharsZ(cx, sourceMapURL);
+    JS::UniqueTwoByteChars chars = JS_CopyStringCharsZ(cx, sourceMapURL);
     if (!chars) {
       return false;
     }
-    if (!source->setSourceMapURL(cx, std::move(chars))) {
+    if (!source->setSourceMapURL(cx, ec, std::move(chars))) {
       return false;
     }
   }
@@ -238,7 +235,7 @@ bool js::ParseDebugMetadata(JSContext* cx, JS::Handle<JSObject*> opts,
     if (!JS_DefineProperty(cx, infoObject, "element", elementValue, 0)) {
       return false;
     }
-    privateValue.set(ObjectValue(*infoObject));
+    privateValue.set(JS::ObjectValue(*infoObject));
   }
 
   if (!JS_GetProperty(cx, opts, "elementAttributeName", &v)) {

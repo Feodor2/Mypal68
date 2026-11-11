@@ -13,6 +13,7 @@
 #include <stdint.h>  // uint8_t, uint32_t
 
 #include "jspubtd.h"  // js::CurrentThreadCanAccessRuntime
+#include "jstypes.h"  // js::Bit
 
 struct JS_PUBLIC_API JSRuntime;
 class JS_PUBLIC_API JSTracer;
@@ -29,11 +30,13 @@ struct Zone {
     MarkBlackAndGray,
     Sweep,
     Finished,
-    Compact
+    Compact,
+    VerifyPreBarriers,
+
+    Limit
   };
 
   using BarrierState = mozilla::Atomic<uint32_t, mozilla::Relaxed>;
-  using AtomicGCState = mozilla::Atomic<uint32_t, mozilla::Relaxed>;
 
   enum Kind : uint8_t { NormalZone, AtomsZone, SystemZone };
 
@@ -41,13 +44,12 @@ struct Zone {
   JSRuntime* const runtime_;
   JSTracer* const barrierTracer_;  // A pointer to the JSRuntime's |gcMarker|.
   BarrierState needsIncrementalBarrier_;
-  AtomicGCState gcState_;
+  GCState gcState_ = NoGC;
   const Kind kind_;
 
   Zone(JSRuntime* runtime, JSTracer* barrierTracerArg, Kind kind)
       : runtime_(runtime), barrierTracer_(barrierTracerArg), kind_(kind) {
     MOZ_ASSERT(!needsIncrementalBarrier());
-    MOZ_ASSERT(!wasGCStarted());
   }
 
  public:
@@ -69,6 +71,16 @@ struct Zone {
   JSRuntime* runtimeFromAnyThread() const { return runtime_; }
 
   GCState gcState() const { return GCState(uint32_t(gcState_)); }
+
+  static constexpr uint32_t gcStateMask(GCState state) {
+    static_assert(uint32_t(Limit) < 32);
+    return js::Bit(state);
+  }
+
+  bool hasAnyGCState(uint32_t stateMask) const {
+    return js::Bit(gcState_) & stateMask;
+  }
+
   bool wasGCStarted() const { return gcState() != NoGC; }
   bool isGCPreparing() const { return gcState() == Prepare; }
   bool isGCMarkingBlackOnly() const { return gcState() == MarkBlackOnly; }
@@ -77,20 +89,31 @@ struct Zone {
   bool isGCFinished() const { return gcState() == Finished; }
   bool isGCCompacting() const { return gcState() == Compact; }
   bool isGCMarking() const {
-    return isGCMarkingBlackOnly() || isGCMarkingBlackAndGray();
+    return hasAnyGCState(gcStateMask(MarkBlackOnly) |
+                         gcStateMask(MarkBlackAndGray));
   }
   bool isGCMarkingOrSweeping() const {
-    return gcState() >= MarkBlackOnly && gcState() <= Sweep;
+    return hasAnyGCState(gcStateMask(MarkBlackOnly) |
+                         gcStateMask(MarkBlackAndGray) | gcStateMask(Sweep));
+  }
+  bool isGCMarkingOrVerifyingPreBarriers() const {
+    return hasAnyGCState(gcStateMask(MarkBlackOnly) |
+                         gcStateMask(MarkBlackAndGray) |
+                         gcStateMask(VerifyPreBarriers));
   }
   bool isGCSweepingOrCompacting() const {
-    return gcState() == Sweep || gcState() == Compact;
+    return hasAnyGCState(gcStateMask(Sweep) | gcStateMask(Compact));
   }
+  bool isVerifyingPreBarriers() const { return gcState() == VerifyPreBarriers; }
 
   bool isAtomsZone() const { return kind_ == AtomsZone; }
   bool isSystemZone() const { return kind_ == SystemZone; }
 
   static shadow::Zone* from(JS::Zone* zone) {
     return reinterpret_cast<shadow::Zone*>(zone);
+  }
+  static const shadow::Zone* from(const JS::Zone* zone) {
+    return reinterpret_cast<const shadow::Zone*>(zone);
   }
 };
 

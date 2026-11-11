@@ -83,6 +83,7 @@ namespace jit {
   _(BigIntDecrement)              \
   _(BigIntNegate)                 \
   _(BigIntBitNot)                 \
+  _(Compare)                      \
   _(Concat)                       \
   _(StringLength)                 \
   _(ArgumentsLength)              \
@@ -109,6 +110,7 @@ namespace jit {
   _(RegExpSearcher)               \
   _(RegExpTester)                 \
   _(StringReplace)                \
+  _(Substr)                       \
   _(TypeOf)                       \
   _(TypeOfName)                   \
   _(ToDouble)                     \
@@ -473,6 +475,16 @@ class RBigIntBitNot final : public RInstruction {
                              SnapshotIterator& iter) const override;
 };
 
+class RCompare final : public RInstruction {
+  JSOp jsop_;
+
+ public:
+  RINSTRUCTION_HEADER_NUM_OP_(Compare, 2)
+
+  [[nodiscard]] bool recover(JSContext* cx,
+                             SnapshotIterator& iter) const override;
+};
+
 class RConcat final : public RInstruction {
  public:
   RINSTRUCTION_HEADER_NUM_OP_(Concat, 2)
@@ -694,6 +706,14 @@ class RStringReplace final : public RInstruction {
 
  public:
   RINSTRUCTION_HEADER_NUM_OP_(StringReplace, 3)
+
+  [[nodiscard]] bool recover(JSContext* cx,
+                             SnapshotIterator& iter) const override;
+};
+
+class RSubstr final : public RInstruction {
+ public:
+  RINSTRUCTION_HEADER_NUM_OP_(Substr, 3)
 
   [[nodiscard]] bool recover(JSContext* cx,
                              SnapshotIterator& iter) const override;

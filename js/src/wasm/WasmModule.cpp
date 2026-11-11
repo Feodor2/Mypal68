@@ -25,6 +25,7 @@
 #include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_DefinePropertyById
 #include "js/StreamConsumer.h"
 #include "threading/LockGuard.h"
+#include "threading/Thread.h"
 #include "vm/HelperThreadState.h"  // Tier2GeneratorTask
 #include "vm/PlainObject.h"        // js::PlainObject
 #include "wasm/WasmBaselineCompile.h"
@@ -205,7 +206,8 @@ bool Module::finishTier2(const LinkData& linkData2,
     }
 
     Maybe<size_t> stub2Index;
-    if (!stubs2->createTier2(funcExportIndices, *borrowedTier2, &stub2Index)) {
+    if (!stubs2->createTier2(funcExportIndices, metadata(), *borrowedTier2,
+                             &stub2Index)) {
       return false;
     }
 
@@ -543,10 +545,12 @@ bool Module::instantiateFunctions(JSContext* cx,
     Instance& instance = ExportedFunctionToInstance(f);
     Tier otherTier = instance.code().stableTier();
 
-    const FuncExport& funcExport =
-        instance.metadata(otherTier).lookupFuncExport(funcIndex);
+    const FuncType& exportFuncType = instance.metadata().getFuncExportType(
+        instance.metadata(otherTier).lookupFuncExport(funcIndex));
+    const FuncType& importFuncType =
+        metadata().getFuncImportType(metadata(tier).funcImports[i]);
 
-    if (funcExport.funcType() != metadata(tier).funcImports[i].funcType()) {
+    if (exportFuncType != importFuncType) {
       const Import& import = FindImportFunction(imports_, i);
       UniqueChars importModuleName = import.module.toQuotedString(cx);
       UniqueChars importFieldName = import.field.toQuotedString(cx);

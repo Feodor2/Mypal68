@@ -9,7 +9,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Span.h"
-#include "mozilla/TextUtils.h"
 
 #include <stddef.h>
 

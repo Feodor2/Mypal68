@@ -16,8 +16,10 @@
 #include "jit/JitRealm.h"
 #include "js/HeapAPI.h"
 #include "js/Value.h"
+#include "util/DifferentialTesting.h"
 #include "vm/HelperThreads.h"
 #include "vm/Realm.h"
+#include "vm/Scope.h"
 
 #include "gc/Marking-inl.h"
 #include "vm/GeckoProfiler-inl.h"
@@ -214,8 +216,14 @@ JS::TraceKind JS::GCCellPtr::outOfLineKind() const {
 JS_PUBLIC_API void JS::PrepareZoneForGC(JSContext* cx, Zone* zone) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);
-  MOZ_ASSERT(cx->runtime()->gc.hasZone(zone));
 
+  // If we got the zone from a shared atom, we may have the wrong atoms zone
+  // here.
+  if (zone->isAtomsZone()) {
+    zone = cx->runtime()->atomsZone();
+  }
+
+  MOZ_ASSERT(cx->runtime()->gc.hasZone(zone));
   zone->scheduleGC();
 }
 
@@ -722,6 +730,10 @@ const char* StateName(JS::Zone::GCState state) {
       return "Finished";
     case JS::Zone::Compact:
       return "Compact";
+    case JS::Zone::VerifyPreBarriers:
+      return "VerifyPreBarriers";
+    case JS::Zone::Limit:
+      break;
   }
   MOZ_CRASH("Invalid Zone::GCState enum value");
 }

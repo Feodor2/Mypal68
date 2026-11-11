@@ -2,6 +2,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 
 from sixgill import Body
 from collections import defaultdict, namedtuple
@@ -84,7 +85,7 @@ class Test(object):
         )
         return json.loads(output)
 
-    def run_analysis_script(self, phase, upto=None):
+    def run_analysis_script(self, startPhase, upto=None):
         open("defaults.py", "w").write(
             """\
 analysis_scriptdir = '{scriptdir}'
@@ -94,12 +95,13 @@ sixgill_bin = '{bindir}'
             )
         )
         cmd = [
+            sys.executable,
             os.path.join(scriptdir, "analyze.py"),
             "-v" if self.verbose else "-q",
-            phase,
         ]
+        cmd += ["--first", startPhase]
         if upto:
-            cmd += ["--upto", upto]
+            cmd += ["--last", upto]
         cmd.append("--source=%s" % self.indir)
         cmd.append("--objdir=%s" % self.outdir)
         cmd.append("--js=%s" % self.cfg.js)

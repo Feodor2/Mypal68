@@ -4,10 +4,10 @@
 
 #include "vm/ErrorContext.h"
 
+#include "gc/GC.h"
+#include "util/DifferentialTesting.h"
 #include "vm/JSContext.h"
 #include "vm/SelfHosting.h"  // selfHosting_ErrorReporter
-
-#include "vm/JSContext-inl.h"
 
 using namespace js;
 
@@ -28,11 +28,17 @@ void* MainThreadErrorContext::onOutOfMemory(AllocFunction allocFunc,
   return cx_->onOutOfMemory(allocFunc, arena, nbytes, reallocPtr);
 }
 
+void MainThreadErrorContext::onOutOfMemory() { cx_->onOutOfMemory(); }
+
 void MainThreadErrorContext::onAllocationOverflow() {
   return cx_->reportAllocationOverflow();
 }
 
 void MainThreadErrorContext::onOverRecursed() { cx_->onOverRecursed(); }
+
+void MainThreadErrorContext::recoverFromOutOfMemory() {
+  cx_->recoverFromOutOfMemory();
+}
 
 const JSErrorFormatString* MainThreadErrorContext::gcSafeCallback(
     JSErrorCallback callback, void* userRef, const unsigned errorNumber) {
@@ -80,7 +86,13 @@ void OffThreadErrorContext::onAllocationOverflow() {
   // helper threads; see js::reportAllocationOverflow()
 }
 
+void OffThreadErrorContext::onOutOfMemory() { addPendingOutOfMemory(); }
+
 void OffThreadErrorContext::onOverRecursed() { errors_.overRecursed = true; }
+
+void OffThreadErrorContext::recoverFromOutOfMemory() {
+  errors_.outOfMemory = false;
+}
 
 const JSErrorFormatString* OffThreadErrorContext::gcSafeCallback(
     JSErrorCallback callback, void* userRef, const unsigned errorNumber) {

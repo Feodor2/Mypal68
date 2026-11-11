@@ -1070,6 +1070,20 @@ static inline bool CanEmitCompareAtUses(MInstruction* ins) {
   return iter == ins->usesEnd();
 }
 
+static bool CanCompareCharactersInline(const JSLinearString* linear) {
+  size_t length = linear->length();
+
+  // Limit the number of inline instructions used for character comparisons. Use
+  // the same instruction limit for both encodings, i.e. two-byte uses half the
+  // limit of Latin-1 strings.
+  constexpr size_t Latin1StringCompareCutoff = 32;
+  constexpr size_t TwoByteStringCompareCutoff = 16;
+
+  return length > 0 &&
+         (linear->hasLatin1Chars() ? length <= Latin1StringCompareCutoff
+                                   : length <= TwoByteStringCompareCutoff);
+}
+
 void LIRGenerator::visitCompare(MCompare* comp) {
   MDefinition* left = comp->lhs();
   MDefinition* right = comp->rhs();
@@ -1095,19 +1109,8 @@ void LIRGenerator::visitCompare(MCompare* comp) {
 
       if (constant) {
         JSLinearString* linear = &constant->toString()->asLinear();
-        size_t length = linear->length();
 
-        // Limit the number of inline instructions used for character
-        // comparisons. Use the same instruction limit for both encodings, i.e.
-        // two-byte uses half the limit of Latin-1 strings.
-        constexpr size_t Latin1StringCompareCutoff = 32;
-        constexpr size_t TwoByteStringCompareCutoff = 16;
-
-        bool canCompareInline =
-            length > 0 &&
-            (linear->hasLatin1Chars() ? length <= Latin1StringCompareCutoff
-                                      : length <= TwoByteStringCompareCutoff);
-        if (canCompareInline) {
+        if (CanCompareCharactersInline(linear)) {
           MDefinition* input = left->isConstant() ? right : left;
 
           auto* lir = new (alloc()) LCompareSInline(useRegister(input), linear);
@@ -2292,6 +2295,31 @@ void LIRGenerator::visitFromCodePoint(MFromCodePoint* ins) {
       new (alloc()) LFromCodePoint(useRegister(codePoint), temp(), temp());
   assignSnapshot(lir, ins->bailoutKind());
   define(lir, ins);
+  assignSafepoint(lir, ins);
+}
+
+void LIRGenerator::visitStringStartsWith(MStringStartsWith* ins) {
+  auto* string = ins->string();
+  MOZ_ASSERT(string->type() == MIRType::String);
+
+  auto* searchStr = ins->searchString();
+  MOZ_ASSERT(searchStr->type() == MIRType::String);
+
+  if (searchStr->isConstant()) {
+    JSLinearString* linear = &searchStr->toConstant()->toString()->asLinear();
+
+    if (CanCompareCharactersInline(linear)) {
+      auto* lir = new (alloc())
+          LStringStartsWithInline(useRegister(string), temp(), linear);
+      define(lir, ins);
+      assignSafepoint(lir, ins);
+      return;
+    }
+  }
+
+  auto* lir = new (alloc()) LStringStartsWith(useRegisterAtStart(string),
+                                              useRegisterAtStart(searchStr));
+  defineReturn(lir, ins);
   assignSafepoint(lir, ins);
 }
 

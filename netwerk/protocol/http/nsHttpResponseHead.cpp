@@ -1204,7 +1204,7 @@ nsresult nsHttpResponseHead::GetOriginalHeader(nsHttpAtom aHeader,
   return rv;
 }
 
-bool nsHttpResponseHead::HasContentType() {
+bool nsHttpResponseHead::HasContentType() const {
   RecursiveMutexAutoLock monitor(mRecursiveMutex);
   return !mContentType.IsEmpty();
 }

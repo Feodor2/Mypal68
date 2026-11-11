@@ -31,6 +31,7 @@
 #include "mozilla/AtomicBitfields.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/extensions/PStreamFilterParent.h"
+#include "mozilla/net/DocumentLoadListener.h"
 #include "mozilla/Mutex.h"
 
 class nsDNSPrefetch;
@@ -198,6 +199,8 @@ class nsHttpChannel final : public HttpBaseChannel,
 
   void SetWarningReporter(HttpChannelSecurityWarningReporter* aReporter);
   HttpChannelSecurityWarningReporter* GetWarningReporter();
+
+  bool OnDataAlreadySent() { return mDataAlreadySent; }
 
  public: /* internal necko use only */
   uint32_t GetRequestTime() const { return mRequestTime; }
@@ -478,16 +481,6 @@ class nsHttpChannel final : public HttpBaseChannel,
   MOZ_MUST_USE nsresult
   ProcessContentSignatureHeader(nsHttpResponseHead* aResponseHead);
 
-  nsresult ProcessCrossOriginEmbedderPolicyHeader();
-  nsresult ProcessCrossOriginResourcePolicyHeader();
-
-  nsresult ComputeCrossOriginOpenerPolicyMismatch();
-  // This method returns the cached result of running the Cross-Origin-Opener
-  // policy compare algorithm by calling ComputeCrossOriginOpenerPolicyMismatch
-  bool HasCrossOriginOpenerPolicyMismatch() {
-    return mHasCrossOriginOpenerPolicyMismatch;
-  }
-
   /**
    * A function to process a single security header (STS or PKP), assumes
    * some basic sanity checks have been applied to the channel. Called
@@ -557,6 +550,11 @@ class nsHttpChannel final : public HttpBaseChannel,
   // writing a new entry. The content type is used in cache internally only.
   void SetCachedContentType();
 
+  // This function updates all the fields used by anti-tracking when a channel
+  // is opened. We have to do this in the parent to access cross-origin info
+  // that is not exposed to child processes.
+  void UpdateAntiTrackingInfo();
+
  private:
   // this section is for main-thread-only object
   // all the references need to be proxy released on main thread.
@@ -620,6 +618,8 @@ class nsHttpChannel final : public HttpBaseChannel,
 
   nsCOMPtr<nsICacheEntry> mOfflineCacheEntry;
   uint32_t mOfflineCacheLastModifiedTime;
+
+  nsTArray<StreamFilterRequest> mStreamFilterRequests;
 
   mozilla::TimeStamp mOnStartRequestTimestamp;
   // Timestamp of the time the channel was suspended.
@@ -728,9 +728,9 @@ class nsHttpChannel final : public HttpBaseChannel,
   ))
   // clang-format on
 
-  // True if this is a navigation to a page with a different cross origin
-  // opener policy ( see ComputeCrossOriginOpenerPolicyMismatch )
-  uint32_t mHasCrossOriginOpenerPolicyMismatch : 1;
+  // True if the data has already been sent from the socket process to the
+  // content process.
+  uint32_t mDataAlreadySent : 1;
 
   // The origin of the top window, only valid when TopWindowOriginComputed is
   // true.

@@ -152,7 +152,7 @@ class nsHttpResponseHead {
   [[nodiscard]] nsresult GetOriginalHeader(nsHttpAtom aHeader,
                                            nsIHttpHeaderVisitor* aVisitor);
 
-  bool HasContentType();
+  bool HasContentType() const;
   bool HasContentCharset();
   bool GetContentTypeOptionsHeader(nsACString& aOutput);
 

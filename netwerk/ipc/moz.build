@@ -3,7 +3,6 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 EXPORTS.mozilla.net += [
-    'ADocumentChannelBridge.h',
     'ChannelEventQueue.h',
     'DocumentChannel.h',
     'DocumentChannelChild.h',
@@ -16,6 +15,8 @@ EXPORTS.mozilla.net += [
     'NeckoMessageUtils.h',
     'NeckoParent.h',
     'NeckoTargetHolder.h',
+    'ParentChannelWrapper.h',
+    'ParentProcessDocumentChannel.h',
     'ProxyConfigLookup.h',
     'ProxyConfigLookupChild.h',
     'ProxyConfigLookupParent.h',
@@ -38,6 +39,8 @@ UNIFIED_SOURCES += [
     'NeckoChild.cpp',
     'NeckoParent.cpp',
     'NeckoTargetHolder.cpp',
+    'ParentChannelWrapper.cpp',
+    'ParentProcessDocumentChannel.cpp',
     'ProxyConfigLookup.cpp',
     'ProxyConfigLookupChild.cpp',
     'ProxyConfigLookupParent.cpp',

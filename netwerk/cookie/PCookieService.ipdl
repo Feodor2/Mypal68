@@ -38,7 +38,7 @@ parent:
   async PrepareCookieList(nsIURI host,
                           bool isForeign,
                           bool isThirdPartyTrackingResource,
-                          bool firstPartyStorageAccessGranted,
+                          bool firstPartyStorageAccessPermissionGranted,
                           uint32_t rejectedReason,
                           bool isSafeTopLevelNav,
                           bool isSameSiteForeign,

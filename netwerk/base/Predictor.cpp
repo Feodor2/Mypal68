@@ -663,7 +663,7 @@ void Predictor::PredictForLink(nsIURI* targetURI, nsIURI* sourceURI,
   }
 
   nsCOMPtr<nsIPrincipal> principal =
-      BasePrincipal::CreateCodebasePrincipal(targetURI, originAttributes);
+      BasePrincipal::CreateContentPrincipal(targetURI, originAttributes);
 
   mSpeculativeService->SpeculativeConnect(targetURI, principal, nullptr);
   if (verifier) {
@@ -1114,7 +1114,7 @@ bool Predictor::RunPredictions(nsIURI* referrer,
     PREDICTOR_LOG(("    doing preconnect"));
     nsCOMPtr<nsIURI> uri = preconnects[i];
     nsCOMPtr<nsIPrincipal> principal =
-        BasePrincipal::CreateCodebasePrincipal(uri, originAttributes);
+        BasePrincipal::CreateContentPrincipal(uri, originAttributes);
     mSpeculativeService->SpeculativeConnect(uri, principal, this);
     predicted = true;
     if (verifier) {

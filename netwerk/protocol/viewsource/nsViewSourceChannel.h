@@ -53,16 +53,13 @@ class nsViewSourceChannel final : public nsIViewSourceChannel,
 
   // nsViewSourceChannel methods:
   nsViewSourceChannel()
-      : mIsDocument(false),
-        mOpened(false),
-        mIsSrcdocChannel(false),
-        mReplaceRequest(true) {}
+      : mIsDocument(false), mOpened(false), mIsSrcdocChannel(false) {}
 
-  MOZ_MUST_USE nsresult Init(nsIURI* uri, nsILoadInfo* aLoadInfo);
+  [[nodiscard]] nsresult Init(nsIURI* uri, nsILoadInfo* aLoadInfo);
 
-  MOZ_MUST_USE nsresult InitSrcdoc(nsIURI* aURI, nsIURI* aBaseURI,
-                                   const nsAString& aSrcdoc,
-                                   nsILoadInfo* aLoadInfo);
+  [[nodiscard]] nsresult InitSrcdoc(nsIURI* aURI, nsIURI* aBaseURI,
+                                    const nsAString& aSrcdoc,
+                                    nsILoadInfo* aLoadInfo);
 
   // Updates or sets the result principal URI of the underlying channel's
   // loadinfo to be prefixed with the "view-source:" schema as:
@@ -73,10 +70,16 @@ class nsViewSourceChannel final : public nsIViewSourceChannel,
 
  protected:
   ~nsViewSourceChannel() = default;
+  void ReleaseListeners();
+
   nsTArray<mozilla::net::PreferredAlternativeDataTypeParams> mEmptyArray;
 
   // Clones aURI and prefixes it with "view-source:" schema,
   nsresult BuildViewSourceURI(nsIURI* aURI, nsIURI** aResult);
+
+  // Called to update the forwarding channel members after the `mChannel` field
+  // has been changed to reflect the new inner channel.
+  void UpdateChannelInterfaces();
 
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
   nsCOMPtr<nsIChannel> mChannel;
@@ -95,7 +98,6 @@ class nsViewSourceChannel final : public nsIViewSourceChannel,
   bool mIsDocument;  // keeps track of the LOAD_DOCUMENT_URI flag
   bool mOpened;
   bool mIsSrcdocChannel;
-  bool mReplaceRequest;
 };
 
 #endif /* nsViewSourceChannel_h___ */

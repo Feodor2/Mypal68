@@ -253,7 +253,7 @@ bool CookieCommons::CheckCookiePermission(
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(aCookieJarSettings);
 
-  if (!aPrincipal->GetIsCodebasePrincipal()) {
+  if (!aPrincipal->GetIsContentPrincipal()) {
     return true;
   }
 

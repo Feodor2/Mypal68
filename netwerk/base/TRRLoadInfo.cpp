@@ -103,6 +103,23 @@ TRRLoadInfo::GetIsInThirdPartyContext(bool* aIsInThirdPartyContext) {
 }
 
 NS_IMETHODIMP
+TRRLoadInfo::SetIsInThirdPartyContext(bool aIsInThirdPartyContext) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetIsThirdPartyContextToTopWindow(
+    bool* aIsThirdPartyContextToTopWindow) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetIsThirdPartyContextToTopWindow(
+    bool aIsThirdPartyContextToTopWindow) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 TRRLoadInfo::GetCookiePolicy(uint32_t* aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -606,15 +623,57 @@ already_AddRefed<nsIContentSecurityPolicy> TRRLoadInfo::GetCspToInherit() {
   return nullptr;
 }
 
-/*NS_IMETHODIMP
-TRRLoadInfo::GetHttpsOnlyNoUpgrade(bool* aHttpsOnlyNoUpgrade) {
+NS_IMETHODIMP
+TRRLoadInfo::GetHasValidUserGestureActivation(
+    bool* aHasValidUserGestureActivation) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 NS_IMETHODIMP
-TRRLoadInfo::SetHttpsOnlyNoUpgrade(bool aHttpsOnlyNoUpgrade) {
+TRRLoadInfo::SetHasValidUserGestureActivation(
+    bool aHasValidUserGestureActivation) {
   return NS_ERROR_NOT_IMPLEMENTED;
-}*/
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetInternalContentPolicyType(nsContentPolicyType* aResult) {
+  *aResult = mInternalContentPolicyType;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetAllowDeprecatedSystemRequests(
+    bool* aAllowDeprecatedSystemRequests) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetAllowDeprecatedSystemRequests(
+    bool aAllowDeprecatedSystemRequests) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetParserCreatedScript(bool* aParserCreatedScript) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetParserCreatedScript(bool aParserCreatedScript) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::GetLoadingEmbedderPolicy(
+    nsILoadInfo::CrossOriginEmbedderPolicy* aOutPolicy) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetLoadingEmbedderPolicy(
+    nsILoadInfo::CrossOriginEmbedderPolicy aPolicy) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
 
 }  // namespace net
 }  // namespace mozilla

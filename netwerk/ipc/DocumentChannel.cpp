@@ -8,23 +8,26 @@
 #include "mozIThirdPartyUtil.h"
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/LoadInfo.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/extensions/StreamFilterParent.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/ipc/URIUtils.h"
+#include "mozilla/net/DocumentChannelChild.h"
 #include "mozilla/net/HttpChannelChild.h"
 #include "mozilla/net/NeckoChild.h"
+#include "mozilla/net/ParentProcessDocumentChannel.h"
 #include "mozilla/net/UrlClassifierCommon.h"
 #include "nsContentSecurityManager.h"
 #include "nsContentPolicyUtils.h" //MY
 #include "nsDocShellLoadState.h"
 #include "nsHttpHandler.h"
 #include "nsIInputStreamChannel.h"
+#include "nsNetUtil.h"
 #include "nsQueryObject.h"
 #include "nsSerializationHelper.h"
-#include "nsStreamListenerWrapper.h"
 #include "nsStringStream.h"
 #include "nsURLHelper.h"
 
@@ -46,20 +49,23 @@ NS_IMPL_RELEASE(DocumentChannel)
 NS_INTERFACE_MAP_BEGIN(DocumentChannel)
   NS_INTERFACE_MAP_ENTRY(nsIRequest)
   NS_INTERFACE_MAP_ENTRY(nsIChannel)
-  NS_INTERFACE_MAP_ENTRY(nsITraceableChannel)
+  NS_INTERFACE_MAP_ENTRY(nsIIdentChannel)
   NS_INTERFACE_MAP_ENTRY_CONCRETE(DocumentChannel)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIRequest)
 NS_INTERFACE_MAP_END
 
 DocumentChannel::DocumentChannel(nsDocShellLoadState* aLoadState,
                                  net::LoadInfo* aLoadInfo,
-                                 nsLoadFlags aLoadFlags, uint32_t aCacheKey)
+                                 nsLoadFlags aLoadFlags, uint32_t aCacheKey,
+                                 bool aUriModified, bool aIsXFOError)
     : mAsyncOpenTime(TimeStamp::Now()),
       mLoadState(aLoadState),
       mCacheKey(aCacheKey),
       mLoadFlags(aLoadFlags),
       mURI(aLoadState->URI()),
-      mLoadInfo(aLoadInfo) {
+      mLoadInfo(aLoadInfo),
+      mUriModified(aUriModified),
+      mIsXFOError(aIsXFOError) {
   LOG(("DocumentChannel ctor [this=%p, uri=%s]", this,
        aLoadState->URI()->GetSpecOrDefault().get()));
   RefPtr<nsHttpHandler> handler = nsHttpHandler::GetInstance();
@@ -72,6 +78,48 @@ NS_IMETHODIMP
 DocumentChannel::AsyncOpen(nsIStreamListener* aListener) {
   MOZ_CRASH("If we get here, something is broken");
   return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+void DocumentChannel::ShutdownListeners(nsresult aStatusCode) {
+  LOG(("DocumentChannel ShutdownListeners [this=%p, status=%" PRIx32 "]", this,
+       static_cast<uint32_t>(aStatusCode)));
+  mStatus = aStatusCode;
+
+  nsCOMPtr<nsIStreamListener> listener = mListener;
+  if (listener) {
+    listener->OnStartRequest(this);
+  }
+
+  mIsPending = false;
+
+  listener = mListener;  // it might have changed!
+  if (listener) {
+    listener->OnStopRequest(this, aStatusCode);
+  }
+  mListener = nullptr;
+  mCallbacks = nullptr;
+
+  if (mLoadGroup) {
+    mLoadGroup->RemoveRequest(this, nullptr, aStatusCode);
+    mLoadGroup = nullptr;
+  }
+
+  DeleteIPDL();
+}
+
+void DocumentChannel::DisconnectChildListeners(
+    const nsresult& aStatus, const nsresult& aLoadGroupStatus) {
+  MOZ_ASSERT(NS_FAILED(aStatus));
+  mStatus = aLoadGroupStatus;
+  // Make sure we remove from the load group before
+  // setting mStatus, as existing tests expect the
+  // status to be successful when we disconnect.
+  if (mLoadGroup) {
+    mLoadGroup->RemoveRequest(this, nullptr, aStatus);
+    mLoadGroup = nullptr;
+  }
+
+  ShutdownListeners(aStatus);
 }
 
 nsDocShell* DocumentChannel::GetDocShell() {
@@ -90,20 +138,52 @@ nsDocShell* DocumentChannel::GetDocShell() {
   return nsDocShell::Cast(docshell);
 }
 
-//-----------------------------------------------------------------------------
-// DocumentChannel::nsITraceableChannel
-//-----------------------------------------------------------------------------
+// Changes here should also be made in
+// E10SUtils.documentChannelPermittedForURI().
+static bool URIUsesDocChannel(nsIURI* aURI) {
+  if (SchemeIsJavascript(aURI) || NS_IsAboutBlank(aURI)) {
+    return false;
+  }
 
-NS_IMETHODIMP
-DocumentChannel::SetNewListener(nsIStreamListener* aListener,
-                                nsIStreamListener** _retval) {
-  NS_ENSURE_ARG_POINTER(aListener);
+  nsCString spec = aURI->GetSpecOrDefault();
+  return !spec.EqualsLiteral("about:printpreview") &&
+         !spec.EqualsLiteral("about:crashcontent");
+}
 
-  nsCOMPtr<nsIStreamListener> wrapper = new nsStreamListenerWrapper(mListener);
+bool DocumentChannel::CanUseDocumentChannel(nsDocShellLoadState* aLoadState) {
+  MOZ_ASSERT(aLoadState);
 
-  wrapper.forget(_retval);
-  mListener = aListener;
-  return NS_OK;
+  if (XRE_IsParentProcess() &&
+      !StaticPrefs::browser_tabs_documentchannel_ppdc()) {
+    return false;
+  }
+
+  // We want to use DocumentChannel if we're using a supported scheme. Sandboxed
+  // srcdoc loads break due to failing assertions after changing processes, and
+  // non-sandboxed srcdoc loads need to share the same principal object as their
+  // outer document (and must load in the same process), which breaks if we
+  // serialize to the parent process.
+  return StaticPrefs::browser_tabs_documentchannel() &&
+         !aLoadState->HasLoadFlags(nsDocShell::INTERNAL_LOAD_FLAGS_IS_SRCDOC) &&
+         URIUsesDocChannel(aLoadState->URI());
+}
+
+/* static */
+already_AddRefed<DocumentChannel> DocumentChannel::CreateDocumentChannel(
+    nsDocShellLoadState* aLoadState, class LoadInfo* aLoadInfo,
+    nsLoadFlags aLoadFlags, nsIInterfaceRequestor* aNotificationCallbacks,
+    uint32_t aCacheKey, bool aUriModified, bool aIsXFOError) {
+  RefPtr<DocumentChannel> channel;
+  if (XRE_IsContentProcess()) {
+    channel = new DocumentChannelChild(aLoadState, aLoadInfo, aLoadFlags,
+                                       aCacheKey, aUriModified, aIsXFOError);
+  } else {
+    channel =
+        new ParentProcessDocumentChannel(aLoadState, aLoadInfo, aLoadFlags,
+                                         aCacheKey, aUriModified, aIsXFOError);
+  }
+  channel->SetNotificationCallbacks(aNotificationCallbacks);
+  return channel.forget();
 }
 
 NS_IMETHODIMP
@@ -192,7 +272,9 @@ DocumentChannel::SetTRRMode(nsIRequest::TRRMode aTRRMode) {
 }
 
 NS_IMETHODIMP DocumentChannel::SetLoadFlags(nsLoadFlags aLoadFlags) {
-  mLoadFlags = aLoadFlags;
+  NS_ERROR(
+      "DocumentChannel::SetLoadFlags: "
+      "Don't set flags after creation");
   return NS_OK;
 }
 

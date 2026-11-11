@@ -18,6 +18,7 @@
 #if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
 #  include "nsIProtocolHandler.h"
 #endif
+#include "nsICookieManager.h"
 #include "nsNetUtil.h"
 
 namespace mozilla {
@@ -80,7 +81,8 @@ already_AddRefed<nsICookieJarSettings> CookieJarSettings::GetBlockingAll() {
   }
 
   sBlockinAll =
-      new CookieJarSettings(nsICookieService::BEHAVIOR_REJECT, eFixed);
+      new CookieJarSettings(nsICookieService::BEHAVIOR_REJECT,
+                            OriginAttributes::IsFirstPartyEnabled(), eFixed);
   ClearOnShutdown(&sBlockinAll);
 
   return do_AddRef(sBlockinAll);
@@ -91,26 +93,36 @@ already_AddRefed<nsICookieJarSettings> CookieJarSettings::Create() {
   MOZ_ASSERT(NS_IsMainThread());
 
   RefPtr<CookieJarSettings> cookieJarSettings = new CookieJarSettings(
-      StaticPrefs::network_cookie_cookieBehavior(), eProgressive);
+      nsICookieManager::GetCookieBehavior(),
+      OriginAttributes::IsFirstPartyEnabled(), eProgressive);
   return cookieJarSettings.forget();
 }
 
 // static
 already_AddRefed<nsICookieJarSettings> CookieJarSettings::Create(
-    uint32_t aCookieBehavior) {
+    uint32_t aCookieBehavior, const nsAString& aPartitionKey,
+    bool aIsFirstPartyIsolated) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  RefPtr<CookieJarSettings> cookieJarSettings =
-      new CookieJarSettings(nsICookieService::BEHAVIOR_REJECT, eFixed);
+  RefPtr<CookieJarSettings> cookieJarSettings = new CookieJarSettings(
+      aCookieBehavior, aIsFirstPartyIsolated, eProgressive);
+  cookieJarSettings->mPartitionKey = aPartitionKey;
+
   return cookieJarSettings.forget();
 }
 
-CookieJarSettings::CookieJarSettings(uint32_t aCookieBehavior, State aState)
+CookieJarSettings::CookieJarSettings(uint32_t aCookieBehavior,
+                                     bool aIsFirstPartyIsolated, State aState)
     : mCookieBehavior(aCookieBehavior),
+      mIsFirstPartyIsolated(aIsFirstPartyIsolated),
       mIsOnContentBlockingAllowList(false),
       mState(aState),
       mToBeMerged(false) {
   MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT_IF(
+      mIsFirstPartyIsolated,
+      mCookieBehavior !=
+          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
 }
 
 CookieJarSettings::~CookieJarSettings() {
@@ -125,6 +137,12 @@ CookieJarSettings::~CookieJarSettings() {
 NS_IMETHODIMP
 CookieJarSettings::GetCookieBehavior(uint32_t* aCookieBehavior) {
   *aCookieBehavior = mCookieBehavior;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+CookieJarSettings::GetIsFirstPartyIsolated(bool* aIsFirstPartyIsolated) {
+  *aIsFirstPartyIsolated = mIsFirstPartyIsolated;
   return NS_OK;
 }
 
@@ -163,10 +181,20 @@ CookieJarSettings::GetPartitionForeign(bool* aPartitionForeign) {
 
 NS_IMETHODIMP
 CookieJarSettings::SetPartitionForeign(bool aPartitionForeign) {
+  if (mIsFirstPartyIsolated) {
+    return NS_OK;
+  }
+
   if (aPartitionForeign) {
     mCookieBehavior =
         nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+CookieJarSettings::GetPartitionKey(nsAString& aPartitionKey) {
+  aPartitionKey = mPartitionKey;
   return NS_OK;
 }
 
@@ -215,7 +243,8 @@ CookieJarSettings::CookiePermission(nsIPrincipal* aPrincipal,
   // Check if this protocol doesn't allow cookies.
   bool hasFlags;
   nsCOMPtr<nsIURI> uri;
-  aPrincipal->GetURI(getter_AddRefs(uri));
+  BasePrincipal::Cast(aPrincipal)->GetURI(getter_AddRefs(uri));
+
   rv = NS_URIChainHasFlags(uri, nsIProtocolHandler::URI_FORBIDS_COOKIE_ACCESS,
                            &hasFlags);
   if (NS_FAILED(rv) || hasFlags) {
@@ -248,7 +277,9 @@ void CookieJarSettings::Serialize(CookieJarSettingsArgs& aData) {
 
   aData.isFixed() = mState == eFixed;
   aData.cookieBehavior() = mCookieBehavior;
+  aData.isFirstPartyIsolated() = mIsFirstPartyIsolated;
   aData.isOnContentBlockingAllowList() = mIsOnContentBlockingAllowList;
+  aData.partitionKey() = mPartitionKey;
 
   for (const RefPtr<nsIPermission>& permission : mCookiePermissions) {
     nsCOMPtr<nsIPrincipal> principal;
@@ -301,11 +332,13 @@ void CookieJarSettings::Serialize(CookieJarSettingsArgs& aData) {
   }
 
   RefPtr<CookieJarSettings> cookieJarSettings = new CookieJarSettings(
-      aData.cookieBehavior(), aData.isFixed() ? eFixed : eProgressive);
+      aData.cookieBehavior(), aData.isFirstPartyIsolated(),
+      aData.isFixed() ? eFixed : eProgressive);
 
   cookieJarSettings->mIsOnContentBlockingAllowList =
       aData.isOnContentBlockingAllowList();
   cookieJarSettings->mCookiePermissions.SwapElements(list);
+  cookieJarSettings->mPartitionKey = aData.partitionKey();
 
   cookieJarSettings.forget(aCookieJarSettings);
 }
@@ -330,17 +363,27 @@ void CookieJarSettings::Merge(const CookieJarSettingsArgs& aData) {
       aData.cookieBehavior() ==
           nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) {
     // If the other side has decided to partition third-party cookies, update
-    // our side.
-    mCookieBehavior =
-        nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+    // our side when first-party isolation is disabled.
+    if (!mIsFirstPartyIsolated) {
+      mCookieBehavior =
+          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+    }
   }
   if (mCookieBehavior ==
           nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN &&
       aData.cookieBehavior() == nsICookieService::BEHAVIOR_REJECT_TRACKER) {
     // If we've decided to partition third-party cookies, the other side may not
-    // have caught up yet.  Do nothing.
+    // have caught up yet unless it has first-party isolation enabled.
+    if (aData.isFirstPartyIsolated()) {
+      mCookieBehavior = nsICookieService::BEHAVIOR_REJECT_TRACKER;
+      mIsFirstPartyIsolated = true;
+    }
   }
   // Ignore all other cases.
+  MOZ_ASSERT_IF(
+      mIsFirstPartyIsolated,
+      mCookieBehavior !=
+          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
 
   PermissionComparator comparator;
 
@@ -364,6 +407,47 @@ void CookieJarSettings::Merge(const CookieJarSettingsArgs& aData) {
   }
 }
 
+void CookieJarSettings::SetPartitionKey(nsIURI* aURI) {
+  MOZ_ASSERT(aURI);
+
+  OriginAttributes attrs;
+  attrs.SetPartitionKey(aURI);
+  mPartitionKey = std::move(attrs.mPartitionKey);
+}
+
+void CookieJarSettings::UpdateIsOnContentBlockingAllowList(
+    nsIChannel* aChannel) {
+  MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(aChannel);
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = aChannel->GetURI(getter_AddRefs(uri));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  // We need to recompute the ContentBlockingAllowListPrincipal here for the
+  // top level channel because we might navigate from the the initial
+  // about:blank page or the existing page which may have a different origin
+  // than the URI we are going to load here. Thus, we need to recompute the
+  // prinicpal in order to get the correct ContentBlockingAllowListPrincipal.
+  nsCOMPtr<nsIPrincipal> contentBlockingAllowListPrincipal;
+  OriginAttributes attrs;
+  loadInfo->GetOriginAttributes(&attrs);
+  ContentBlockingAllowList::RecomputePrincipal(
+      uri, attrs, getter_AddRefs(contentBlockingAllowListPrincipal));
+
+  if (!contentBlockingAllowListPrincipal ||
+      !contentBlockingAllowListPrincipal->GetIsContentPrincipal()) {
+    return;
+  }
+
+  Unused << ContentBlockingAllowList::Check(contentBlockingAllowListPrincipal,
+                                            NS_UsePrivateBrowsing(aChannel),
+                                            mIsOnContentBlockingAllowList);
+}
+
 // static
 bool CookieJarSettings::IsRejectThirdPartyContexts(uint32_t aCookieBehavior) {
   return aCookieBehavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
@@ -377,42 +461,6 @@ bool CookieJarSettings::IsRejectThirdPartyWithExceptions(
     uint32_t aCookieBehavior) {
   return aCookieBehavior == nsICookieService::BEHAVIOR_REJECT_FOREIGN &&
          StaticPrefs::network_cookie_rejectForeignWithExceptions_enabled();
-}
-
-void CookieJarSettings::UpdateIsOnContentBlockingAllowList(
-    nsIChannel* aChannel) {
-  MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess());
-  MOZ_ASSERT(aChannel);
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-
-#ifdef DEBUG
-  RefPtr<dom::BrowsingContext> bc;
-  MOZ_ALWAYS_SUCCEEDS(loadInfo->GetTargetBrowsingContext(getter_AddRefs(bc)));
-  MOZ_ASSERT(bc->IsTop());
-#endif
-
-  nsCOMPtr<nsIURI> uriBeingLoaded =
-      AntiTrackingUtils::MaybeGetDocumentURIBeingLoaded(aChannel);
-  nsCOMPtr<nsIPrincipal> contentBlockingAllowListPrincipal;
-
-  // We need to recompute the ContentBlockingAllowListPrincipal here for the
-  // top level channel because we might navigate from the the initial
-  // about:blank page or the existing page which may have a different origin
-  // than the URI we are going to load here. Thus, we need to recompute the
-  // prinicpal in order to get the correct ContentBlockingAllowListPrincipal.
-  OriginAttributes attrs;
-  loadInfo->GetOriginAttributes(&attrs);
-  ContentBlockingAllowList::RecomputePrincipal(
-      uriBeingLoaded, attrs, getter_AddRefs(contentBlockingAllowListPrincipal));
-
-  if (!contentBlockingAllowListPrincipal ||
-      !contentBlockingAllowListPrincipal->GetIsCodebasePrincipal()) {
-    return;
-  }
-
-  Unused << ContentBlockingAllowList::Check(contentBlockingAllowListPrincipal,
-                                            NS_UsePrivateBrowsing(aChannel),
-                                            mIsOnContentBlockingAllowList);
 }
 
 NS_IMPL_ISUPPORTS(CookieJarSettings, nsICookieJarSettings)

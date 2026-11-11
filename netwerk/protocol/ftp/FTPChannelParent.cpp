@@ -33,7 +33,7 @@ using namespace mozilla::ipc;
 namespace mozilla {
 namespace net {
 
-FTPChannelParent::FTPChannelParent(const PBrowserOrId& aIframeEmbedding,
+FTPChannelParent::FTPChannelParent(dom::BrowserParent* aIframeEmbedding,
                                    nsILoadContext* aLoadContext,
                                    PBOverrideStatus aOverrideStatus)
     : mIPCClosed(false),
@@ -43,15 +43,11 @@ FTPChannelParent::FTPChannelParent(const PBrowserOrId& aIframeEmbedding,
       mDivertingFromChild(false),
       mDivertedOnStartRequest(false),
       mSuspendedForDiversion(false),
+      mBrowserParent(aIframeEmbedding),
       mUseUTF8(false) {
   nsIProtocolHandler* handler;
   CallGetService(NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "ftp", &handler);
   MOZ_ASSERT(handler, "no ftp handler");
-
-  if (aIframeEmbedding.type() == PBrowserOrId::TPBrowserParent) {
-    mBrowserParent =
-        static_cast<dom::BrowserParent*>(aIframeEmbedding.get_PBrowserParent());
-  }
 
   mEventQ = new ChannelEventQueue(static_cast<nsIParentChannel*>(this));
 }
@@ -166,10 +162,11 @@ bool FTPChannelParent::DoAsyncOpen(const URIParams& aURI,
   return true;
 }
 
-bool FTPChannelParent::ConnectChannel(const uint32_t& channelId) {
+bool FTPChannelParent::ConnectChannel(const uint64_t& channelId) {
   nsresult rv;
 
-  LOG(("Looking for a registered channel [this=%p, id=%d]", this, channelId));
+  LOG(("Looking for a registered channel [this=%p, id=%" PRIx64 "]", this,
+       channelId));
 
   nsCOMPtr<nsIChannel> channel;
   rv = NS_LinkRedirectChannels(channelId, this, getter_AddRefs(channel));
@@ -496,25 +493,6 @@ FTPChannelParent::SetParentListener(ParentChannelListener* aListener) {
 }
 
 NS_IMETHODIMP
-FTPChannelParent::NotifyChannelClassifierProtectionDisabled(
-    uint32_t aAcceptedReason) {
-  // One day, this should probably be filled in.
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-FTPChannelParent::NotifyCookieAllowed() {
-  // One day, this should probably be filled in.
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-FTPChannelParent::NotifyCookieBlocked(uint32_t aRejectedReason) {
-  // One day, this should probably be filled in.
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 FTPChannelParent::NotifyClassificationFlags(uint32_t aClassificationFlags,
                                             bool aIsThirdParty) {
   // One day, this should probably be filled in.
@@ -550,6 +528,17 @@ FTPChannelParent::Delete() {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+FTPChannelParent::GetRemoteType(nsACString& aRemoteType) {
+  if (!CanSend()) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  dom::PContentParent* pcp = Manager()->Manager();
+  aRemoteType = static_cast<dom::ContentParent*>(pcp)->GetRemoteType();
+  return NS_OK;
+}
+
 //-----------------------------------------------------------------------------
 // FTPChannelParent::nsIInterfaceRequestor
 //-----------------------------------------------------------------------------
@@ -565,8 +554,12 @@ FTPChannelParent::GetInterface(const nsIID& uuid, void** result) {
              uuid.Equals(NS_GET_IID(nsIAuthPrompt2))) {
     nsCOMPtr<nsIAuthPromptProvider> provider(do_QueryObject(mBrowserParent));
     if (provider) {
-      return provider->GetAuthPrompt(nsIAuthPromptProvider::PROMPT_NORMAL, uuid,
-                                     result);
+      nsresult rv = provider->GetAuthPrompt(
+          nsIAuthPromptProvider::PROMPT_NORMAL, uuid, result);
+      if (NS_FAILED(rv)) {
+        return NS_ERROR_NO_INTERFACE;
+      }
+      return NS_OK;
     }
   }
 

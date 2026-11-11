@@ -203,7 +203,7 @@ var tests = [
         false
       );
     }
-    var principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+    var principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
       normalOrigin
     );
     testPriorityMap = [
@@ -263,7 +263,7 @@ var tests = [
         true
       );
     }
-    var principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+    var principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
       normalOrigin
     );
     testPriorityMap = [

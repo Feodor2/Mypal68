@@ -1018,6 +1018,8 @@ nsresult nsHttpTransaction::WriteSegments(nsAHttpSegmentWriter* writer,
 
 bool nsHttpTransaction::ProxyConnectFailed() { return mProxyConnectFailed; }
 
+bool nsHttpTransaction::DataAlreadySent() { return false; }
+
 nsISupports* nsHttpTransaction::SecurityInfo() { return mSecurityInfo; }
 
 bool nsHttpTransaction::HasStickyConnection() const {

@@ -14,10 +14,12 @@
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/FileDescriptorSetChild.h"
 #include "mozilla/ipc/IPCStreamAlloc.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/net/AltSvcTransactionChild.h"
+#include "mozilla/net/BackgroundDataBridgeParent.h"
 #include "mozilla/net/DNSRequestChild.h"
 #include "mozilla/net/DNSRequestParent.h"
 #include "mozilla/net/TRRServiceChild.h"
@@ -29,6 +31,8 @@
 #include "nsHttpHandler.h"
 #include "nsIDNSService.h"
 #include "nsIHttpActivityObserver.h"
+#include "nsIObserverService.h" //MY
+#include "nsNetUtil.h"
 #include "nsNSSComponent.h"
 #include "nsThreadManager.h"
 #include "ProcessUtils.h"
@@ -59,7 +63,8 @@ using namespace ipc;
 
 SocketProcessChild* sSocketProcessChild;
 
-SocketProcessChild::SocketProcessChild() : mShuttingDown(false) {
+SocketProcessChild::SocketProcessChild()
+    : mShuttingDown(false), mMutex("SocketProcessChild::mMutex") {
   LOG(("CONSTRUCT SocketProcessChild::SocketProcessChild\n"));
   nsDebugImpl::SetMultiprocessMode("Socket");
 
@@ -399,6 +404,25 @@ mozilla::ipc::IPCResult SocketProcessChild::RecvNotifyObserver(
     obs->NotifyObservers(nullptr, aTopic.get(), aData.get());
   }
   return IPC_OK();
+}
+
+void SocketProcessChild::AddDataBridgeToMap(
+    uint64_t aChannelId, BackgroundDataBridgeParent* aActor) {
+  ipc::AssertIsOnBackgroundThread();
+  MutexAutoLock lock(mMutex);
+  mBackgroundDataBridgeMap.InsertOrUpdate(aChannelId, RefPtr{aActor});
+}
+
+void SocketProcessChild::RemoveDataBridgeFromMap(uint64_t aChannelId) {
+  ipc::AssertIsOnBackgroundThread();
+  MutexAutoLock lock(mMutex);
+  mBackgroundDataBridgeMap.Remove(aChannelId);
+}
+
+Maybe<RefPtr<BackgroundDataBridgeParent>>
+SocketProcessChild::GetAndRemoveDataBridge(uint64_t aChannelId) {
+  MutexAutoLock lock(mMutex);
+  return mBackgroundDataBridgeMap.Extract(aChannelId);
 }
 
 }  // namespace net

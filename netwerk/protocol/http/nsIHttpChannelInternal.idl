@@ -401,6 +401,12 @@ interface nsIHttpChannelInternal : nsISupports
     nsILoadInfo_CrossOriginOpenerPolicy computeCrossOriginOpenerPolicy(
         in nsILoadInfo_CrossOriginOpenerPolicy aInitiatorPolicy);
 
+    [noscript]
+    bool hasCrossOriginOpenerPolicyMismatch();
+
+    [noscript]
+    nsILoadInfo_CrossOriginEmbedderPolicy getResponseEmbedderPolicy();
+
     [notxpcom, nostdcall] attribute boolean hasNonEmptySandboxingFlag;
 
     [noscript, notxpcom, nostdcall]

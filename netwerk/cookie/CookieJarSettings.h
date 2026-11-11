@@ -110,7 +110,9 @@ class CookieJarSettings final : public nsICookieJarSettings {
 
   static already_AddRefed<nsICookieJarSettings> Create();
 
-  static already_AddRefed<nsICookieJarSettings> Create(uint32_t aCookieBehavior);
+  static already_AddRefed<nsICookieJarSettings> Create(
+      uint32_t aCookieBehavior, const nsAString& aPartitionKey,
+      bool aIsFirstPartyIsolated);
 
   static CookieJarSettings* Cast(nsICookieJarSettings* aCS) {
     return static_cast<CookieJarSettings*>(aCS);
@@ -129,6 +131,9 @@ class CookieJarSettings final : public nsICookieJarSettings {
   bool HasBeenChanged() const { return mToBeMerged; }
 
   void UpdateIsOnContentBlockingAllowList(nsIChannel* aChannel);
+
+  void SetPartitionKey(nsIURI* aURI);
+  const nsAString& GetPartitionKey() { return mPartitionKey; };
 
   // Utility function to test if the passed cookiebahvior is
   // BEHAVIOR_REJECT_TRACKER, BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN or
@@ -151,12 +156,15 @@ class CookieJarSettings final : public nsICookieJarSettings {
     eProgressive,
   };
 
-  CookieJarSettings(uint32_t aCookieBehavior, State aState);
+  CookieJarSettings(uint32_t aCookieBehavior, bool aIsFirstPartyIsolated,
+                    State aState);
   ~CookieJarSettings();
 
   uint32_t mCookieBehavior;
+  bool mIsFirstPartyIsolated;
   CookiePermissionList mCookiePermissions;
   bool mIsOnContentBlockingAllowList;
+  nsString mPartitionKey;
 
   State mState;
 

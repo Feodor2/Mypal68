@@ -9,6 +9,7 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
 #include "mozilla/ContentBlockingAllowList.h"
+#include "mozilla/ContentBlockingNotifier.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/net/HttpBaseChannel.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
@@ -51,55 +52,6 @@ bool UrlClassifierCommon::AddonMayLoad(nsIChannel* aChannel, nsIURI* aURI) {
   }
 
   return BasePrincipal::Cast(loadingPrincipal)->AddonAllowsLoad(aURI, true);
-}
-
-/* static */
-void UrlClassifierCommon::NotifyChannelClassifierProtectionDisabled(
-    nsIChannel* aChannel, uint32_t aEvent) {
-  // Can be called in EITHER the parent or child process.
-  nsCOMPtr<nsIParentChannel> parentChannel;
-  NS_QueryNotificationCallbacks(aChannel, parentChannel);
-  if (parentChannel) {
-    // This channel is a parent-process proxy for a child process request.
-    // Tell the child process channel to do this instead.
-    parentChannel->NotifyChannelClassifierProtectionDisabled(aEvent);
-    return;
-  }
-
-  nsCOMPtr<nsIURI> uriBeingLoaded =
-      AntiTrackingUtils::MaybeGetDocumentURIBeingLoaded(aChannel);
-  NotifyChannelBlocked(aChannel, uriBeingLoaded, aEvent);
-}
-
-/* static */
-void UrlClassifierCommon::NotifyChannelBlocked(nsIChannel* aChannel,
-                                               nsIURI* aURIBeingLoaded,
-                                               unsigned aBlockedReason) {
-  nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil = services::GetThirdPartyUtil();
-  if (NS_WARN_IF(!thirdPartyUtil)) {
-    return;
-  }
-
-  nsCOMPtr<mozIDOMWindowProxy> win;
-  nsresult rv = thirdPartyUtil->GetTopWindowForChannel(
-      aChannel, aURIBeingLoaded, getter_AddRefs(win));
-  NS_ENSURE_SUCCESS_VOID(rv);
-  auto* pwin = nsPIDOMWindowOuter::From(win);
-  nsCOMPtr<nsIDocShell> docShell = pwin->GetDocShell();
-  if (!docShell) {
-    return;
-  }
-  RefPtr<dom::Document> doc = docShell->GetDocument();
-  NS_ENSURE_TRUE_VOID(doc);
-
-  nsCOMPtr<nsIURI> uri;
-  aChannel->GetURI(getter_AddRefs(uri));
-  nsAutoCString trackingOrigin;
-  if (uri) {
-    Unused << nsContentUtils::GetASCIIOrigin(uri, trackingOrigin);
-  }
-  pwin->NotifyContentBlockingEvent(aBlockedReason, aChannel, true,
-                                   trackingOrigin, aChannel);
 }
 
 /* static */
@@ -164,19 +116,6 @@ nsresult UrlClassifierCommon::SetTrackingInfo(
   NS_ENSURE_ARG(!aLists.IsEmpty());
 
   // Can be called in EITHER the parent or child process.
-  nsCOMPtr<nsIParentChannel> parentChannel;
-  NS_QueryNotificationCallbacks(aChannel, parentChannel);
-  if (parentChannel) {
-    // This channel is a parent-process proxy for a child process request.
-    // Tell the child process channel to do this instead.
-    nsAutoCString strLists, strHashes;
-    TablesToString(aLists, strLists);
-    TablesToString(aFullHashes, strHashes);
-
-    parentChannel->SetClassifierMatchedTrackingInfo(strLists, strHashes);
-    return NS_OK;
-  }
-
   nsresult rv;
   nsCOMPtr<nsIClassifiedChannel> classifiedChannel =
       do_QueryInterface(aChannel, &rv);
@@ -184,6 +123,21 @@ nsresult UrlClassifierCommon::SetTrackingInfo(
 
   if (classifiedChannel) {
     classifiedChannel->SetMatchedTrackingInfo(aLists, aFullHashes);
+  }
+
+  nsCOMPtr<nsIParentChannel> parentChannel;
+  NS_QueryNotificationCallbacks(aChannel, parentChannel);
+  if (parentChannel) {
+    // This channel is a parent-process proxy for a child process request.
+    // Tell the child process channel to do this as well.
+    // TODO: We can remove the code sending the IPC to content to update
+    //       tracking info once we move the ContentBlockingLog into the parent.
+    //       This would be done in Bug 1599046.
+    nsAutoCString strLists, strHashes;
+    TablesToString(aLists, strLists);
+    TablesToString(aFullHashes, strHashes);
+
+    parentChannel->SetClassifierMatchedTrackingInfo(strLists, strHashes);
   }
 
   return NS_OK;
@@ -198,15 +152,6 @@ nsresult UrlClassifierCommon::SetBlockedContent(nsIChannel* channel,
   NS_ENSURE_ARG(!aList.IsEmpty());
 
   // Can be called in EITHER the parent or child process.
-  nsCOMPtr<nsIParentChannel> parentChannel;
-  NS_QueryNotificationCallbacks(channel, parentChannel);
-  if (parentChannel) {
-    // This channel is a parent-process proxy for a child process request.
-    // Tell the child process channel to do this instead.
-    parentChannel->SetClassifierMatchedInfo(aList, aProvider, aFullHash);
-    return NS_OK;
-  }
-
   nsresult rv;
   nsCOMPtr<nsIClassifiedChannel> classifiedChannel =
       do_QueryInterface(channel, &rv);
@@ -216,6 +161,33 @@ nsresult UrlClassifierCommon::SetBlockedContent(nsIChannel* channel,
     classifiedChannel->SetMatchedInfo(aList, aProvider, aFullHash);
   }
 
+  if (XRE_IsParentProcess()) {
+    nsCOMPtr<nsIParentChannel> parentChannel;
+    NS_QueryNotificationCallbacks(channel, parentChannel);
+    if (parentChannel) {
+      // This channel is a parent-process proxy for a child process request.
+      // Tell the child process channel to do this as well.
+      // TODO: We can remove the code sending the IPC to content to update
+      //       matched info once we move the ContentBlockingLog into the parent.
+      //       This would be done in Bug 1601063.
+      parentChannel->SetClassifierMatchedInfo(aList, aProvider, aFullHash);
+    }
+
+    unsigned state =
+        UrlClassifierFeatureFactory::GetClassifierBlockingEventCode(aErrorCode);
+    if (!state) {
+      state = nsIWebProgressListener::STATE_BLOCKED_UNSAFE_CONTENT;
+    }
+    ContentBlockingNotifier::OnEvent(channel, state);
+
+    return NS_OK;
+  }
+
+  // TODO: ReportToConsole is called in the child process,
+  // If nsContentUtils::ReportToConsole is not fission compatiable(cannot report
+  // to correct top-level window), we need to do this in the parent process
+  // instead (find the top-level window in the parent and send an IPC to child
+  // processes to report console).
   nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil =
       components::ThirdPartyUtil::Service();
   if (NS_WARN_IF(!thirdPartyUtil)) {
@@ -235,14 +207,6 @@ nsresult UrlClassifierCommon::SetBlockedContent(nsIChannel* channel,
   }
   RefPtr<dom::Document> doc = docShell->GetDocument();
   NS_ENSURE_TRUE(doc, NS_OK);
-
-  unsigned state =
-      UrlClassifierFeatureFactory::GetClassifierBlockingEventCode(aErrorCode);
-  if (!state) {
-    state = nsIWebProgressListener::STATE_BLOCKED_UNSAFE_CONTENT;
-  }
-
-  UrlClassifierCommon::NotifyChannelBlocked(channel, uriBeingLoaded, state);
 
   // Log a warning to the web console.
   nsCOMPtr<nsIURI> uri;
@@ -400,31 +364,6 @@ nsresult UrlClassifierCommon::CreatePairwiseWhiteListURI(nsIChannel* aChannel,
 
 namespace {
 
-void SetClassificationFlagsHelper(nsIChannel* aChannel,
-                                  uint32_t aClassificationFlags,
-                                  bool aIsThirdParty) {
-  MOZ_ASSERT(aChannel);
-
-  nsCOMPtr<nsIParentChannel> parentChannel;
-  NS_QueryNotificationCallbacks(aChannel, parentChannel);
-  if (parentChannel) {
-    // This channel is a parent-process proxy for a child process
-    // request. We should notify the child process as well.
-    parentChannel->NotifyClassificationFlags(aClassificationFlags,
-                                             aIsThirdParty);
-  }
-
-  RefPtr<HttpBaseChannel> httpChannel = do_QueryObject(aChannel);
-  if (httpChannel) {
-    httpChannel->AddClassificationFlags(aClassificationFlags, aIsThirdParty);
-  }
-
-  RefPtr<ClassifierDummyChannel> dummyChannel = do_QueryObject(aChannel);
-  if (dummyChannel) {
-    dummyChannel->AddClassificationFlags(aClassificationFlags, aIsThirdParty);
-  }
-}
-
 void LowerPriorityHelper(nsIChannel* aChannel) {
   MOZ_ASSERT(aChannel);
 
@@ -474,9 +413,35 @@ void LowerPriorityHelper(nsIChannel* aChannel) {
 }  // namespace
 
 // static
+void UrlClassifierCommon::SetClassificationFlagsHelper(
+    nsIChannel* aChannel, uint32_t aClassificationFlags, bool aIsThirdParty) {
+  MOZ_ASSERT(aChannel);
+
+  nsCOMPtr<nsIParentChannel> parentChannel;
+  NS_QueryNotificationCallbacks(aChannel, parentChannel);
+  if (parentChannel) {
+    // This channel is a parent-process proxy for a child process
+    // request. We should notify the child process as well.
+    parentChannel->NotifyClassificationFlags(aClassificationFlags,
+                                             aIsThirdParty);
+  }
+
+  RefPtr<HttpBaseChannel> httpChannel = do_QueryObject(aChannel);
+  if (httpChannel) {
+    httpChannel->AddClassificationFlags(aClassificationFlags, aIsThirdParty);
+  }
+
+  RefPtr<ClassifierDummyChannel> dummyChannel = do_QueryObject(aChannel);
+  if (dummyChannel) {
+    dummyChannel->AddClassificationFlags(aClassificationFlags, aIsThirdParty);
+  }
+}
+
+// static
 void UrlClassifierCommon::AnnotateChannel(nsIChannel* aChannel,
                                           uint32_t aClassificationFlags,
                                           uint32_t aLoadingState) {
+  MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(aChannel);
 
   nsCOMPtr<nsIURI> chanURI;
@@ -504,8 +469,7 @@ void UrlClassifierCommon::AnnotateChannel(nsIChannel* aChannel,
 
   if (validClassificationFlags &&
       (isThirdPartyWithTopLevelWinURI || IsAllowListed(aChannel))) {
-    UrlClassifierCommon::NotifyChannelClassifierProtectionDisabled(
-        aChannel, aLoadingState);
+    ContentBlockingNotifier::OnEvent(aChannel, aLoadingState);
   }
 
   if (isThirdPartyWithTopLevelWinURI &&
@@ -540,7 +504,7 @@ bool UrlClassifierCommon::IsAllowListed(nsIChannel* aChannel) {
       return false;
     }
     nsCOMPtr<nsIPrincipal> cbAllowListPrincipal =
-        BasePrincipal::CreateCodebasePrincipal(uri,
+        BasePrincipal::CreateContentPrincipal(uri,
                                               loadInfo->GetOriginAttributes());
 
     rv = ContentBlockingAllowList::Check(

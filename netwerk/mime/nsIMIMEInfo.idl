@@ -11,6 +11,7 @@ interface nsIHandlerApp;
 interface nsIArray;
 interface nsIMutableArray;
 interface nsIInterfaceRequestor;
+webidl BrowsingContext;
 
 typedef long nsHandlerInfoAction;
 
@@ -77,16 +78,16 @@ interface nsIHandlerInfo : nsISupports {
      * @param aURI
      *        The URI to launch this application with
      *
-     * @param aWindowContext 
+     * @param aBrowsingContext
      *        The window to parent the dialog against, and, if a web handler
-     *        is chosen, it is loaded in this window as well.  See 
+     *        is chosen, it is loaded in this window as well.  See
      *        nsIHandlerApp.launchWithURI for more details.
      *
      * @throw NS_ERROR_INVALID_ARG if preferredAction is not valid for this
      * call. Other exceptions may be thrown.
      */
-    void launchWithURI(in nsIURI aURI, 
-                       [optional] in nsIInterfaceRequestor aWindowContext);
+    void launchWithURI(in nsIURI aURI,
+                       [optional] in BrowsingContext aBrowsingContext);
 
     /**
      * preferredAction is how the user specified they would like to handle
@@ -197,6 +198,11 @@ interface nsIMIMEInfo : nsIHandlerInfo {
      * Other exceptions may be thrown.
      */
     void launchWithFile(in nsIFile aFile);
+
+    /**
+     * Check if we ourselves are registered as the OS default for this type.
+     */
+    boolean isCurrentAppOSDefault();
 };
 
 /**
@@ -241,20 +247,19 @@ interface nsIHandlerApp : nsISupports {
      * @param aURI
      *        The URI to launch this application with
      *
-     * @param aWindowContext 
+     * @param aBrowsingContext
      *
-     *        Currently only relevant to web-handler apps.  If given, this
-     *        represents the docshell to load the handler in and is passed
+     *        This represents the docshell to load the handler in and is passed
      *        through to nsIURILoader.openURI.  If this parameter is null or
-     *        not present, the web handler app implementation will attempt to 
+     *        not present, the web handler app implementation will attempt to
      *        find/create a place to load the handler and do so.  As of this
      *        writing, it tries to load the web handler in a new window using
      *        nsIBrowserDOMWindow.openURI.  In the future, it may attempt to 
      *        have a more comprehensive strategy which could include handing
      *        off to the system default browser (bug 394479).
      */
-    void launchWithURI(in nsIURI aURI, 
-                       [optional] in nsIInterfaceRequestor aWindowContext);
+    void launchWithURI(in nsIURI aURI,
+                       [optional] in BrowsingContext aBrowsingContext);
 
 };
 

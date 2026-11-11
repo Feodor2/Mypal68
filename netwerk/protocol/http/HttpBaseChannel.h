@@ -54,7 +54,8 @@ namespace mozilla {
 
 namespace dom {
 class PerformanceStorage;
-}
+class ContentParent;
+}  // namespace dom
 
 class LogCollector;
 
@@ -306,6 +307,9 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD ComputeCrossOriginOpenerPolicy(
       nsILoadInfo::CrossOriginOpenerPolicy aInitiatorPolicy,
       nsILoadInfo::CrossOriginOpenerPolicy* aOutPolicy) override;
+  NS_IMETHOD HasCrossOriginOpenerPolicyMismatch(bool* aIsMismatch) override;
+  NS_IMETHOD GetResponseEmbedderPolicy(
+      nsILoadInfo::CrossOriginEmbedderPolicy* aOutPolicy) override;
   virtual bool GetHasNonEmptySandboxingFlag() override {
     return mHasNonEmptySandboxingFlag;
   }
@@ -476,11 +480,12 @@ class HttpBaseChannel : public nsHashPropertyBag,
     nsCOMPtr<nsIReferrerInfo> referrerInfo;
     Maybe<dom::TimedChannelInfo> timedChannel;
     nsCOMPtr<nsIInputStream> uploadStream;
+    uint64_t uploadStreamLength;
     bool uploadStreamHasHeaders;
     Maybe<nsCString> contentType;
     Maybe<nsCString> contentLength;
 
-    dom::ReplacementChannelConfigInit Serialize();
+    dom::ReplacementChannelConfigInit Serialize(dom::ContentParent* aParent);
   };
 
   enum class ReplacementReason {
@@ -581,8 +586,11 @@ class HttpBaseChannel : public nsHashPropertyBag,
 
   bool IsBrowsingContextDiscarded() const;
 
-  nsresult GetResponseEmbedderPolicy(
-      nsILoadInfo::CrossOriginEmbedderPolicy* aResponseEmbedderPolicy);
+  nsresult ProcessCrossOriginEmbedderPolicyHeader();
+
+  nsresult ProcessCrossOriginResourcePolicyHeader();
+
+  nsresult ComputeCrossOriginOpenerPolicyMismatch();
 
   nsresult ValidateMIMEType();
 
@@ -871,7 +879,15 @@ class HttpBaseChannel : public nsHashPropertyBag,
     (bool, ForceMainDocumentChannel, 1),
     // This is set true if the channel is waiting for the
     // InputStreamLengthHelper::GetAsyncLength callback.
-    (bool, PendingInputStreamLengthOperation, 1)
+    (bool, PendingInputStreamLengthOperation, 1),
+
+    // Set to true if our listener has indicated that it requires
+    // content conversion to be done by us.
+    (bool, ListenerRequiresContentConversion, 1),
+
+    // True if this is a navigation to a page with a different cross origin
+    // opener policy ( see ComputeCrossOriginOpenerPolicyMismatch )
+    (uint32_t, HasCrossOriginOpenerPolicyMismatch, 1)
   ))
   // clang-format on
 

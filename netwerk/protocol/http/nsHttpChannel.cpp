@@ -118,8 +118,6 @@
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
-#include "mozilla/dom/CanonicalBrowsingContext.h"
-#include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/net/SocketProcessParent.h"
 #include "js/Conversions.h"
 #include "mozilla/dom/SecFetch.h"
@@ -361,7 +359,7 @@ nsHttpChannel::nsHttpChannel()
       mCacheQueueSizeWhenOpen(0),
       mCachedContentIsValid(false),
       mAuthRetryPending(false),
-      mHasCrossOriginOpenerPolicyMismatch(0),
+      mDataAlreadySent(0),
       mPushedStreamId(0),
       mLocalBlocklist(false),
       mOnTailUnblock(nullptr),
@@ -994,6 +992,11 @@ void nsHttpChannel::ReleaseListeners() {
   HttpBaseChannel::ReleaseListeners();
   mChannelClassifier = nullptr;
   mWarningReporter = nullptr;
+
+  for (StreamFilterRequest& request : mStreamFilterRequests) {
+    request.mPromise->Reject(false, __func__);
+  }
+  mStreamFilterRequests.Clear();
 }
 
 void nsHttpChannel::DoAsyncAbort(nsresult aStatus) {
@@ -1315,7 +1318,16 @@ nsresult nsHttpChannel::SetupTransaction() {
     MOZ_ASSERT(gIOService->SocketProcessReady(),
                "Socket process should be ready.");
 
-    RefPtr<HttpTransactionParent> transParent = new HttpTransactionParent();
+    nsCOMPtr<nsIParentChannel> parentChannel;
+    NS_QueryNotificationCallbacks(this, parentChannel);
+    RefPtr<DocumentLoadListener> documentChannelParent =
+        do_QueryObject(parentChannel);
+    // See HttpTransactionChild::CanSendODAToContentProcessDirectly() and
+    // nsHttpChannel::CallOnStartRequest() for the reason why we need to know if
+    // this is a document load. We only send ODA directly to child process for
+    // non document loads.
+    RefPtr<HttpTransactionParent> transParent =
+        new HttpTransactionParent(!!documentChannelParent);
     LOG1(("nsHttpChannel %p created HttpTransactionParent %p\n", this,
           transParent.get()));
 
@@ -1430,6 +1442,31 @@ void nsHttpChannel::SetCachedContentType() {
   mCacheEntry->SetContentType(contentType);
 }
 
+void nsHttpChannel::UpdateAntiTrackingInfo() {
+  Unused << mLoadInfo->SetHasStoragePermission(
+      AntiTrackingUtils::HasStoragePermissionInParent(this));
+
+  AntiTrackingUtils::ComputeIsThirdPartyToTopWindow(this);
+
+  if (mLoadInfo->GetExternalContentPolicyType() ==
+      ExtContentPolicy::TYPE_DOCUMENT) {
+    nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
+    Unused << mLoadInfo->GetCookieJarSettings(
+        getter_AddRefs(cookieJarSettings));
+
+    // Update the IsOnContentBlockingAllowList flag in the CookieJarSettings
+    // if this is a top level loading. For sub-document loading, this flag
+    // would inherit from the parent.
+    mozilla::net::CookieJarSettings::Cast(cookieJarSettings)
+        ->UpdateIsOnContentBlockingAllowList(this);
+
+    // We only need to set FPD for top-level loads. FPD will automatically be
+    // propagated to non-top level loads via CookieJarSetting.
+    mozilla::net::CookieJarSettings::Cast(cookieJarSettings)
+        ->SetPartitionKey(mURI);
+  }
+}
+
 nsresult nsHttpChannel::CallOnStartRequest() {
   LOG(("nsHttpChannel::CallOnStartRequest [this=%p]", this));
 
@@ -1450,8 +1487,6 @@ nsresult nsHttpChannel::CallOnStartRequest() {
     LOG(("CallOnStartRequest already invoked before"));
     return mStatus;
   }
-
-  StoreTracingEnabled(false);
 
   // Ensure mListener->OnStartRequest will be invoked before exiting
   // this function.
@@ -1501,6 +1536,10 @@ nsresult nsHttpChannel::CallOnStartRequest() {
     }
   }
 
+  // Note that the code below should be synced with the code in
+  // HttpTransactionChild::CanSendODAToContentProcessDirectly(). We MUST make
+  // sure HttpTransactionChild::CanSendODAToContentProcessDirectly() returns
+  // false when a stream converter is applied.
   bool unknownDecoderStarted = false;
   if (mResponseHead && !mResponseHead->HasContentType()) {
     MOZ_ASSERT(mConnectionInfo, "Should have connection info here");
@@ -1530,12 +1569,14 @@ nsresult nsHttpChannel::CallOnStartRequest() {
   // in the pipeline to handle the content and pass it along to our
   // original listener. nsUnknownDecoder doesn't support detecting this type,
   // so we only need to insert this using the response header's mime type.
-  // We only do this for document loads, since we might want to send parts
-  // to the external protocol handler without leaving the parent process.
+  //
+  // We only do this for unwrapped document loads, since we might want to send
+  // parts to the external protocol handler without leaving the parent process.
+  bool mustRunStreamFilterInParent = false;
   nsCOMPtr<nsIParentChannel> parentChannel;
   NS_QueryNotificationCallbacks(this, parentChannel);
   RefPtr<DocumentLoadListener> docListener = do_QueryObject(parentChannel);
-  if (mResponseHead && docListener) {
+  if (mResponseHead && docListener && docListener->GetChannel() == this) {
     nsAutoCString contentType;
     mResponseHead->ContentType(contentType);
 
@@ -1551,10 +1592,38 @@ nsresult nsHttpChannel::CallOnStartRequest() {
                                         getter_AddRefs(fromListener));
         if (NS_SUCCEEDED(rv)) {
           mListener = fromListener;
+          mustRunStreamFilterInParent = true;
         }
       }
     }
   }
+
+  // If we installed a multipart converter, then we need to add StreamFilter
+  // object before it, so that extensions see the un-parsed original stream.
+  // We may want to add an option for extensions to opt-in to proper multipart
+  // handling.
+  // If not, then pass the StreamFilter promise on to DocumentLoadListener,
+  // where it'll be added in the content process.
+  for (StreamFilterRequest& request : mStreamFilterRequests) {
+    if (mustRunStreamFilterInParent) {
+      mozilla::ipc::Endpoint<extensions::PStreamFilterParent> parent;
+      mozilla::ipc::Endpoint<extensions::PStreamFilterChild> child;
+      nsresult rv = extensions::PStreamFilter::CreateEndpoints(
+          base::GetCurrentProcId(), request.mChildProcessId, &parent, &child);
+      if (NS_FAILED(rv)) {
+        request.mPromise->Reject(false, __func__);
+      } else {
+        extensions::StreamFilterParent::Attach(this, std::move(parent));
+        request.mPromise->Resolve(std::move(child), __func__);
+      }
+    } else {
+      docListener->AttachStreamFilter(request.mChildProcessId)
+          ->ChainTo(request.mPromise.forget(), __func__);
+    }
+    request.mPromise = nullptr;
+  }
+  mStreamFilterRequests.Clear();
+  StoreTracingEnabled(false);
 
   if (mResponseHead && !mResponseHead->HasContentCharset())
     mResponseHead->SetContentCharset(mContentCharsetHint);
@@ -1582,9 +1651,16 @@ nsresult nsHttpChannel::CallOnStartRequest() {
   }
 
   // Install stream converter if required.
-  // If we use unknownDecoder, stream converters will be installed later (in
-  // nsUnknownDecoder) after OnStartRequest is called for the real listener.
-  if (!unknownDecoderStarted) {
+  // Normally, we expect the listener to disable content conversion during
+  // OnStartRequest if it wants to handle it itself (which is common case with
+  // HttpChannelParent, disabling so that it can be done in the content
+  // process). If we've installed an nsUnknownDecoder, then we won't yet have
+  // called OnStartRequest on the final listener (that happens after we send
+  // OnDataAvailable to the nsUnknownDecoder), so it can't yet have disabled
+  // content conversion.
+  // In that case, assume that the listener will disable content conversion,
+  // unless it's specifically told us that it won't.
+  if (!unknownDecoderStarted || LoadListenerRequiresContentConversion()) {
     nsCOMPtr<nsIStreamListener> listener;
     rv =
         DoApplyContentConversions(mListener, getter_AddRefs(listener), nullptr);
@@ -5893,9 +5969,6 @@ nsHttpChannel::AsyncOpen(nsIStreamListener* aListener) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  Unused << mLoadInfo->SetHasStoragePermission(
-      AntiTrackingUtils::HasStoragePermissionInParent(this));
-
   rv = NS_CheckPortSafety(mURI);
   if (NS_FAILED(rv)) {
     ReleaseListeners();
@@ -5908,6 +5981,8 @@ nsHttpChannel::AsyncOpen(nsIStreamListener* aListener) {
     // from) Hence, we have to call UpdatePrivateBrowsing() here
     UpdatePrivateBrowsing();
   }
+
+  UpdateAntiTrackingInfo();
 
   if (WaitingForTailUnblock()) {
     // This channel is marked as Tail and is part of a request context
@@ -6457,15 +6532,23 @@ base::ProcessId nsHttpChannel::ProcessId() {
 
 auto nsHttpChannel::AttachStreamFilter(base::ProcessId aChildProcessId)
     -> RefPtr<ChildEndpointPromise> {
+  if (!ProcessId()) {
+    return ChildEndpointPromise::CreateAndReject(false, __func__);
+  }
+
   nsCOMPtr<nsIParentChannel> parentChannel;
   NS_QueryNotificationCallbacks(this, parentChannel);
 
+  // If our listener is a DocumentLoadListener, then we might handle
+  // multi-part responses here in the parent process. The current extension
+  // API doesn't understand the parsed multipart format, so we defer responding
+  // here until CallOnStartRequest, and attach the StreamFilter before the
+  // multipart handler (in the parent process!) if applicable.
   if (RefPtr<DocumentLoadListener> docParent = do_QueryObject(parentChannel)) {
-    return docParent->AttachStreamFilter(aChildProcessId);
-  }
-
-  if (!ProcessId()) {
-    return ChildEndpointPromise::CreateAndReject(false, __func__);
+    StreamFilterRequest* request = mStreamFilterRequests.AppendElement();
+    request->mPromise = new ChildEndpointPromise::Private(__func__);
+    request->mChildProcessId = aChildProcessId;
+    return request->mPromise;
   }
 
   mozilla::ipc::Endpoint<extensions::PStreamFilterParent> parent;
@@ -6818,7 +6901,7 @@ nsHttpChannel::SetWWWCredentials(const nsACString& value) {
 //-----------------------------------------------------------------------------
 // Methods that nsIHttpAuthenticableChannel dupes from other IDLs, which we
 // get from HttpBaseChannel, must be explicitly forwarded, because C++ sucks.
-//
+//-----------------------------------------------------------------------------
 
 NS_IMETHODIMP
 nsHttpChannel::GetLoadFlags(nsLoadFlags* aLoadFlags) {
@@ -6841,267 +6924,6 @@ nsHttpChannel::GetLoadGroup(nsILoadGroup** aLoadGroup) {
 NS_IMETHODIMP
 nsHttpChannel::GetRequestMethod(nsACString& aMethod) {
   return HttpBaseChannel::GetRequestMethod(aMethod);
-}
-
-// See https://gist.github.com/annevk/6f2dd8c79c77123f39797f6bdac43f3e
-// This method runs steps 1-4 of the algorithm to compare
-// cross-origin-opener policies
-static bool CompareCrossOriginOpenerPolicies(
-    nsILoadInfo::CrossOriginOpenerPolicy documentPolicy,
-    nsIPrincipal* documentOrigin,
-    nsILoadInfo::CrossOriginOpenerPolicy resultPolicy,
-    nsIPrincipal* resultOrigin) {
-  if (documentPolicy == nsILoadInfo::OPENER_POLICY_UNSAFE_NONE &&
-      resultPolicy == nsILoadInfo::OPENER_POLICY_UNSAFE_NONE) {
-    return true;
-  }
-
-  if (documentPolicy == nsILoadInfo::OPENER_POLICY_UNSAFE_NONE ||
-      resultPolicy == nsILoadInfo::OPENER_POLICY_UNSAFE_NONE) {
-    return false;
-  }
-
-  if (documentPolicy == resultPolicy && documentOrigin->Equals(resultOrigin)) {
-    return true;
-  }
-
-  return false;
-}
-
-// This runs steps 1-5 of the algorithm when navigating a top level document.
-// See https://gist.github.com/annevk/6f2dd8c79c77123f39797f6bdac43f3e
-nsresult nsHttpChannel::ComputeCrossOriginOpenerPolicyMismatch() {
-  mHasCrossOriginOpenerPolicyMismatch = false;
-  if (!StaticPrefs::browser_tabs_remote_useCrossOriginOpenerPolicy()) {
-    return NS_OK;
-  }
-
-  // Only consider Cross-Origin-Opener-Policy for toplevel document loads.
-  if (mLoadInfo->GetExternalContentPolicyType() !=
-      ExtContentPolicy::TYPE_DOCUMENT) {
-    return NS_OK;
-  }
-
-  // Maybe the channel failed and we have no response head?
-  if (!mResponseHead && !mCachedResponseHead) {
-    // Not having a response head is not a hard failure at the point where
-    // this method is called.
-    return NS_OK;
-  }
-
-  RefPtr<mozilla::dom::BrowsingContext> ctx;
-  mLoadInfo->GetBrowsingContext(getter_AddRefs(ctx));
-
-  // In xpcshell-tests we don't always have a browsingContext
-  if (!ctx) {
-    return NS_OK;
-  }
-
-  // Get the policy of the active document, and the policy for the result.
-  nsILoadInfo::CrossOriginOpenerPolicy documentPolicy = ctx->GetOpenerPolicy();
-  nsILoadInfo::CrossOriginOpenerPolicy resultPolicy =
-      nsILoadInfo::OPENER_POLICY_UNSAFE_NONE;
-  Unused << ComputeCrossOriginOpenerPolicy(documentPolicy, &resultPolicy);
-  mComputedCrossOriginOpenerPolicy = resultPolicy;
-
-  // If bc's popup sandboxing flag set is not empty and potentialCOOP is
-  // non-null, then navigate bc to a network error and abort these steps.
-  if (resultPolicy != nsILoadInfo::OPENER_POLICY_UNSAFE_NONE &&
-      GetHasNonEmptySandboxingFlag()) {
-    LOG(
-        ("nsHttpChannel::ComputeCrossOriginOpenerPolicyMismatch network error "
-         "for non empty sandboxing and non null COOP"));
-    return NS_ERROR_BLOCKED_BY_POLICY;
-  }
-
-  // In xpcshell-tests we don't always have a current window global
-  if (!ctx->Canonical()->GetCurrentWindowGlobal()) {
-    return NS_OK;
-  }
-
-  // We use the top window principal as the documentOrigin
-  nsCOMPtr<nsIPrincipal> documentOrigin =
-      ctx->Canonical()->GetCurrentWindowGlobal()->DocumentPrincipal();
-  nsCOMPtr<nsIPrincipal> resultOrigin;
-
-  nsContentUtils::GetSecurityManager()->GetChannelResultPrincipal(
-      this, getter_AddRefs(resultOrigin));
-
-  bool compareResult = CompareCrossOriginOpenerPolicies(
-      documentPolicy, documentOrigin, resultPolicy, resultOrigin);
-
-  if (LOG_ENABLED()) {
-    LOG(
-        ("nsHttpChannel::HasCrossOriginOpenerPolicyMismatch - "
-         "doc:%d result:%d - compare:%d\n",
-         documentPolicy, resultPolicy, compareResult));
-    nsAutoCString docOrigin;
-    nsCOMPtr<nsIURI> uri = documentOrigin->GetURI();
-    uri->GetSpec(docOrigin);
-    nsAutoCString resOrigin;
-    uri = resultOrigin->GetURI();
-    uri->GetSpec(resOrigin);
-    LOG(("doc origin:%s - res origin: %s\n", docOrigin.get(), resOrigin.get()));
-  }
-
-  if (compareResult) {
-    return NS_OK;
-  }
-
-  // If one of the following is false:
-  //   - document's policy is same-origin-allow-popups
-  //   - resultPolicy is null
-  //   - doc is the initial about:blank document
-  // then we have a mismatch.
-
-  if (documentPolicy != nsILoadInfo::OPENER_POLICY_SAME_ORIGIN_ALLOW_POPUPS) {
-    mHasCrossOriginOpenerPolicyMismatch = true;
-    return NS_OK;
-  }
-
-  if (resultPolicy != nsILoadInfo::OPENER_POLICY_UNSAFE_NONE) {
-    mHasCrossOriginOpenerPolicyMismatch = true;
-    return NS_OK;
-  }
-
-  if (!ctx->Canonical()->GetCurrentWindowGlobal()->IsInitialDocument()) {
-    mHasCrossOriginOpenerPolicyMismatch = true;
-    return NS_OK;
-  }
-
-  return NS_OK;
-}
-
-// https://mikewest.github.io/corpp/#process-navigation-response
-nsresult nsHttpChannel::ProcessCrossOriginEmbedderPolicyHeader() {
-  nsresult rv;
-  if (!StaticPrefs::browser_tabs_remote_useCrossOriginEmbedderPolicy()) {
-    return NS_OK;
-  }
-
-  // Only consider Cross-Origin-Embedder-Policy for document loads.
-  if (mLoadInfo->GetExternalContentPolicyType() !=
-          ExtContentPolicy::TYPE_DOCUMENT &&
-      mLoadInfo->GetExternalContentPolicyType() !=
-          ExtContentPolicy::TYPE_SUBDOCUMENT) {
-    return NS_OK;
-  }
-
-  RefPtr<mozilla::dom::BrowsingContext> ctx;
-  mLoadInfo->GetBrowsingContext(getter_AddRefs(ctx));
-
-  if (!ctx) {
-    return NS_OK;
-  }
-
-  nsILoadInfo::CrossOriginEmbedderPolicy documentPolicy =
-      ctx->GetEmbedderPolicy();
-  nsILoadInfo::CrossOriginEmbedderPolicy resultPolicy =
-      nsILoadInfo::EMBEDDER_POLICY_NULL;
-  rv = GetResponseEmbedderPolicy(&resultPolicy);
-  if (NS_FAILED(rv)) {
-    return NS_OK;
-  }
-
-  // https://mikewest.github.io/corpp/#abstract-opdef-process-navigation-response
-  if (mLoadInfo->GetExternalContentPolicyType() ==
-          ExtContentPolicy::TYPE_SUBDOCUMENT &&
-      documentPolicy != nsILoadInfo::EMBEDDER_POLICY_NULL &&
-      resultPolicy != nsILoadInfo::EMBEDDER_POLICY_REQUIRE_CORP) {
-    return NS_ERROR_BLOCKED_BY_POLICY;
-  }
-
-  // XXX Bug 1572513 - we should have set the embedder policy during
-  // initializing docment object.
-  RefPtr<mozilla::dom::BrowsingContext> frameCtx = ctx;
-  if (mLoadInfo->GetExternalContentPolicyType() ==
-      ExtContentPolicy::TYPE_SUBDOCUMENT) {
-    mLoadInfo->GetFrameBrowsingContext(getter_AddRefs(frameCtx));
-  }
-
-  if (frameCtx && !frameCtx->IsDiscarded()) {
-    frameCtx->SetEmbedderPolicy(resultPolicy);
-  }
-
-  return NS_OK;
-}
-
-// https://mikewest.github.io/corpp/#corp-check
-nsresult nsHttpChannel::ProcessCrossOriginResourcePolicyHeader() {
-  // Fetch 4.5.9
-  uint32_t corsMode;
-  MOZ_ALWAYS_SUCCEEDS(GetCorsMode(&corsMode));
-  if (corsMode != nsIHttpChannelInternal::CORS_MODE_NO_CORS) {
-    return NS_OK;
-  }
-
-  // We only apply this for resources.
-  if (mLoadInfo->GetExternalContentPolicyType() ==
-          ExtContentPolicy::TYPE_DOCUMENT ||
-      mLoadInfo->GetExternalContentPolicyType() ==
-          ExtContentPolicy::TYPE_SUBDOCUMENT) {
-    return NS_OK;
-  }
-
-  MOZ_ASSERT(mLoadInfo->GetLoadingPrincipal(),
-             "Resources should always have a LoadingPrincipal");
-  if (!mResponseHead) {
-    return NS_OK;
-  }
-
-  nsAutoCString content;
-  Unused << mResponseHead->GetHeader(nsHttp::Cross_Origin_Resource_Policy,
-                                     content);
-
-  // 3.2.1.6 If policy is null, and embedder policy is "require-corp", set
-  // policy to "same-origin".
-  if (StaticPrefs::browser_tabs_remote_useCrossOriginEmbedderPolicy()) {
-    RefPtr<mozilla::dom::BrowsingContext> ctx;
-    mLoadInfo->GetBrowsingContext(getter_AddRefs(ctx));
-
-    // Note that we treat invalid value as "cross-origin", which spec indicates.
-    // We might want to make that stricter.
-    if (content.IsEmpty() && ctx &&
-        ctx->GetEmbedderPolicy() == nsILoadInfo::EMBEDDER_POLICY_REQUIRE_CORP) {
-      content = NS_LITERAL_CSTRING("same-origin");
-    }
-  }
-
-  if (content.IsEmpty()) {
-    return NS_OK;
-  }
-
-  nsCOMPtr<nsIPrincipal> channelOrigin;
-  nsContentUtils::GetSecurityManager()->GetChannelResultPrincipal(
-      this, getter_AddRefs(channelOrigin));
-
-  // Cross-Origin-Resource-Policy = %s"same-origin" / %s"same-site" /
-  // %s"cross-origin"
-  if (content.EqualsLiteral("same-origin")) {
-    if (!channelOrigin->Equals(mLoadInfo->GetLoadingPrincipal())) {
-      return NS_ERROR_DOM_CORP_FAILED;
-    }
-    return NS_OK;
-  }
-  if (content.EqualsLiteral("same-site")) {
-    nsAutoCString documentBaseDomain;
-    nsAutoCString resourceBaseDomain;
-    mLoadInfo->GetLoadingPrincipal()->GetBaseDomain(documentBaseDomain);
-    channelOrigin->GetBaseDomain(resourceBaseDomain);
-    if (documentBaseDomain != resourceBaseDomain) {
-      return NS_ERROR_DOM_CORP_FAILED;
-    }
-
-    nsCOMPtr<nsIURI> documentURI = mLoadInfo->GetLoadingPrincipal()->GetURI();
-    nsCOMPtr<nsIURI> resourceURI = channelOrigin->GetURI();
-    if (!documentURI->SchemeIs("https") && resourceURI->SchemeIs("https")) {
-      return NS_ERROR_DOM_CORP_FAILED;
-    }
-
-    return NS_OK;
-  }
-
-  return NS_OK;
 }
 
 //-----------------------------------------------------------------------------
@@ -7877,6 +7699,10 @@ nsHttpChannel::OnDataAvailable(nsIRequest* request, nsIInputStream* input,
       seekable = nullptr;
     }
 
+    mDataAlreadySent = false;
+    if (mTransaction) {
+      mDataAlreadySent = mTransaction->DataAlreadySent();
+    }
     nsresult rv =
         mListener->OnDataAvailable(this, input, mLogicalOffset, count);
     if (NS_SUCCEEDED(rv)) {
@@ -8410,7 +8236,6 @@ nsresult nsHttpChannel::ContinueDoAuthRetry(
     const std::function<nsresult(nsHttpChannel*, nsresult)>&
         aContinueOnStopRequestFunc) {
   LOG(("nsHttpChannel::ContinueDoAuthRetry [this=%p]\n", this));
-
   StoreIsPending(true);
 
   // get rid of the old response headers
@@ -8419,9 +8244,16 @@ nsresult nsHttpChannel::ContinueDoAuthRetry(
   // rewind the upload stream
   if (mUploadStream) {
     nsCOMPtr<nsISeekableStream> seekable = do_QueryInterface(mUploadStream);
+    nsresult rv = NS_ERROR_NO_INTERFACE;
     if (seekable) {
-      seekable->Seek(nsISeekableStream::NS_SEEK_SET, 0);
+      rv = seekable->Seek(nsISeekableStream::NS_SEEK_SET, 0);
     }
+
+    // This should not normally happen, but it's possible that big memory
+    // blobs originating in the other process can't be rewinded.
+    // In that case we just fail the request, otherwise the content length
+    // will not match and this load will never complete.
+    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   // always set sticky connection flag

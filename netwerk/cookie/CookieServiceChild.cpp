@@ -139,7 +139,7 @@ void CookieServiceChild::TrackCookieLoad(nsIChannel* aChannel) {
   SendPrepareCookieList(
       uri, result.contains(ThirdPartyAnalysis::IsForeign),
       result.contains(ThirdPartyAnalysis::IsThirdPartyTrackingResource),
-      result.contains(ThirdPartyAnalysis::IsFirstPartyStorageAccessGranted),
+      result.contains(ThirdPartyAnalysis::IsStorageAccessPermissionGranted),
       rejectedReason, isSafeTopLevelNav, isSameSiteForeign, attrs);
 }
 
@@ -543,7 +543,7 @@ CookieServiceChild::SetCookieStringFromHttp(nsIURI* aHostURI,
       cookieJarSettings, aHostURI,
       result.contains(ThirdPartyAnalysis::IsForeign),
       result.contains(ThirdPartyAnalysis::IsThirdPartyTrackingResource),
-      result.contains(ThirdPartyAnalysis::IsFirstPartyStorageAccessGranted),
+      result.contains(ThirdPartyAnalysis::IsStorageAccessPermissionGranted),
       aCookieString, CountCookiesFromHashTable(baseDomain, attrs), attrs,
       &rejectedReason);
 

@@ -19,7 +19,6 @@ namespace mozilla {
 
 namespace dom {
 class BrowserParent;
-class PBrowserOrId;
 }  // namespace dom
 
 namespace net {
@@ -39,7 +38,7 @@ class FTPChannelParent final : public PFTPChannelParent,
   NS_DECL_NSIINTERFACEREQUESTOR
   NS_DECL_NSICHANNELEVENTSINK
 
-  FTPChannelParent(const dom::PBrowserOrId& aIframeEmbedding,
+  FTPChannelParent(dom::BrowserParent* aIframeEmbedding,
                    nsILoadContext* aLoadContext,
                    PBOverrideStatus aOverrideStatus);
 
@@ -80,7 +79,7 @@ class FTPChannelParent final : public PFTPChannelParent,
 
   // used to connect redirected-to channel in parent with just created
   // ChildChannel.  Used during HTTP->FTP redirects.
-  bool ConnectChannel(const uint32_t& channelId);
+  bool ConnectChannel(const uint64_t& channelId);
 
   void DivertOnDataAvailable(const nsCString& data, const uint64_t& offset,
                              const uint32_t& count);

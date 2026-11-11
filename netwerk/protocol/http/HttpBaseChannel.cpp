@@ -20,12 +20,15 @@
 #include "mozilla/InputStreamLengthHelper.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/Components.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/Tokenizer.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PerformanceStorage.h"
+#include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/net/PartiallySeekableInputStream.h"
 #include "mozilla/net/UrlClassifierCommon.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
@@ -76,6 +79,8 @@
 #include "nsStreamUtils.h"
 #include "nsThreadUtils.h"
 #include "nsURLHelper.h"
+#include "mozilla/RemoteLazyInputStreamChild.h"
+#include "mozilla/RemoteLazyInputStreamUtils.h"
 
 namespace mozilla {
 namespace net {
@@ -1169,6 +1174,11 @@ HttpBaseChannel::DoApplyContentConversions(nsIStreamListener* aNextListener,
     return NS_OK;
   }
 
+  if (LoadHasAppliedConversion()) {
+    LOG(("not applying conversion because mHasAppliedConversion is true\n"));
+    return NS_OK;
+  }
+
   if (LoadDeliveringAltData()) {
     MOZ_ASSERT(!mAvailableCachedAltDataType.IsEmpty());
     LOG(("not applying conversion because delivering alt-data\n"));
@@ -2072,6 +2082,262 @@ bool HttpBaseChannel::IsBrowsingContextDiscarded() const {
   }
 
   return false;
+}
+
+// https://mikewest.github.io/corpp/#process-navigation-response
+nsresult HttpBaseChannel::ProcessCrossOriginEmbedderPolicyHeader() {
+  nsresult rv;
+  if (!StaticPrefs::browser_tabs_remote_useCrossOriginEmbedderPolicy()) {
+    return NS_OK;
+  }
+
+  // Only consider Cross-Origin-Embedder-Policy for document loads.
+  if (mLoadInfo->GetExternalContentPolicyType() !=
+          ExtContentPolicy::TYPE_DOCUMENT &&
+      mLoadInfo->GetExternalContentPolicyType() !=
+          ExtContentPolicy::TYPE_SUBDOCUMENT) {
+    return NS_OK;
+  }
+
+  nsILoadInfo::CrossOriginEmbedderPolicy resultPolicy =
+      nsILoadInfo::EMBEDDER_POLICY_NULL;
+  rv = GetResponseEmbedderPolicy(&resultPolicy);
+  if (NS_FAILED(rv)) {
+    return NS_OK;
+  }
+
+  // https://mikewest.github.io/corpp/#abstract-opdef-process-navigation-response
+  if (mLoadInfo->GetExternalContentPolicyType() ==
+          ExtContentPolicy::TYPE_SUBDOCUMENT &&
+      mLoadInfo->GetLoadingEmbedderPolicy() !=
+          nsILoadInfo::EMBEDDER_POLICY_NULL &&
+      resultPolicy != nsILoadInfo::EMBEDDER_POLICY_REQUIRE_CORP) {
+    return NS_ERROR_BLOCKED_BY_POLICY;
+  }
+
+  return NS_OK;
+}
+
+// https://mikewest.github.io/corpp/#corp-check
+nsresult HttpBaseChannel::ProcessCrossOriginResourcePolicyHeader() {
+  // Fetch 4.5.9
+  uint32_t corsMode;
+  MOZ_ALWAYS_SUCCEEDS(GetCorsMode(&corsMode));
+  if (corsMode != nsIHttpChannelInternal::CORS_MODE_NO_CORS) {
+    return NS_OK;
+  }
+
+  // We only apply this for resources.
+  if (mLoadInfo->GetExternalContentPolicyType() ==
+          ExtContentPolicy::TYPE_DOCUMENT ||
+      mLoadInfo->GetExternalContentPolicyType() ==
+          ExtContentPolicy::TYPE_WEBSOCKET) {
+    return NS_OK;
+  }
+
+  if (mLoadInfo->GetExternalContentPolicyType() ==
+      ExtContentPolicy::TYPE_SUBDOCUMENT) {
+    // COEP pref off, skip CORP checking for subdocument.
+    if (!StaticPrefs::browser_tabs_remote_useCrossOriginEmbedderPolicy()) {
+      return NS_OK;
+    }
+    // COEP 3.2.1.2 when request targets a nested browsing context then embedder
+    // policy value is "unsafe-none", then return allowed.
+    if (mLoadInfo->GetLoadingEmbedderPolicy() ==
+        nsILoadInfo::EMBEDDER_POLICY_NULL) {
+      return NS_OK;
+    }
+  }
+
+  MOZ_ASSERT(mLoadInfo->GetLoadingPrincipal(),
+             "Resources should always have a LoadingPrincipal");
+  if (!mResponseHead) {
+    return NS_OK;
+  }
+
+  nsAutoCString content;
+  Unused << mResponseHead->GetHeader(nsHttp::Cross_Origin_Resource_Policy,
+                                     content);
+
+  if (StaticPrefs::browser_tabs_remote_useCrossOriginEmbedderPolicy()) {
+    // COEP 3.2.1.6 If policy is null, and embedder policy is "require-corp",
+    // set policy to "same-origin".
+    // Note that we treat invalid value as "cross-origin", which spec
+    // indicates. We might want to make that stricter.
+    if (content.IsEmpty() && mLoadInfo->GetLoadingEmbedderPolicy() ==
+                                 nsILoadInfo::EMBEDDER_POLICY_REQUIRE_CORP) {
+      content = "same-origin"_ns;
+    }
+  }
+
+  if (content.IsEmpty()) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIPrincipal> channelOrigin;
+  nsContentUtils::GetSecurityManager()->GetChannelResultPrincipal(
+      this, getter_AddRefs(channelOrigin));
+
+  // Cross-Origin-Resource-Policy = %s"same-origin" / %s"same-site" /
+  // %s"cross-origin"
+  if (content.EqualsLiteral("same-origin")) {
+    if (!channelOrigin->Equals(mLoadInfo->GetLoadingPrincipal())) {
+      return NS_ERROR_DOM_CORP_FAILED;
+    }
+    return NS_OK;
+  }
+  if (content.EqualsLiteral("same-site")) {
+    nsAutoCString documentBaseDomain;
+    nsAutoCString resourceBaseDomain;
+    mLoadInfo->GetLoadingPrincipal()->GetBaseDomain(documentBaseDomain);
+    channelOrigin->GetBaseDomain(resourceBaseDomain);
+    if (documentBaseDomain != resourceBaseDomain) {
+      return NS_ERROR_DOM_CORP_FAILED;
+    }
+
+    nsCOMPtr<nsIURI> resourceURI = channelOrigin->GetURI();
+    if (!mLoadInfo->GetLoadingPrincipal()->SchemeIs("https") &&
+        resourceURI->SchemeIs("https")) {
+      return NS_ERROR_DOM_CORP_FAILED;
+    }
+
+    return NS_OK;
+  }
+
+  return NS_OK;
+}
+
+// See https://gist.github.com/annevk/6f2dd8c79c77123f39797f6bdac43f3e
+// This method runs steps 1-4 of the algorithm to compare
+// cross-origin-opener policies
+static bool CompareCrossOriginOpenerPolicies(
+    nsILoadInfo::CrossOriginOpenerPolicy documentPolicy,
+    nsIPrincipal* documentOrigin,
+    nsILoadInfo::CrossOriginOpenerPolicy resultPolicy,
+    nsIPrincipal* resultOrigin) {
+  if (documentPolicy == nsILoadInfo::OPENER_POLICY_UNSAFE_NONE &&
+      resultPolicy == nsILoadInfo::OPENER_POLICY_UNSAFE_NONE) {
+    return true;
+  }
+
+  if (documentPolicy == nsILoadInfo::OPENER_POLICY_UNSAFE_NONE ||
+      resultPolicy == nsILoadInfo::OPENER_POLICY_UNSAFE_NONE) {
+    return false;
+  }
+
+  if (documentPolicy == resultPolicy && documentOrigin->Equals(resultOrigin)) {
+    return true;
+  }
+
+  return false;
+}
+
+// This runs steps 1-5 of the algorithm when navigating a top level document.
+// See https://gist.github.com/annevk/6f2dd8c79c77123f39797f6bdac43f3e
+nsresult HttpBaseChannel::ComputeCrossOriginOpenerPolicyMismatch() {
+  StoreHasCrossOriginOpenerPolicyMismatch(false);
+  if (!StaticPrefs::browser_tabs_remote_useCrossOriginOpenerPolicy()) {
+    return NS_OK;
+  }
+
+  // Only consider Cross-Origin-Opener-Policy for toplevel document loads.
+  if (mLoadInfo->GetExternalContentPolicyType() !=
+      ExtContentPolicy::TYPE_DOCUMENT) {
+    return NS_OK;
+  }
+
+  // Maybe the channel failed and we have no response head?
+  if (!mResponseHead) {
+    // Not having a response head is not a hard failure at the point where
+    // this method is called.
+    return NS_OK;
+  }
+
+  RefPtr<mozilla::dom::BrowsingContext> ctx;
+  mLoadInfo->GetBrowsingContext(getter_AddRefs(ctx));
+
+  // In xpcshell-tests we don't always have a browsingContext
+  if (!ctx) {
+    return NS_OK;
+  }
+
+  // Get the policy of the active document, and the policy for the result.
+  nsILoadInfo::CrossOriginOpenerPolicy documentPolicy = ctx->GetOpenerPolicy();
+  nsILoadInfo::CrossOriginOpenerPolicy resultPolicy =
+      nsILoadInfo::OPENER_POLICY_UNSAFE_NONE;
+  Unused << ComputeCrossOriginOpenerPolicy(documentPolicy, &resultPolicy);
+  mComputedCrossOriginOpenerPolicy = resultPolicy;
+
+  // If bc's popup sandboxing flag set is not empty and potentialCOOP is
+  // non-null, then navigate bc to a network error and abort these steps.
+  if (resultPolicy != nsILoadInfo::OPENER_POLICY_UNSAFE_NONE &&
+      GetHasNonEmptySandboxingFlag()) {
+    LOG((
+        "HttpBaseChannel::ComputeCrossOriginOpenerPolicyMismatch network error "
+        "for non empty sandboxing and non null COOP"));
+    return NS_ERROR_BLOCKED_BY_POLICY;
+  }
+
+  // In xpcshell-tests we don't always have a current window global
+  if (!ctx->Canonical()->GetCurrentWindowGlobal()) {
+    return NS_OK;
+  }
+
+  // We use the top window principal as the documentOrigin
+  nsCOMPtr<nsIPrincipal> documentOrigin =
+      ctx->Canonical()->GetCurrentWindowGlobal()->DocumentPrincipal();
+  nsCOMPtr<nsIPrincipal> resultOrigin;
+
+  nsContentUtils::GetSecurityManager()->GetChannelResultPrincipal(
+      this, getter_AddRefs(resultOrigin));
+
+  bool compareResult = CompareCrossOriginOpenerPolicies(
+      documentPolicy, documentOrigin, resultPolicy, resultOrigin);
+
+  if (LOG_ENABLED()) {
+    LOG(
+        ("HttpBaseChannel::HasCrossOriginOpenerPolicyMismatch - "
+         "doc:%d result:%d - compare:%d\n",
+         documentPolicy, resultPolicy, compareResult));
+    nsAutoCString docOrigin("(null)");
+    nsCOMPtr<nsIURI> uri = documentOrigin->GetURI();
+    if (uri) {
+      uri->GetSpec(docOrigin);
+    }
+    nsAutoCString resOrigin("(null)");
+    uri = resultOrigin->GetURI();
+    if (uri) {
+      uri->GetSpec(resOrigin);
+    }
+    LOG(("doc origin:%s - res origin: %s\n", docOrigin.get(), resOrigin.get()));
+  }
+
+  if (compareResult) {
+    return NS_OK;
+  }
+
+  // If one of the following is false:
+  //   - document's policy is same-origin-allow-popups
+  //   - resultPolicy is null
+  //   - doc is the initial about:blank document
+  // then we have a mismatch.
+
+  if (documentPolicy != nsILoadInfo::OPENER_POLICY_SAME_ORIGIN_ALLOW_POPUPS) {
+    StoreHasCrossOriginOpenerPolicyMismatch(true);
+    return NS_OK;
+  }
+
+  if (resultPolicy != nsILoadInfo::OPENER_POLICY_UNSAFE_NONE) {
+    StoreHasCrossOriginOpenerPolicyMismatch(true);
+    return NS_OK;
+  }
+
+  if (!ctx->Canonical()->GetCurrentWindowGlobal()->IsInitialDocument()) {
+    StoreHasCrossOriginOpenerPolicyMismatch(true);
+    return NS_OK;
+  }
+
+  return NS_OK;
 }
 
 enum class Report { Error, Warning };
@@ -3085,6 +3351,12 @@ already_AddRefed<nsILoadInfo> HttpBaseChannel::CloneLoadInfoForRedirect(
     MOZ_ASSERT(
         docShellAttrs.mPrivateBrowsingId == attrs.mPrivateBrowsingId,
         "docshell and necko should have the same privateBrowsingId attribute.");
+#ifdef MOZ_WIDGET_ANDROID
+    MOZ_ASSERT(docShellAttrs.mGeckoViewSessionContextId ==
+                 attrs.mGeckoViewSessionContextId,
+               "docshell and necko should have the same "
+               "geckoViewSessionContextId attribute");
+#endif
 
     attrs = docShellAttrs;
     attrs.SetFirstPartyDomain(true, aNewURI);
@@ -3100,7 +3372,7 @@ already_AddRefed<nsILoadInfo> HttpBaseChannel::CloneLoadInfoForRedirect(
       csp->GetUpgradeInsecureRequests(&upgradeInsecureRequests);
       if (upgradeInsecureRequests) {
         nsCOMPtr<nsIPrincipal> resultPrincipal =
-            BasePrincipal::CreateCodebasePrincipal(
+            BasePrincipal::CreateContentPrincipal(
                 aNewURI, newLoadInfo->GetOriginAttributes());
         bool isConsideredSameOriginforUIR =
             nsContentSecurityUtils::IsConsideredSameOriginForUIR(
@@ -3141,6 +3413,7 @@ already_AddRefed<nsILoadInfo> HttpBaseChannel::CloneLoadInfoForRedirect(
 
 NS_IMETHODIMP
 HttpBaseChannel::SetNewListener(nsIStreamListener* aListener,
+                                bool aMustApplyContentConversion,
                                 nsIStreamListener** _retval) {
   LOG((
       "HttpBaseChannel::SetNewListener [this=%p, mListener=%p, newListener=%p]",
@@ -3155,6 +3428,9 @@ HttpBaseChannel::SetNewListener(nsIStreamListener* aListener,
 
   wrapper.forget(_retval);
   mListener = aListener;
+  if (aMustApplyContentConversion) {
+    StoreListenerRequiresContentConversion(true);
+  }
   return NS_OK;
 }
 
@@ -3403,7 +3679,15 @@ HttpBaseChannel::CloneReplacementChannelConfig(bool aPreserveMethod,
     mRequestHead.Method(method);
     config.method = Some(method);
 
-    config.uploadStream = mUploadStream;
+    if (mUploadStream) {
+      // rewind upload stream
+      nsCOMPtr<nsISeekableStream> seekable = do_QueryInterface(mUploadStream);
+      if (seekable) {
+        seekable->Seek(nsISeekableStream::NS_SEEK_SET, 0);
+      }
+      config.uploadStream = mUploadStream;
+    }
+    config.uploadStreamLength = mReqContentLength;
     config.uploadStreamHasHeaders = LoadUploadStreamHasHeaders();
 
     nsAutoCString contentType;
@@ -3534,13 +3818,6 @@ HttpBaseChannel::CloneReplacementChannelConfig(bool aPreserveMethod,
     nsCOMPtr<nsIUploadChannel> uploadChannel = do_QueryInterface(httpChannel);
     nsCOMPtr<nsIUploadChannel2> uploadChannel2 = do_QueryInterface(httpChannel);
     if (uploadChannel2 || uploadChannel) {
-      // rewind upload stream
-      nsCOMPtr<nsISeekableStream> seekable =
-          do_QueryInterface(config.uploadStream);
-      if (seekable) {
-        seekable->Seek(nsISeekableStream::NS_SEEK_SET, 0);
-      }
-
       // replicate original call to SetUploadStream...
       if (uploadChannel2) {
         const nsACString& ctype =
@@ -3553,16 +3830,13 @@ HttpBaseChannel::CloneReplacementChannelConfig(bool aPreserveMethod,
         const nsACString& method =
             config.method ? *config.method : VoidCString();
 
-        int64_t len = (!config.contentLength || config.contentLength->IsEmpty())
-                          ? -1
-                          : nsCRT::atoll(config.contentLength->get());
-        uploadChannel2->ExplicitSetUploadStream(config.uploadStream, ctype, len,
-                                                method,
-                                                config.uploadStreamHasHeaders);
+        uploadChannel2->ExplicitSetUploadStream(
+            config.uploadStream, ctype, config.uploadStreamLength, method,
+            config.uploadStreamHasHeaders);
       } else {
         if (config.uploadStreamHasHeaders) {
           uploadChannel->SetUploadStream(config.uploadStream, ""_ns,
-                                         -1);
+                                         config.uploadStreamLength);
         } else {
           nsAutoCString ctype;
           if (config.contentType) {
@@ -3600,14 +3874,23 @@ HttpBaseChannel::ReplacementChannelConfig::ReplacementChannelConfig(
   method = aInit.method();
   referrerInfo = aInit.referrerInfo();
   timedChannel = aInit.timedChannel();
-  uploadStream = aInit.uploadStream();
+  if (RemoteLazyInputStreamChild* actor =
+          static_cast<RemoteLazyInputStreamChild*>(aInit.uploadStreamChild())) {
+    uploadStreamLength = actor->Size();
+    uploadStream = actor->CreateStream();
+    // actor can be deleted by CreateStream, so don't touch it
+    // after this.
+  } else {
+    uploadStreamLength = 0;
+  }
   uploadStreamHasHeaders = aInit.uploadStreamHasHeaders();
   contentType = aInit.contentType();
   contentLength = aInit.contentLength();
 }
 
 dom::ReplacementChannelConfigInit
-HttpBaseChannel::ReplacementChannelConfig::Serialize() {
+HttpBaseChannel::ReplacementChannelConfig::Serialize(
+    dom::ContentParent* aParent) {
   dom::ReplacementChannelConfigInit config;
   config.redirectFlags() = redirectFlags;
   config.classOfService() = classOfService;
@@ -3615,7 +3898,12 @@ HttpBaseChannel::ReplacementChannelConfig::Serialize() {
   config.method() = method;
   config.referrerInfo() = referrerInfo;
   config.timedChannel() = timedChannel;
-  config.uploadStream() = uploadStream;
+  if (uploadStream) {
+    RemoteLazyStream ipdlStream;
+    RemoteLazyInputStreamUtils::SerializeInputStream(
+        uploadStream, uploadStreamLength, ipdlStream, aParent);
+    config.uploadStreamParent() = ipdlStream;
+  }
   config.uploadStreamHasHeaders() = uploadStreamHasHeaders;
   config.contentType() = contentType;
   config.contentLength() = contentLength;
@@ -3712,6 +4000,19 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
     nsresult hasHeader = mRequestHead.GetHeader(nsHttp::Accept, oldAcceptValue);
     if (NS_SUCCEEDED(hasHeader)) {
       rv = httpChannel->SetRequestHeader("Accept"_ns, oldAcceptValue, false);
+      MOZ_ASSERT(NS_SUCCEEDED(rv));
+    }
+  }
+
+  // convey the User-Agent header value
+  // since we might be setting custom user agent from DevTools.
+  if (httpInternal && mCorsMode == CORS_MODE_NO_CORS &&
+      redirectType == ReplacementReason::Redirect) {
+    nsAutoCString oldUserAgent;
+    nsresult hasHeader =
+        mRequestHead.GetHeader(nsHttp::User_Agent, oldUserAgent);
+    if (NS_SUCCEEDED(hasHeader)) {
+      rv = httpChannel->SetRequestHeader("User-Agent"_ns, oldUserAgent, false);
       MOZ_ASSERT(NS_SUCCEEDED(rv));
     }
   }
@@ -4622,24 +4923,17 @@ void HttpBaseChannel::SetIPv4Disabled() { mCaps |= NS_HTTP_DISABLE_IPV4; }
 
 void HttpBaseChannel::SetIPv6Disabled() { mCaps |= NS_HTTP_DISABLE_IPV6; }
 
-nsresult HttpBaseChannel::GetResponseEmbedderPolicy(
-    nsILoadInfo::CrossOriginEmbedderPolicy* aResponseEmbedderPolicy) {
+NS_IMETHODIMP HttpBaseChannel::GetResponseEmbedderPolicy(
+    nsILoadInfo::CrossOriginEmbedderPolicy* aOutPolicy) {
   if (!mResponseHead) {
     return NS_ERROR_NOT_AVAILABLE;
   }
-
-  nsILoadInfo::CrossOriginEmbedderPolicy policy =
-      nsILoadInfo::EMBEDDER_POLICY_NULL;
 
   nsAutoCString content;
   Unused << mResponseHead->GetHeader(nsHttp::Cross_Origin_Embedder_Policy,
                                      content);
 
-  if (content.EqualsLiteral("require-corp")) {
-    policy = nsILoadInfo::EMBEDDER_POLICY_REQUIRE_CORP;
-  }
-
-  *aResponseEmbedderPolicy = policy;
+  *aOutPolicy = NS_GetCrossOriginEmbedderPolicyFromHeader(content);
   return NS_OK;
 }
 
@@ -4713,6 +5007,14 @@ HttpBaseChannel::GetCrossOriginOpenerPolicy(
     return NS_ERROR_NOT_AVAILABLE;
   }
   *aPolicy = mComputedCrossOriginOpenerPolicy;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::HasCrossOriginOpenerPolicyMismatch(bool* aIsMismatch) {
+  // This should only be called in parent process.
+  MOZ_ASSERT(XRE_IsParentProcess());
+  *aIsMismatch = LoadHasCrossOriginOpenerPolicyMismatch();
   return NS_OK;
 }
 

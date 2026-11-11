@@ -4,14 +4,14 @@
 
 #include "SocketProcessImpl.h"
 
+#include "ProcessUtils.h"
 #include "base/command_line.h"
 #include "base/shared_memory.h"
 #include "base/string_util.h"
-#include "mozilla/ipc/IOThreadChild.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ipc/IOThreadChild.h"
 #include "ProcessUtils.h"
-
 
 #ifdef OS_POSIX
 #  include <unistd.h>  // For sleep().

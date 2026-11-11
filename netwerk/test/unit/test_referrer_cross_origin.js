@@ -33,7 +33,7 @@ function test_policy(test) {
   }
 
   let referrer = NetUtil.newURI(test.referrer);
-  let triggeringPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+  let triggeringPrincipal = Services.scriptSecurityManager.createContentPrincipal(
     referrer,
     {}
   );

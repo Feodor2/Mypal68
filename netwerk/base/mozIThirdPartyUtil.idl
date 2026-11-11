@@ -17,7 +17,7 @@ interface nsILoadInfo;
 enum class ThirdPartyAnalysis {
   IsForeign,
   IsThirdPartyTrackingResource,
-  IsFirstPartyStorageAccessGranted,
+  IsStorageAccessPermissionGranted,
 };
 
 using ThirdPartyAnalysisResult = mozilla::EnumSet<ThirdPartyAnalysis>;

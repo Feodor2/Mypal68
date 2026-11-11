@@ -3,9 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DocumentChannelParent.h"
+
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ClientInfo.h"
+#include "mozilla/dom/ContentParent.h"
 
 extern mozilla::LazyLogModule gDocumentChannelLog;
 #define LOG(fmt) MOZ_LOG(gDocumentChannelLog, mozilla::LogLevel::Verbose, fmt)
@@ -15,40 +17,70 @@ using namespace mozilla::dom;
 namespace mozilla {
 namespace net {
 
-DocumentChannelParent::DocumentChannelParent(CanonicalBrowsingContext* aContext,
-                                             nsILoadContext* aLoadContext) {
+DocumentChannelParent::DocumentChannelParent() {
   LOG(("DocumentChannelParent ctor [this=%p]", this));
-  // Sometime we can get this called without a BrowsingContext, so that we have
-  // an actor to call SendFailedAsyncOpen on.
-  if (aContext) {
-    mParent = new DocumentLoadListener(aContext, aLoadContext, this);
-  }
 }
 
 DocumentChannelParent::~DocumentChannelParent() {
   LOG(("DocumentChannelParent dtor [this=%p]", this));
 }
 
-bool DocumentChannelParent::Init(const DocumentChannelCreationArgs& aArgs) {
-  MOZ_ASSERT(mParent);
+bool DocumentChannelParent::Init(dom::CanonicalBrowsingContext* aContext,
+                                 const DocumentChannelCreationArgs& aArgs) {
   RefPtr<nsDocShellLoadState> loadState =
       new nsDocShellLoadState(aArgs.loadState());
   LOG(("DocumentChannelParent Init [this=%p, uri=%s]", this,
        loadState->URI()->GetSpecOrDefault().get()));
 
-  Maybe<ClientInfo> clientInfo;
-  if (aArgs.initialClientInfo().isSome()) {
-    clientInfo.emplace(ClientInfo(aArgs.initialClientInfo().ref()));
+  RefPtr<DocumentLoadListener::OpenPromise> promise;
+  if (loadState->GetChannelInitialized()) {
+    promise = DocumentLoadListener::ClaimParentLoad(
+        getter_AddRefs(mDocumentLoadListener), loadState->GetLoadIdentifier());
+  }
+  if (!promise) {
+    mDocumentLoadListener = new DocumentLoadListener(aContext);
+
+    Maybe<ClientInfo> clientInfo;
+    if (aArgs.initialClientInfo().isSome()) {
+      clientInfo.emplace(ClientInfo(aArgs.initialClientInfo().ref()));
+    }
+
+    nsresult rv = NS_ERROR_UNEXPECTED;
+    promise = mDocumentLoadListener->Open(
+        loadState, aArgs.cacheKey(), Some(aArgs.channelId()),
+        aArgs.asyncOpenTime(), aArgs.timing().refOr(nullptr),
+        std::move(clientInfo), aArgs.outerWindowId(),
+        aArgs.hasValidTransientUserAction(), Some(aArgs.uriModified()),
+        Some(aArgs.isXFOError()), IProtocol::OtherPid(), &rv);
+    if (NS_FAILED(rv)) {
+      MOZ_ASSERT(!promise);
+      return SendFailedAsyncOpen(rv);
+    }
   }
 
-  nsresult rv = NS_ERROR_UNEXPECTED;
-  if (!mParent->Open(loadState, aArgs.loadFlags(), aArgs.cacheKey(),
-                     aArgs.channelId(), aArgs.asyncOpenTime(),
-                     aArgs.timing().refOr(nullptr), std::move(clientInfo),
-                     aArgs.outerWindowId(), aArgs.hasValidTransientUserAction(),
-                     &rv)) {
-    return SendFailedAsyncOpen(rv);
-  }
+  RefPtr<DocumentChannelParent> self = this;
+  promise->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [self](DocumentLoadListener::OpenPromiseSucceededType&& aResolveValue) {
+        // The DLL is waiting for us to resolve the
+        // PDocumentChannel::RedirectToRealChannelPromise given as parameter.
+        auto promise = self->RedirectToRealChannel(
+            std::move(aResolveValue.mStreamFilterEndpoints),
+            aResolveValue.mRedirectFlags, aResolveValue.mLoadFlags);
+        // We chain the promise the DLL is waiting on to the one returned by
+        // RedirectToRealChannel. As soon as the promise returned is resolved
+        // or rejected, so will the DLL's promise.
+        promise->ChainTo(aResolveValue.mPromise.forget(), __func__);
+        self->mDocumentLoadListener = nullptr;
+      },
+      [self](DocumentLoadListener::OpenPromiseFailedType&& aRejectValue) {
+        if (!self->CanSend()) {
+          return;
+        }
+        Unused << self->SendDisconnectChildListeners(
+            aRejectValue.mStatus, aRejectValue.mLoadGroupStatus);
+        self->mDocumentLoadListener = nullptr;
+      });
 
   return true;
 }
@@ -63,7 +95,9 @@ DocumentChannelParent::RedirectToRealChannel(
         CreateAndReject(ResponseRejectReason::ChannelClosed, __func__);
   }
   RedirectToRealChannelArgs args;
-  mParent->SerializeRedirectData(args, false, aRedirectFlags, aLoadFlags);
+  mDocumentLoadListener->SerializeRedirectData(
+      args, false, aRedirectFlags, aLoadFlags,
+      static_cast<ContentParent*>(Manager()->Manager()));
   return SendRedirectToRealChannel(args, std::move(aStreamFilterEndpoints));
 }
 

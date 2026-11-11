@@ -173,14 +173,6 @@ class HttpChannelChild final : public PHttpChannelChild,
   mozilla::ipc::IPCResult RecvAltDataCacheInputStreamAvailable(
       const Maybe<IPCStream>& aStream) override;
 
-  mozilla::ipc::IPCResult RecvNotifyChannelClassifierProtectionDisabled(
-      const uint32_t& aAcceptedReason) override;
-
-  mozilla::ipc::IPCResult RecvNotifyCookieAllowed() override;
-
-  mozilla::ipc::IPCResult RecvNotifyCookieBlocked(
-      const uint32_t& aRejectedReason) override;
-
   mozilla::ipc::IPCResult RecvNotifyClassificationFlags(
       const uint32_t& aClassificationFlags, const bool& aIsThirdParty) override;
 
@@ -334,7 +326,6 @@ class HttpChannelChild final : public PHttpChannelChild,
   RefPtr<InterceptStreamListener> mInterceptListener;
   // Needed to call AsyncOpen in FinishInterceptedRedirect
   nsCOMPtr<nsIStreamListener> mInterceptedRedirectListener;
-  nsCOMPtr<nsISupports> mInterceptedRedirectContext;
 
   // Proxy release all members above on main thread.
   void ReleaseMainThreadOnlyReferences();
@@ -524,6 +515,7 @@ class HttpChannelChild final : public PHttpChannelChild,
   void DoNotifyListener();
   void ContinueDoNotifyListener();
   void OnAfterLastPart(const nsresult& aStatus);
+  void MaybeConnectToSocketProcess();
 
   // Create a a new channel to be used in a redirection, based on the provided
   // response headers.

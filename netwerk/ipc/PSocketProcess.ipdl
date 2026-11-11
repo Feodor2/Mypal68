@@ -20,11 +20,11 @@ include protocol PProxyConfigLookup;
 
 include MemoryReportTypes;
 include NeckoChannelParams;
-include PBrowserOrId;
 include PrefsTypes;
 include PSMIPCTypes;
 
 using mozilla::dom::NativeThreadId from "mozilla/dom/NativeThreadId.h";
+using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
 using base::ProcessId from "base/process.h";
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
 using PRTime from "prtime.h";

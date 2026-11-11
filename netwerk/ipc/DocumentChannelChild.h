@@ -24,7 +24,7 @@ class DocumentChannelChild final : public DocumentChannel,
  public:
   DocumentChannelChild(nsDocShellLoadState* aLoadState,
                        class LoadInfo* aLoadInfo, nsLoadFlags aLoadFlags,
-                       uint32_t aCacheKey);
+                       uint32_t aCacheKey, bool aUriModified, bool aIsXFOError);
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIASYNCVERIFYREDIRECTCALLBACK
@@ -45,7 +45,11 @@ class DocumentChannelChild final : public DocumentChannel,
       RedirectToRealChannelResolver&& aResolve);
 
  private:
-  void ShutdownListeners(nsresult aStatusCode);
+  void DeleteIPDL() override {
+    if (CanSend()) {
+      Send__delete__(this);
+    }
+  }
 
   ~DocumentChannelChild();
 

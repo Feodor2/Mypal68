@@ -34,7 +34,6 @@ namespace mozilla {
 
 namespace dom {
 class BrowserParent;
-class PBrowserOrId;
 }  // namespace dom
 
 namespace net {
@@ -78,7 +77,7 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
 
   NS_DECLARE_STATIC_IID_ACCESSOR(HTTP_CHANNEL_PARENT_IID)
 
-  HttpChannelParent(const dom::PBrowserOrId& iframeEmbedding,
+  HttpChannelParent(dom::BrowserParent* iframeEmbedding,
                     nsILoadContext* aLoadContext, PBOverrideStatus aStatus);
 
   [[nodiscard]] bool Init(const HttpChannelCreationArgs& aOpenArgs);
@@ -301,8 +300,6 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
   MozPromiseHolder<GenericNonExclusivePromise> mPromise;
   MozPromiseRequestHolder<GenericNonExclusivePromise> mRequest;
 
-  dom::TabId mNestedFrameId;
-
   // To calculate the delay caused by the e10s back-pressure suspension
   TimeStamp mResumedTimestamp;
 
@@ -310,7 +307,7 @@ class HttpChannelParent final : public nsIInterfaceRequestor,
 
   // Corresponding redirect channel registrar Id. 0 means redirection is not
   // started.
-  uint32_t mRedirectChannelId = 0;
+  uint64_t mRedirectChannelId = 0;
 
   PBOverrideStatus mPBOverride;
 

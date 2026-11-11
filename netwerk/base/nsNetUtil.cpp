@@ -2505,7 +2505,7 @@ bool NS_IsHSTSUpgradeRedirect(nsIChannel* aOldChannel, nsIChannel* aNewChannel,
   return NS_SUCCEEDED(upgradedURI->Equals(newURI, &res)) && res;
 }
 
-nsresult NS_LinkRedirectChannels(uint32_t channelId,
+nsresult NS_LinkRedirectChannels(uint64_t channelId,
                                  nsIParentChannel* parentChannel,
                                  nsIChannel** _result) {
   nsCOMPtr<nsIRedirectChannelRegistrar> registrar =

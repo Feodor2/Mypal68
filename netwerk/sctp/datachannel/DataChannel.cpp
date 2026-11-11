@@ -733,7 +733,10 @@ bool DataChannelConnection::ConnectToTransport(const std::string& aTransportId,
 
 void DataChannelConnection::SetSignals(const std::string& aTransportId) {
   ASSERT_WEBRTC(IsSTSThread());
-  mTransportId = aTransportId;
+  {
+    MutexAutoLock lock(mLock);
+    mTransportId = aTransportId;
+  }
   mTransportHandler->SignalPacketReceived.connect(
       this, &DataChannelConnection::SctpDtlsInput);
   mTransportHandler->SignalStateChange.connect(
@@ -750,6 +753,7 @@ void DataChannelConnection::SetSignals(const std::string& aTransportId) {
 
 void DataChannelConnection::TransportStateChange(
     const std::string& aTransportId, TransportLayer::State aState) {
+  ASSERT_WEBRTC(IsSTSThread());
   if (aTransportId == mTransportId) {
     if (aState == TransportLayer::TS_OPEN) {
       DC_DEBUG(("Transport is open!"));
@@ -871,6 +875,7 @@ void DataChannelConnection::ProcessQueuedOpens() {
 
 void DataChannelConnection::SctpDtlsInput(const std::string& aTransportId,
                                           const MediaPacket& packet) {
+  MutexAutoLock lock(mLock);
   if ((packet.type() != MediaPacket::SCTP) || (mTransportId != aTransportId)) {
     return;
   }
@@ -885,7 +890,6 @@ void DataChannelConnection::SctpDtlsInput(const std::string& aTransportId,
     }
   }
   // Pass the data to SCTP
-  MutexAutoLock lock(mLock);
   usrsctp_conninput(reinterpret_cast<void*>(mId), packet.data(), packet.len(),
                     0);
 }

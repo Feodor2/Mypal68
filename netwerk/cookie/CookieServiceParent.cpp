@@ -98,7 +98,7 @@ void CookieServiceParent::TrackCookieLoad(nsIChannel* aChannel) {
   mCookieService->GetCookiesForURI(
       uri, aChannel, result.contains(ThirdPartyAnalysis::IsForeign),
       result.contains(ThirdPartyAnalysis::IsThirdPartyTrackingResource),
-      result.contains(ThirdPartyAnalysis::IsFirstPartyStorageAccessGranted),
+      result.contains(ThirdPartyAnalysis::IsStorageAccessPermissionGranted),
       rejectedReason, isSafeTopLevelNav, aIsSameSiteForeign, false, attrs,
       foundCookieList);
   nsTArray<CookieStruct> matchingCookiesList;
@@ -124,7 +124,7 @@ void CookieServiceParent::SerialializeCookieList(
 IPCResult CookieServiceParent::RecvPrepareCookieList(
     nsIURI* aHost, const bool& aIsForeign,
     const bool& aIsThirdPartyTrackingResource,
-    const bool& aFirstPartyStorageAccessGranted,
+    const bool& aStorageAccessPermissionGranted,
     const uint32_t& aRejectedReason, const bool& aIsSafeTopLevelNav,
     const bool& aIsSameSiteForeign, const OriginAttributes& aAttrs) {
   // Send matching cookies to Child.
@@ -138,7 +138,7 @@ IPCResult CookieServiceParent::RecvPrepareCookieList(
   // child process already does the necessary reporting in this case for us.
   mCookieService->GetCookiesForURI(
       aHost, nullptr, aIsForeign, aIsThirdPartyTrackingResource,
-      aFirstPartyStorageAccessGranted, aRejectedReason, aIsSafeTopLevelNav,
+      aStorageAccessPermissionGranted, aRejectedReason, aIsSafeTopLevelNav,
       aIsSameSiteForeign, false, aAttrs, foundCookieList);
   nsTArray<CookieStruct> matchingCookiesList;
   SerialializeCookieList(foundCookieList, matchingCookiesList);

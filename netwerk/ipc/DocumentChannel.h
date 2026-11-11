@@ -5,13 +5,12 @@
 #ifndef mozilla_net_DocumentChannel_h
 #define mozilla_net_DocumentChannel_h
 
-#include "mozilla/net/PDocumentChannelChild.h"
 #include "nsDocShell.h" //MY
+#include "mozilla/dom/ClientInfo.h"
+#include "mozilla/net/NeckoChannelParams.h"
 #include "nsDOMNavigationTiming.h"
 #include "nsIChannel.h"
 #include "nsIChildChannel.h"
-#include "nsITraceableChannel.h"
-#include "mozilla/dom/ClientInfo.h"
 
 #define DOCUMENT_CHANNEL_IID                         \
   {                                                  \
@@ -33,27 +32,14 @@ namespace net {
  * channel with the real one, otherwise the originating docshell will be removed
  * during the process switch.
  */
-class DocumentChannel : public nsIIdentChannel, public nsITraceableChannel {
+class DocumentChannel : public nsIIdentChannel {
  public:
   NS_DECL_ISUPPORTS
   NS_DECL_NSIREQUEST
   NS_DECL_NSICHANNEL
   NS_DECL_NSIIDENTCHANNEL
-  NS_DECL_NSITRACEABLECHANNEL
 
   NS_DECLARE_STATIC_IID_ACCESSOR(DOCUMENT_CHANNEL_IID)
-
-  DocumentChannel(nsDocShellLoadState* aLoadState, class LoadInfo* aLoadInfo,
-                  nsLoadFlags aLoadFlags, uint32_t aCacheKey);
-
-  const nsTArray<DocumentChannelRedirect>& GetRedirectChain() const {
-    return mRedirects;
-  }
-
-  void GetLastVisit(nsIURI** aURI, uint32_t* aChannelRedirectFlags) const {
-    *aURI = do_AddRef(mLastVisitInfo.uri()).take();
-    *aChannelRedirectFlags = mLastVisitInfo.previousFlags();
-  }
 
   void SetNavigationTiming(nsDOMNavigationTiming* aTiming) {
     mTiming = aTiming;
@@ -63,13 +49,32 @@ class DocumentChannel : public nsIIdentChannel, public nsITraceableChannel {
     mInitialClientInfo = aInfo;
   }
 
+  /**
+   * Will create the appropriate document channel:
+   * Either a DocumentChannelChild if called from the content process or
+   * a ParentProcessDocumentChannel if called from the parent process.
+   * This operation is infallible.
+   */
+  static already_AddRefed<DocumentChannel> CreateDocumentChannel(
+      nsDocShellLoadState* aLoadState, class LoadInfo* aLoadInfo,
+      nsLoadFlags aLoadFlags, nsIInterfaceRequestor* aNotificationCallbacks,
+      uint32_t aCacheKey, bool aUriModified, bool aIsXFOError);
+
+  static bool CanUseDocumentChannel(nsDocShellLoadState* aLoadState);
+
  protected:
+  DocumentChannel(nsDocShellLoadState* aLoadState, class LoadInfo* aLoadInfo,
+                  nsLoadFlags aLoadFlags, uint32_t aCacheKey, bool aUriModified,
+                  bool aIsXFOError);
+
+  void ShutdownListeners(nsresult aStatusCode);
+  void DisconnectChildListeners(const nsresult& aStatus,
+                                const nsresult& aLoadGroupStatus);
+  virtual void DeleteIPDL() {}
+
   nsDocShell* GetDocShell();
 
   virtual ~DocumentChannel() = default;
-
-  LastVisitInfo mLastVisitInfo;
-  nsTArray<DocumentChannelRedirect> mRedirects;
 
   const TimeStamp mAsyncOpenTime;
   const RefPtr<nsDocShellLoadState> mLoadState;
@@ -89,6 +94,12 @@ class DocumentChannel : public nsIIdentChannel, public nsITraceableChannel {
   nsCOMPtr<nsISupports> mOwner;
   RefPtr<nsDOMNavigationTiming> mTiming;
   Maybe<dom::ClientInfo> mInitialClientInfo;
+  // mUriModified is true if we're doing a history load and the URI of the
+  // session history had been modified by pushState/replaceState.
+  bool mUriModified = false;
+  // mIsXFOError is true if we're handling a load error and the status of the
+  // failed channel is NS_ERROR_XFO_VIOLATION.
+  bool mIsXFOError = false;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(DocumentChannel, DOCUMENT_CHANNEL_IID)

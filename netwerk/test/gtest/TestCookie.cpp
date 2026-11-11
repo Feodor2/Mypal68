@@ -75,7 +75,7 @@ void SetACookieInternal(nsICookieService* aCookieService, const char* aSpec,
   ASSERT_TRUE(NS_SUCCEEDED(rv0));
   nsCOMPtr<nsIPrincipal> specPrincipal;
   nsCString tmpString(aSpec);
-  ssm->CreateCodebasePrincipalFromOrigin(tmpString,
+  ssm->CreateContentPrincipalFromOrigin(tmpString,
                                          getter_AddRefs(specPrincipal));
 
   nsCOMPtr<nsIChannel> dummyChannel;

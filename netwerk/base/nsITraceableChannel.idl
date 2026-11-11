@@ -19,15 +19,18 @@ interface nsITraceableChannel : nsISupports
      * OnDataAvailable and OnStopRequest calls and must pass them to 
      * the original listener after examination. If multiple callers replace 
      * the channel's listener, a chain of listeners is created.
-     * The caller of setNewListener has no way to control at which place 
+     * The caller of setNewListener has no way to control at which place
      * in the chain its listener is placed.
      *
-     * Note: The caller of setNewListener must not delay passing 
+     * @param aMustApplyContentConversion Pass true if the new listener requires
+     * content conversion to already be applied by the channel.
+     *
+     * Note: The caller of setNewListener must not delay passing
      * OnStartRequest to the original listener.
      *
      * Note2: A channel may restrict when the listener can be replaced.
      * It is not recommended to allow listener replacement after OnStartRequest
      * has been called.
      */
-    nsIStreamListener setNewListener(in nsIStreamListener aListener);
+    nsIStreamListener setNewListener(in nsIStreamListener aListener, [optional] in boolean aMustApplyContentConversion);
 };

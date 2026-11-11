@@ -40,6 +40,8 @@
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/net/ChannelDiverterChild.h"
 #include "mozilla/net/DNS.h"
+#include "mozilla/net/SocketProcessBridgeChild.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "SerializedLoadContext.h"
 #include "nsInputStreamPump.h"
@@ -57,6 +59,7 @@
 #include "nsCORSListenerProxy.h"
 #include "nsApplicationCache.h"
 #include "ClassifierDummyChannel.h"
+#include "nsIOService.h"
 
 #ifdef MOZ_GECKO_PROFILER
 #  include "ProfilerMarkerPayload.h"
@@ -259,7 +262,6 @@ void HttpChannelChild::ReleaseMainThreadOnlyReferences() {
   arrayToRelease.AppendElement(listener.forget());
 
   arrayToRelease.AppendElement(mInterceptedRedirectListener.forget());
-  arrayToRelease.AppendElement(mInterceptedRedirectContext.forget());
 
   NS_DispatchToMainThread(new ProxyReleaseRunnable(std::move(arrayToRelease)));
 }
@@ -894,6 +896,8 @@ void HttpChannelChild::OnTransportAndData(const nsresult& aChannelStatus,
   DoOnDataAvailable(this, stringStream, aOffset, aCount);
   stringStream->Close();
 
+  // TODO: Bug 1523916 backpressure needs to take into account if the data is
+  // coming from the main process or from the socket process via PBackground.
   if (NeedToReportBytesRead()) {
     mUnreportBytesRead += aCount;
     if (mUnreportBytesRead >= gHttpHandler->SendWindowSize() >> 2) {
@@ -1126,9 +1130,9 @@ void HttpChannelChild::OnStopRequest(
     return;
   }
 
-  // If we're a multi-part stream, and this wasn't the last part, then don't
-  // cleanup yet, as we're expecting more parts.
-  if (mMultiPartID && !mIsLastPartOfMultiPart) {
+  // If we're a multi-part stream, then don't cleanup yet, and we'll do so
+  // in OnAfterLastPart.
+  if (mMultiPartID) {
     LOG(
         ("HttpChannelChild::OnStopRequest  - Expecting future parts on a "
          "multipart channel"
@@ -1230,9 +1234,9 @@ void HttpChannelChild::DoOnStopRequest(nsIRequest* aRequest,
   }
   StoreOnStopRequestCalled(true);
 
-  // If we're a multi-part stream, and this wasn't the last part, then don't
-  // cleanup yet, as we're expecting more parts.
-  if (mMultiPartID && !mIsLastPartOfMultiPart) {
+  // If we're a multi-part stream, then don't cleanup yet, and we'll do so
+  // in OnAfterLastPart.
+  if (mMultiPartID) {
     LOG(
         ("HttpChannelChild::DoOnStopRequest  - Expecting future parts on a "
          "multipart channel"
@@ -1545,11 +1549,9 @@ void HttpChannelChild::ContinueDoNotifyListener() {
 
 void HttpChannelChild::FinishInterceptedRedirect() {
   nsresult rv;
-  MOZ_ASSERT(!mInterceptedRedirectContext, "the context should be null!");
   rv = AsyncOpen(mInterceptedRedirectListener);
 
   mInterceptedRedirectListener = nullptr;
-  mInterceptedRedirectContext = nullptr;
 
   if (mInterceptingChannel) {
     mInterceptingChannel->CleanupRedirectingChannel(rv);
@@ -1831,52 +1833,6 @@ void HttpChannelChild::ProcessFlushedForDiversion() {
                         true);
 }
 
-mozilla::ipc::IPCResult
-HttpChannelChild::RecvNotifyChannelClassifierProtectionDisabled(
-    const uint32_t& aAcceptedReason) {
-  LOG(
-      ("HttpChannelChild::RecvNotifyChannelClassifierProtectionDisabled "
-       "[this=%p aAcceptedReason=%" PRIu32 "]\n",
-       this, aAcceptedReason));
-  MOZ_ASSERT(NS_IsMainThread());
-
-  mEventQ->RunOrEnqueue(new NeckoTargetChannelFunctionEvent(
-      this, [self = UnsafePtr<HttpChannelChild>(this), aAcceptedReason] {
-        UrlClassifierCommon::NotifyChannelClassifierProtectionDisabled(
-            self, aAcceptedReason);
-      }));
-
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult HttpChannelChild::RecvNotifyCookieAllowed() {
-  LOG(("HttpChannelChild::RecvNotifyCookieAllowed [this=%p]\n", this));
-  MOZ_ASSERT(NS_IsMainThread());
-
-  mEventQ->RunOrEnqueue(new NeckoTargetChannelFunctionEvent(
-      this, [self = UnsafePtr<HttpChannelChild>(this)] {
-        ContentBlockingNotifier::OnDecision(
-            self, ContentBlockingNotifier::BlockingDecision::eAllow, 0);
-      }));
-
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult HttpChannelChild::RecvNotifyCookieBlocked(
-    const uint32_t& aRejectedReason) {
-  LOG(("HttpChannelChild::RecvNotifyCookieBlocked [this=%p]\n", this));
-  MOZ_ASSERT(NS_IsMainThread());
-
-  mEventQ->RunOrEnqueue(new NeckoTargetChannelFunctionEvent(
-      this, [self = UnsafePtr<HttpChannelChild>(this), aRejectedReason] {
-        ContentBlockingNotifier::OnDecision(
-            self, ContentBlockingNotifier::BlockingDecision::eBlock,
-            aRejectedReason);
-      }));
-
-  return IPC_OK();
-}
-
 mozilla::ipc::IPCResult HttpChannelChild::RecvNotifyClassificationFlags(
     const uint32_t& aClassificationFlags, const bool& aIsThirdParty) {
   LOG(
@@ -2005,7 +1961,7 @@ bool HttpChannelChild::Redirect3Complete(OverrideRunnable* aRunnable) {
       httpChannelChild->mOverrideRunnable = aRunnable;
       httpChannelChild->mInterceptingChannel = this;
     }
-    rv = mRedirectChannelChild->CompleteRedirectSetup(mListener, nullptr);
+    rv = mRedirectChannelChild->CompleteRedirectSetup(mListener);
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
     mSuccesfullyRedirected = NS_SUCCEEDED(rv);
 #endif
@@ -2094,10 +2050,8 @@ HttpChannelChild::ConnectParent(uint32_t registrarId) {
   SetEventTarget();
 
   HttpChannelConnectArgs connectArgs(registrarId, mShouldParentIntercept);
-  PBrowserOrId browser = static_cast<ContentChild*>(gNeckoChild->Manager())
-                             ->GetBrowserOrId(browserChild);
   if (!gNeckoChild->SendPHttpChannelConstructor(
-          this, browser, IPC::SerializedLoadContext(this), connectArgs)) {
+          this, browserChild, IPC::SerializedLoadContext(this), connectArgs)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -2133,12 +2087,13 @@ HttpChannelChild::ConnectParent(uint32_t registrarId) {
 #endif
   }
 
+  MaybeConnectToSocketProcess();
+
   return NS_OK;
 }
 
 NS_IMETHODIMP
-HttpChannelChild::CompleteRedirectSetup(nsIStreamListener* aListener,
-                                        nsISupports* aContext) {
+HttpChannelChild::CompleteRedirectSetup(nsIStreamListener* aListener) {
   LOG(("HttpChannelChild::FinishRedirectSetup [this=%p]\n", this));
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -2160,8 +2115,6 @@ HttpChannelChild::CompleteRedirectSetup(nsIStreamListener* aListener,
     //  4. [optional] Call OverrideWithSynthesizedResponse on the redirected
     //  channel if the call came from OverrideRunnable.
     mInterceptedRedirectListener = aListener;
-    mInterceptedRedirectContext = aContext;
-
     // This will send a message to the parent notifying it that we are closing
     // down. After closing the IPC channel, we will proceed to execute
     // FinishInterceptedRedirect() which AsyncOpen's the channel again.
@@ -2840,9 +2793,8 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
   // target.
   SetEventTarget();
 
-  PBrowserOrId browser = cc->GetBrowserOrId(browserChild);
   if (!gNeckoChild->SendPHttpChannelConstructor(
-          this, browser, IPC::SerializedLoadContext(this), openArgs)) {
+          this, browserChild, IPC::SerializedLoadContext(this), openArgs)) {
     return NS_ERROR_FAILURE;
   }
 
@@ -2889,6 +2841,8 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
     mEverHadBgChildAtAsyncOpen = true;
 #endif
   }
+
+  MaybeConnectToSocketProcess();
 
   return NS_OK;
 }
@@ -4044,6 +3998,28 @@ void HttpChannelChild::DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() {
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   mDoDiagnosticAssertWhenOnStopNotCalledOnDestroy = true;
 #endif
+}
+
+void HttpChannelChild::MaybeConnectToSocketProcess() {
+  if (!nsIOService::UseSocketProcess()) {
+    return;
+  }
+
+  if (!StaticPrefs::network_send_ODA_to_content_directly()) {
+    return;
+  }
+
+  RefPtr<HttpBackgroundChannelChild> bgChild = mBgChild;
+  SocketProcessBridgeChild::GetSocketProcessBridge()->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      [bgChild]() {
+        gSocketTransportService->Dispatch(
+            NewRunnableMethod("HttpBackgroundChannelChild::CreateDataBridge",
+                              bgChild,
+                              &HttpBackgroundChannelChild::CreateDataBridge),
+            NS_DISPATCH_NORMAL);
+      },
+      []() { NS_WARNING("Failed to create SocketProcessBridgeChild"); });
 }
 
 }  // namespace net

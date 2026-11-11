@@ -474,6 +474,10 @@ already_AddRefed<nsIRequestContextService>
 RequestContextService::GetOrCreate() {
   MOZ_ASSERT(NS_IsMainThread());
 
+  if (sShutdown) {
+    return nullptr;
+  }
+
   RefPtr<RequestContextService> svc;
   if (gSingleton) {
     svc = gSingleton;
@@ -497,6 +501,10 @@ RequestContextService::GetRequestContext(const uint64_t rcID,
 
   if (sShutdown) {
     return NS_ERROR_ILLEGAL_DURING_SHUTDOWN;
+  }
+
+  if (!rcID) {
+    return NS_ERROR_INVALID_ARG;
   }
 
   *rc = do_AddRef(mTable.LookupOrInsertWith(rcID, [&] {
@@ -544,10 +552,6 @@ RequestContextService::NewRequestContext(nsIRequestContext** rc) {
 
 NS_IMETHODIMP
 RequestContextService::RemoveRequestContext(const uint64_t rcID) {
-  if (IsNeckoChild() && gNeckoChild) {
-    gNeckoChild->SendRemoveRequestContext(rcID);
-  }
-
   MOZ_ASSERT(NS_IsMainThread());
   mTable.Remove(rcID);
   return NS_OK;

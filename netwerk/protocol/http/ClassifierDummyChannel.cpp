@@ -649,6 +649,17 @@ NS_IMETHODIMP ClassifierDummyChannel::ComputeCrossOriginOpenerPolicy(
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+NS_IMETHODIMP
+ClassifierDummyChannel::GetCrossOriginOpenerPolicy(
+    nsILoadInfo::CrossOriginOpenerPolicy* aPolicy) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP ClassifierDummyChannel::HasCrossOriginOpenerPolicyMismatch(
+    bool* aIsMismatch) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
 NS_IMETHODIMP ClassifierDummyChannel::SetMatchedInfo(
     const nsACString& aList, const nsACString& aProvider,
     const nsACString& aFullHash) {
@@ -717,13 +728,12 @@ NS_IMETHODIMP ClassifierDummyChannel::IsThirdPartyTrackingResource(
 
 void ClassifierDummyChannel::DoDiagnosticAssertWhenOnStopNotCalledOnDestroy() {}
 
-NS_IMETHODIMP ClassifierDummyChannel::SetWaitForHTTPSSVCRecord() {
+NS_IMETHODIMP ClassifierDummyChannel::GetResponseEmbedderPolicy(
+    nsILoadInfo::CrossOriginEmbedderPolicy* aOutPolicy) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-NS_IMETHODIMP
-ClassifierDummyChannel::GetCrossOriginOpenerPolicy(
-    nsILoadInfo::CrossOriginOpenerPolicy* aPolicy) {
+NS_IMETHODIMP ClassifierDummyChannel::SetWaitForHTTPSSVCRecord() {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

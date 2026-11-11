@@ -387,6 +387,10 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     NotifyObservers(chan, NS_HTTP_ON_MODIFY_REQUEST_TOPIC);
   }
 
+  void OnModifyDocumentRequest(nsIIdentChannel* chan) {
+    NotifyObservers(chan, NS_DOCUMENT_ON_MODIFY_REQUEST_TOPIC);
+  }
+
   // Called by the channel before writing a request
   void OnStopRequest(nsIHttpChannel* chan) {
     NotifyObservers(chan, NS_HTTP_ON_STOP_REQUEST_TOPIC);
@@ -544,7 +548,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   PRIntervalTime mIdleTimeout;
   PRIntervalTime mSpdyTimeout;
   PRIntervalTime mResponseTimeout;
-  bool mResponseTimeoutEnabled;
+  Atomic<bool, Relaxed> mResponseTimeoutEnabled;
   uint32_t mNetworkChangedTimeout;  // milliseconds
   uint16_t mMaxRequestAttempts;
   uint16_t mMaxRequestDelay;
@@ -725,7 +729,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   uint32_t mFastOpenConsecutiveFailureCounter;
   uint32_t mFastOpenStallsLimit;
   uint32_t mFastOpenStallsCounter;
-  uint32_t mFastOpenStallsIdleTime;
+  Atomic<uint32_t, Relaxed> mFastOpenStallsIdleTime;
   uint32_t mFastOpenStallsTimeout;
 
   // If true, the transactions from active tab will be dispatched first.

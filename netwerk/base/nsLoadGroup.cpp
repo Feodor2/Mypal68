@@ -90,7 +90,8 @@ nsLoadGroup::nsLoadGroup()
       mStatus(NS_OK),
       mIsCanceling(false),
       mDefaultLoadIsTimed(false),
-      mBrowsingContextDiscarded(false) {
+      mBrowsingContextDiscarded(false),
+      mExternalRequestContext(false) {
   LOG(("LOADGROUP [%p]: Created.\n", this));
 }
 
@@ -100,8 +101,11 @@ nsLoadGroup::~nsLoadGroup() {
 
   mDefaultLoadRequest = nullptr;
 
-  if (mRequestContext) {
+  if (mRequestContext && !mExternalRequestContext) {
     mRequestContextService->RemoveRequestContext(mRequestContext->GetID());
+    if (IsNeckoChild() && gNeckoChild) {
+      gNeckoChild->SendRemoveRequestContext(mRequestContext->GetID());
+    }
   }
 
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
@@ -773,6 +777,23 @@ nsresult nsLoadGroup::Init() {
     Unused << mRequestContextService->NewRequestContext(
         getter_AddRefs(mRequestContext));
   }
+
+  nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
+  NS_ENSURE_STATE(os);
+
+  Unused << os->AddObserver(this, "last-pb-context-exited", true);
+
+  return NS_OK;
+}
+
+nsresult nsLoadGroup::InitWithRequestContextId(
+    const uint64_t& aRequestContextId) {
+  mRequestContextService = RequestContextService::GetOrCreate();
+  if (mRequestContextService) {
+    Unused << mRequestContextService->GetRequestContext(
+        aRequestContextId, getter_AddRefs(mRequestContext));
+  }
+  mExternalRequestContext = true;
 
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
   NS_ENSURE_STATE(os);

@@ -52,6 +52,7 @@
 #include "nsThreadUtils.h"
 #include "nsQueryObject.h"
 #include "nsIMultiPartChannel.h"
+#include "nsIViewSourceChannel.h"
 
 using mozilla::BasePrincipal;
 using namespace mozilla::dom;
@@ -60,11 +61,10 @@ using namespace mozilla::ipc;
 namespace mozilla {
 namespace net {
 
-HttpChannelParent::HttpChannelParent(const PBrowserOrId& iframeEmbedding,
+HttpChannelParent::HttpChannelParent(dom::BrowserParent* iframeEmbedding,
                                      nsILoadContext* aLoadContext,
                                      PBOverrideStatus aOverrideStatus)
     : mLoadContext(aLoadContext),
-      mNestedFrameId(0),
       mIPCClosed(false),
       mPBOverride(aOverrideStatus),
       mStatus(NS_OK),
@@ -92,12 +92,7 @@ HttpChannelParent::HttpChannelParent(const PBrowserOrId& iframeEmbedding,
   MOZ_ASSERT(gHttpHandler);
   mHttpHandler = gHttpHandler;
 
-  if (iframeEmbedding.type() == PBrowserOrId::TPBrowserParent) {
-    mBrowserParent =
-        static_cast<dom::BrowserParent*>(iframeEmbedding.get_PBrowserParent());
-  } else {
-    mNestedFrameId = iframeEmbedding.get_TabId();
-  }
+  mBrowserParent = iframeEmbedding;
 
   mSendWindowSize = gHttpHandler->SendWindowSize();
 
@@ -308,19 +303,23 @@ HttpChannelParent::GetInterface(const nsIID& aIID, void** result) {
     nsresult rv;
     nsCOMPtr<nsIWindowWatcher> wwatch =
         do_GetService(NS_WINDOWWATCHER_CONTRACTID, &rv);
-    NS_ENSURE_SUCCESS(rv, rv);
+    NS_ENSURE_SUCCESS(rv, NS_ERROR_NO_INTERFACE);
 
     bool hasWindowCreator = false;
     Unused << wwatch->HasWindowCreator(&hasWindowCreator);
     if (!hasWindowCreator) {
-      return NS_ERROR_FAILURE;
+      return NS_ERROR_NO_INTERFACE;
     }
 
     nsCOMPtr<nsIPromptFactory> factory = do_QueryInterface(wwatch);
     if (!factory) {
       return NS_ERROR_NO_INTERFACE;
     }
-    return factory->GetPrompt(nullptr, aIID, reinterpret_cast<void**>(result));
+    rv = factory->GetPrompt(nullptr, aIID, reinterpret_cast<void**>(result));
+    if (NS_FAILED(rv)) {
+      return NS_ERROR_NO_INTERFACE;
+    }
+    return NS_OK;
   }
 
   // Only support nsILoadContext if child channel's callbacks did too
@@ -622,7 +621,7 @@ bool HttpChannelParent::DoAsyncOpen(
           httpChannel, attrs, StoragePrincipalHelper::eRegularPrincipal);
 
       nsCOMPtr<nsIPrincipal> principal =
-          BasePrincipal::CreateCodebasePrincipal(uri, attrs);
+          BasePrincipal::CreateContentPrincipal(uri, attrs);
 
       bool chooseAppCache = false;
       // This works because we've already called SetNotificationCallbacks and
@@ -675,7 +674,11 @@ bool HttpChannelParent::DoAsyncOpen(
 RefPtr<GenericNonExclusivePromise> HttpChannelParent::WaitForBgParent() {
   LOG(("HttpChannelParent::WaitForBgParent [this=%p]\n", this));
   MOZ_ASSERT(!mBgParent);
-  MOZ_ASSERT(mChannel);
+
+  if (!mChannel) {
+    return GenericNonExclusivePromise::CreateAndReject(NS_ERROR_FAILURE,
+                                                       __func__);
+  }
 
   nsCOMPtr<nsIBackgroundChannelRegistrar> registrar =
       BackgroundChannelRegistrar::GetOrCreate();
@@ -924,7 +927,7 @@ mozilla::ipc::IPCResult HttpChannelParent::RecvRedirect2Verify(
               newHttpChannel, attrs, StoragePrincipalHelper::eRegularPrincipal);
 
           nsCOMPtr<nsIPrincipal> principal =
-              BasePrincipal::CreateCodebasePrincipal(uri, attrs);
+              BasePrincipal::CreateContentPrincipal(uri, attrs);
 
           setChooseAppCache = NS_ShouldCheckAppCache(principal);
         }
@@ -1386,6 +1389,9 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
       multiPartChannel->GetPartID(&partID);
       multiPartID = Some(partID);
       multiPartChannel->GetIsLastPart(&isLastPartOfMultiPart);
+    } else if (nsCOMPtr<nsIViewSourceChannel> viewSourceChannel =
+                   do_QueryInterface(aRequest)) {
+      chan = do_QueryObject(viewSourceChannel->GetInnerChannel());
     }
   }
   MOZ_ASSERT(multiPartID || !mIsMultiPart, "Changed multi-part state?");
@@ -1621,8 +1627,16 @@ HttpChannelParent::OnDataAvailable(nsIRequest* aRequest,
 
   nsresult transportStatus = NS_NET_STATUS_RECEIVING_FROM;
   RefPtr<nsHttpChannel> httpChannelImpl = do_QueryObject(mChannel);
-  if (httpChannelImpl && httpChannelImpl->IsReadingFromCache()) {
-    transportStatus = NS_NET_STATUS_READING;
+  if (httpChannelImpl) {
+    if (httpChannelImpl->IsReadingFromCache()) {
+      transportStatus = NS_NET_STATUS_READING;
+    }
+
+    if (httpChannelImpl->OnDataAlreadySent()) {
+      LOG(("  OnDataAvailable already sent to the child.\n"));
+      uint32_t n;
+      return aInputStream->ReadSegments(NS_DiscardSegment, nullptr, aCount, &n);
+    }
   }
 
   static uint32_t const kCopyChunkSize = 128 * 1024;
@@ -1848,37 +1862,6 @@ HttpChannelParent::SetParentListener(ParentChannelListener* aListener) {
 }
 
 NS_IMETHODIMP
-HttpChannelParent::NotifyChannelClassifierProtectionDisabled(
-    uint32_t aAcceptedReason) {
-  LOG(
-      ("HttpChannelParent::NotifyChannelClassifierProtectionDisabled [this=%p "
-       "aAcceptedReason=%" PRIu32 "]\n",
-       this, aAcceptedReason));
-  if (!mIPCClosed) {
-    Unused << SendNotifyChannelClassifierProtectionDisabled(aAcceptedReason);
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpChannelParent::NotifyCookieAllowed() {
-  LOG(("HttpChannelParent::NotifyCookieAllowed [this=%p]\n", this));
-  if (!mIPCClosed) {
-    Unused << SendNotifyCookieAllowed();
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpChannelParent::NotifyCookieBlocked(uint32_t aRejectedReason) {
-  LOG(("HttpChannelParent::NotifyCookieBlocked [this=%p]\n", this));
-  if (!mIPCClosed) {
-    Unused << SendNotifyCookieBlocked(aRejectedReason);
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 HttpChannelParent::SetClassifierMatchedInfo(const nsACString& aList,
                                             const nsACString& aProvider,
                                             const nsACString& aFullHash) {
@@ -1940,6 +1923,17 @@ HttpChannelParent::Delete() {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+HttpChannelParent::GetRemoteType(nsACString& aRemoteType) {
+  if (!CanSend()) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  dom::PContentParent* pcp = Manager()->Manager();
+  aRemoteType = static_cast<dom::ContentParent*>(pcp)->GetRemoteType();
+  return NS_OK;
+}
+
 //-----------------------------------------------------------------------------
 // HttpChannelParent::nsIParentRedirectingChannel
 //-----------------------------------------------------------------------------
@@ -1957,10 +1951,12 @@ HttpChannelParent::StartRedirect(nsIChannel* newChannel, uint32_t redirectFlags,
       RedirectChannelRegistrar::GetOrCreate();
   MOZ_ASSERT(registrar);
 
-  rv = registrar->RegisterChannel(newChannel, &mRedirectChannelId);
+  mRedirectChannelId = nsContentUtils::GenerateLoadIdentifier();
+  rv = registrar->RegisterChannel(newChannel, mRedirectChannelId);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  LOG(("Registered %p channel under id=%d", newChannel, mRedirectChannelId));
+  LOG(("Registered %p channel under id=%" PRIx64, newChannel,
+       mRedirectChannelId));
 
   if (mIPCClosed) {
     return NS_BINDING_ABORTED;
@@ -2407,7 +2403,7 @@ NS_IMETHODIMP
 HttpChannelParent::GetAuthPrompt(uint32_t aPromptReason, const nsIID& iid,
                                  void** aResult) {
   nsCOMPtr<nsIAuthPrompt2> prompt =
-      new NeckoParent::NestedFrameAuthPrompt(Manager(), mNestedFrameId);
+      new NeckoParent::NestedFrameAuthPrompt(Manager(), TabId(0));
   prompt.forget(aResult);
   return NS_OK;
 }
@@ -2551,7 +2547,7 @@ HttpChannelParent::OnRedirectResult(bool succeeded) {
                                      getter_AddRefs(redirectChannel));
     if (NS_FAILED(rv) || !redirectChannel) {
       // Redirect might get canceled before we got AsyncOnChannelRedirect
-      LOG(("Registered parent channel not found under id=%d",
+      LOG(("Registered parent channel not found under id=%" PRIx64,
            mRedirectChannelId));
 
       nsCOMPtr<nsIChannel> newChannel;

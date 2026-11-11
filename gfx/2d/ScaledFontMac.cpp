@@ -125,7 +125,7 @@ static CTFontRef CreateCTFontFromCGFontWithVariations(CGFontRef aCGFont,
 ScaledFontMac::ScaledFontMac(CGFontRef aFont,
                              const RefPtr<UnscaledFont>& aUnscaledFont,
                              Float aSize, bool aOwnsFont,
-                             const Color& aFontSmoothingBackgroundColor,
+                             const DeviceColor& aFontSmoothingBackgroundColor,
                              bool aUseFontSmoothing, bool aApplySyntheticBold)
     : ScaledFontBase(aUnscaledFont, aSize),
       mFont(aFont),
@@ -194,7 +194,7 @@ void ScaledFontMac::SetupSkFontDrawOptions(SkFont& aFont) {
   // To accomplish this we have to explicitly disable hinting,
   // and disable LCDRenderText.
   if (aFont.getEdging() == SkFont::Edging::kAntiAlias && !mUseFontSmoothing) {
-    aFont.setHinting(kNo_SkFontHinting);
+    aFont.setHinting(SkFontHinting::kNone);
   }
 }
 #endif
@@ -475,10 +475,8 @@ ScaledFontMac::InstanceData::InstanceData(
     }
     if (aOptions->bg_color.a != 0) {
       mFontSmoothingBackgroundColor =
-          Color(aOptions->bg_color.r * (1.0f / 255.0f),
-                aOptions->bg_color.g * (1.0f / 255.0f),
-                aOptions->bg_color.b * (1.0f / 255.0f),
-                aOptions->bg_color.a * (1.0f / 255.0f));
+          DeviceColor::FromU8(aOptions->bg_color.r, aOptions->bg_color.g,
+                              aOptions->bg_color.b, aOptions->bg_color.a);
     }
   }
 }

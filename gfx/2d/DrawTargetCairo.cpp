@@ -182,6 +182,11 @@ static bool PatternIsCompatible(const Pattern& aPattern) {
           static_cast<const RadialGradientPattern&>(aPattern);
       return pattern.mStops->GetBackendType() == BackendType::CAIRO;
     }
+    case PatternType::CONIC_GRADIENT: {
+      const ConicGradientPattern& pattern =
+          static_cast<const ConicGradientPattern&>(aPattern);
+      return pattern.mStops->GetBackendType() == BackendType::CAIRO;
+    }
     default:
       return true;
   }
@@ -449,7 +454,7 @@ static cairo_pattern_t* GfxPatternToCairoPattern(const Pattern& aPattern,
 
   switch (aPattern.GetType()) {
     case PatternType::COLOR: {
-      Color color = static_cast<const ColorPattern&>(aPattern).mColor;
+      DeviceColor color = static_cast<const ColorPattern&>(aPattern).mColor;
       pat = cairo_pattern_create_rgba(color.r, color.g, color.b,
                                       color.a * aAlpha);
       break;
@@ -516,6 +521,12 @@ static cairo_pattern_t* GfxPatternToCairoPattern(const Pattern& aPattern,
       for (size_t i = 0; i < stops.size(); ++i) {
         CairoPatternAddGradientStop(pat, stops[i]);
       }
+
+      break;
+    }
+    case PatternType::CONIC_GRADIENT: {
+      // XXX(ntim): Bug 1617039 - Implement conic-gradient for Cairo
+      pat = cairo_pattern_create_rgba(0.0, 0.0, 0.0, 0.0);
 
       break;
     }
@@ -836,7 +847,7 @@ void DrawTargetCairo::DrawFilter(FilterNode* aNode, const Rect& aSourceRect,
 
 void DrawTargetCairo::DrawSurfaceWithShadow(SourceSurface* aSurface,
                                             const Point& aDest,
-                                            const Color& aColor,
+                                            const DeviceColor& aColor,
                                             const Point& aOffset, Float aSigma,
                                             CompositionOp aOperator) {
   if (aSurface->GetType() != SurfaceType::CAIRO) {

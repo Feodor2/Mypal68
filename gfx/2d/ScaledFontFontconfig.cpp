@@ -364,7 +364,7 @@ bool ScaledFontFontconfig::GetWRFontInstanceOptions(
   // FIXME: Cairo-FT metrics are not compatible with subpixel positioning.
   // options.flags = wr::FontInstanceFlags::SUBPIXEL_POSITION;
   options.flags = wr::FontInstanceFlags{0};
-  options.bg_color = wr::ToColorU(Color());
+  options.bg_color = wr::ToColorU(DeviceColor());
   options.synthetic_italics =
       wr::DegreesToSyntheticItalics(GetSyntheticObliqueAngle());
 

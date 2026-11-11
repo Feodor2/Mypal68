@@ -291,10 +291,12 @@ void ShaderRenderPass::ExecuteRendering() {
   }
 }
 
-static inline Color ComputeLayerColor(LayerMLGPU* aLayer, const Color& aColor) {
+static inline DeviceColor ComputeLayerColor(LayerMLGPU* aLayer,
+                                            const DeviceColor& aColor) {
   float opacity = aLayer->GetComputedOpacity();
-  return Color(aColor.r * aColor.a * opacity, aColor.g * aColor.a * opacity,
-               aColor.b * aColor.a * opacity, aColor.a * opacity);
+  return DeviceColor(aColor.r * aColor.a * opacity,
+                     aColor.g * aColor.a * opacity,
+                     aColor.b * aColor.a * opacity, aColor.a * opacity);
 }
 
 ClearViewPass::ClearViewPass(FrameBuilder* aBuilder, const ItemInfo& aItem)
@@ -356,7 +358,7 @@ bool SolidColorPass::AddToPass(LayerMLGPU* aLayer, ItemInfo& aInfo) {
 
   Txn txn(this);
 
-  gfx::Color color = ComputeLayerColor(aLayer, colorLayer->GetColor());
+  gfx::DeviceColor color = ComputeLayerColor(aLayer, colorLayer->GetColor());
 
   const LayerIntRegion& region = aLayer->GetRenderRegion();
   for (auto iter = region.RectIter(); !iter.Done(); iter.Next()) {

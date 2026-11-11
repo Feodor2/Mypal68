@@ -313,7 +313,7 @@ class FilterNodeFloodSoftware : public FilterNodeSoftware {
   MOZ_DECLARE_REFCOUNTED_VIRTUAL_TYPENAME(FilterNodeFloodSoftware, override)
   const char* GetName() override { return "Flood"; }
   using FilterNodeSoftware::SetAttribute;
-  void SetAttribute(uint32_t aIndex, const Color& aColor) override;
+  void SetAttribute(uint32_t aIndex, const DeviceColor& aColor) override;
   IntRect MapRectToSource(const IntRect& aRect, const IntRect& aMax,
                           FilterNode* aSourceNode) override;
 
@@ -323,7 +323,7 @@ class FilterNodeFloodSoftware : public FilterNodeSoftware {
   IntRect GetOutputRectInRect(const IntRect& aRect) override;
 
  private:
-  Color mColor;
+  DeviceColor mColor;
 };
 
 class FilterNodeTileSoftware : public FilterNodeSoftware {
@@ -753,7 +753,7 @@ class FilterNodeLightingSoftware : public FilterNodeSoftware {
   void SetAttribute(uint32_t aIndex, Float) override;
   void SetAttribute(uint32_t aIndex, const Size&) override;
   void SetAttribute(uint32_t aIndex, const Point3D&) override;
-  void SetAttribute(uint32_t aIndex, const Color&) override;
+  void SetAttribute(uint32_t aIndex, const DeviceColor&) override;
   IntRect MapRectToSource(const IntRect& aRect, const IntRect& aMax,
                           FilterNode* aSourceNode) override;
 
@@ -774,7 +774,7 @@ class FilterNodeLightingSoftware : public FilterNodeSoftware {
   LightingType mLighting;
   Float mSurfaceScale;
   Size mKernelUnitLength;
-  Color mColor;
+  DeviceColor mColor;
 #if defined(MOZILLA_INTERNAL_API) && \
     (defined(DEBUG) || defined(FORCE_BUILD_REFCNT_LOGGING))
   const char* mTypeName;

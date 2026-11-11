@@ -324,7 +324,7 @@ void CompositorD3D9::DrawQuad(const gfx::Rect &aRect,
   switch (aEffectChain.mPrimaryEffect->mType) {
   case EffectTypes::SOLID_COLOR: {
     // output color is premultiplied, so we need to adjust all channels.
-    Color layerColor =
+    DeviceColor layerColor =
         static_cast<EffectSolidColor *>(aEffectChain.mPrimaryEffect.get())
             ->mColor;
     float color[4];

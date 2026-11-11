@@ -123,7 +123,7 @@ already_AddRefed<DrawTarget> gfxAlphaBoxBlur::InitDrawTarget(
 }
 
 already_AddRefed<SourceSurface> gfxAlphaBoxBlur::DoBlur(
-    const Color* aShadowColor, IntPoint* aOutTopLeft) {
+    const sRGBColor* aShadowColor, IntPoint* aOutTopLeft) {
   if (aOutTopLeft) {
     *aOutTopLeft = mBlur.GetRect().TopLeft();
   }
@@ -140,7 +140,7 @@ already_AddRefed<SourceSurface> gfxAlphaBoxBlur::DoBlur(
       return nullptr;
     }
     blurDT->DrawSurfaceWithShadow(
-        blurMask, Point(0, 0), Color(1, 1, 1), Point(0, 0),
+        blurMask, Point(0, 0), DeviceColor::MaskOpaqueWhite(), Point(0, 0),
         AlphaBoxBlur::CalculateBlurSigma(mBlur.GetBlurRadius().width),
         CompositionOp::OP_OVER);
     blurMask = blurDT->Snapshot();
@@ -223,7 +223,7 @@ struct BlurCacheKey : public PLDHashEntryHdr {
 
   IntSize mMinSize;
   IntSize mBlurRadius;
-  Color mShadowColor;
+  sRGBColor mShadowColor;
   BackendType mBackend;
   RectCornerRadii mCornerRadii;
   bool mIsInset;
@@ -232,8 +232,8 @@ struct BlurCacheKey : public PLDHashEntryHdr {
   IntSize mInnerMinSize;
 
   BlurCacheKey(const IntSize& aMinSize, const IntSize& aBlurRadius,
-               const RectCornerRadii* aCornerRadii, const Color& aShadowColor,
-               BackendType aBackendType)
+               const RectCornerRadii* aCornerRadii,
+               const sRGBColor& aShadowColor, BackendType aBackendType)
       : BlurCacheKey(aMinSize, IntSize(0, 0), aBlurRadius, aCornerRadii,
                      aShadowColor, false, aBackendType) {}
 
@@ -250,7 +250,7 @@ struct BlurCacheKey : public PLDHashEntryHdr {
                         const IntSize& aInnerMinSize,
                         const IntSize& aBlurRadius,
                         const RectCornerRadii* aCornerRadii,
-                        const Color& aShadowColor, bool aIsInset,
+                        const sRGBColor& aShadowColor, bool aIsInset,
                         BackendType aBackendType)
       : mMinSize(aOuterMinSize),
         mBlurRadius(aBlurRadius),
@@ -344,7 +344,8 @@ class BlurCache final : public nsExpirationTracker<BlurCacheData, 4> {
 
   BlurCacheData* Lookup(const IntSize& aMinSize, const IntSize& aBlurRadius,
                         const RectCornerRadii* aCornerRadii,
-                        const Color& aShadowColor, BackendType aBackendType) {
+                        const sRGBColor& aShadowColor,
+                        BackendType aBackendType) {
     BlurCacheData* blur = mHashEntries.Get(BlurCacheKey(
         aMinSize, aBlurRadius, aCornerRadii, aShadowColor, aBackendType));
     if (blur) {
@@ -358,7 +359,7 @@ class BlurCache final : public nsExpirationTracker<BlurCacheData, 4> {
                                       const IntSize& aInnerMinSize,
                                       const IntSize& aBlurRadius,
                                       const RectCornerRadii* aCornerRadii,
-                                      const Color& aShadowColor,
+                                      const sRGBColor& aShadowColor,
                                       BackendType aBackendType) {
     bool insetBoxShadow = true;
     BlurCacheKey key(aOuterMinSize, aInnerMinSize, aBlurRadius, aCornerRadii,
@@ -439,8 +440,8 @@ static IntSize ComputeMinSizeForShadowShape(const RectCornerRadii* aCornerRadii,
 static void CacheBlur(DrawTarget* aDT, const IntSize& aMinSize,
                       const IntSize& aBlurRadius,
                       const RectCornerRadii* aCornerRadii,
-                      const Color& aShadowColor, const IntMargin& aBlurMargin,
-                      SourceSurface* aBoxShadow) {
+                      const sRGBColor& aShadowColor,
+                      const IntMargin& aBlurMargin, SourceSurface* aBoxShadow) {
   gBlurCache->RegisterEntry(MakeUnique<BlurCacheData>(
       aBoxShadow, aBlurMargin,
       BlurCacheKey(aMinSize, aBlurRadius, aCornerRadii, aShadowColor,
@@ -451,7 +452,8 @@ static void CacheBlur(DrawTarget* aDT, const IntSize& aMinSize,
 static already_AddRefed<SourceSurface> CreateBoxShadow(
     DrawTarget* aDestDrawTarget, const IntSize& aMinSize,
     const RectCornerRadii* aCornerRadii, const IntSize& aBlurRadius,
-    const Color& aShadowColor, bool aMirrorCorners, IntMargin& aOutBlurMargin) {
+    const sRGBColor& aShadowColor, bool aMirrorCorners,
+    IntMargin& aOutBlurMargin) {
   gfxAlphaBoxBlur blur;
   Rect minRect(Point(0, 0), Size(aMinSize));
   Rect blurRect(minRect);
@@ -469,7 +471,7 @@ static already_AddRefed<SourceSurface> CreateBoxShadow(
     return nullptr;
   }
 
-  ColorPattern black(Color(0.f, 0.f, 0.f, 1.f));
+  ColorPattern black(DeviceColor::MaskOpaqueBlack());
 
   if (aCornerRadii) {
     RefPtr<Path> roundedRect =
@@ -496,8 +498,8 @@ static already_AddRefed<SourceSurface> CreateBoxShadow(
 static already_AddRefed<SourceSurface> GetBlur(
     gfxContext* aDestinationCtx, const IntSize& aRectSize,
     const IntSize& aBlurRadius, const RectCornerRadii* aCornerRadii,
-    const Color& aShadowColor, bool aMirrorCorners, IntMargin& aOutBlurMargin,
-    IntMargin& aOutSlice, IntSize& aOutMinSize) {
+    const sRGBColor& aShadowColor, bool aMirrorCorners,
+    IntMargin& aOutBlurMargin, IntMargin& aOutSlice, IntSize& aOutMinSize) {
   if (!gBlurCache) {
     gBlurCache = new BlurCache();
   }
@@ -867,7 +869,7 @@ void gfxAlphaBoxBlur::BlurRectangle(gfxContext* aDestinationCtx,
                                     const gfxRect& aRect,
                                     const RectCornerRadii* aCornerRadii,
                                     const gfxPoint& aBlurStdDev,
-                                    const Color& aShadowColor,
+                                    const sRGBColor& aShadowColor,
                                     const gfxRect& aDirtyRect,
                                     const gfxRect& aSkipRect) {
   if (!RectIsInt32Safe(ToRect(aRect))) {
@@ -968,7 +970,7 @@ static already_AddRefed<Path> GetBoxShadowInsetPath(
 
 static void FillDestinationPath(
     gfxContext* aDestinationCtx, const Rect& aDestinationRect,
-    const Rect& aShadowClipRect, const Color& aShadowColor,
+    const Rect& aShadowClipRect, const sRGBColor& aShadowColor,
     const RectCornerRadii* aInnerClipRadii = nullptr) {
   // When there is no blur radius, fill the path onto the destination
   // surface.
@@ -985,7 +987,8 @@ static void CacheInsetBlur(const IntSize& aMinOuterSize,
                            const IntSize& aMinInnerSize,
                            const IntSize& aBlurRadius,
                            const RectCornerRadii* aCornerRadii,
-                           const Color& aShadowColor, BackendType aBackendType,
+                           const sRGBColor& aShadowColor,
+                           BackendType aBackendType,
                            SourceSurface* aBoxShadow) {
   bool isInsetBlur = true;
   BlurCacheKey key(aMinOuterSize, aMinInnerSize, aBlurRadius, aCornerRadii,
@@ -998,7 +1001,7 @@ static void CacheInsetBlur(const IntSize& aMinOuterSize,
 
 already_AddRefed<SourceSurface> gfxAlphaBoxBlur::GetInsetBlur(
     const Rect& aOuterRect, const Rect& aWhitespaceRect, bool aIsDestRect,
-    const Color& aShadowColor, const IntSize& aBlurRadius,
+    const sRGBColor& aShadowColor, const IntSize& aBlurRadius,
     const RectCornerRadii* aInnerClipRadii, DrawTarget* aDestDrawTarget,
     bool aMirrorCorners) {
   if (!gBlurCache) {
@@ -1051,7 +1054,7 @@ already_AddRefed<SourceSurface> gfxAlphaBoxBlur::GetInsetBlur(
   RefPtr<Path> maskPath = GetBoxShadowInsetPath(
       minDrawTarget, aOuterRect, aWhitespaceRect, aInnerClipRadii);
 
-  ColorPattern black(Color(0.f, 0.f, 0.f, 1.f));
+  ColorPattern black(DeviceColor::MaskOpaqueBlack());
   minDrawTarget->Fill(maskPath, black);
 
   // Blur and fill in with the color we actually wanted
@@ -1156,7 +1159,7 @@ static bool GetInsetBoxShadowRects(const Margin& aBlurMargin,
 void gfxAlphaBoxBlur::BlurInsetBox(
     gfxContext* aDestinationCtx, const Rect& aDestinationRect,
     const Rect& aShadowClipRect, const IntSize& aBlurRadius,
-    const Color& aShadowColor, const RectCornerRadii* aInnerClipRadii,
+    const sRGBColor& aShadowColor, const RectCornerRadii* aInnerClipRadii,
     const Rect& aSkipRect, const Point& aShadowOffset) {
   if ((aBlurRadius.width == 0 && aBlurRadius.height == 0) ||
       aShadowClipRect.IsEmpty()) {

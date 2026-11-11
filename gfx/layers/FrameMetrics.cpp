@@ -239,6 +239,11 @@ OverscrollBehaviorInfo OverscrollBehaviorInfo::FromStyleConstants(
   return result;
 }
 
+void ScrollMetadata::SetBackgroundColor(
+    const gfx::sRGBColor& aBackgroundColor) {
+  mBackgroundColor = gfx::ToDeviceColor(aBackgroundColor);
+}
+
 StaticAutoPtr<const ScrollMetadata> ScrollMetadata::sNullMetadata;
 
 }  // namespace layers

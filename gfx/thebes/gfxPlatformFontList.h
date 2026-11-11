@@ -26,6 +26,8 @@
 #include "mozilla/RangedArray.h"
 #include "nsLanguageAtomService.h"
 
+#include "base/shared_memory.h"
+
 namespace mozilla {
 namespace fontlist {
 struct AliasData;
@@ -259,13 +261,16 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
     return mSharedFontList.get();
   }
 
-  // The aPid and aOut parameters are declared here with generic types
-  // because (on Windows) we cannot include the proper headers, as they
-  // result in build failure due to (indirect) inclusion of windows.h
-  // in generated bindings code.
+  // Create a handle for a single shmem block (identified by index) ready to
+  // be shared to the given processId.
   void ShareFontListShmBlockToProcess(
-      uint32_t aGeneration, uint32_t aIndex, /*base::ProcessId*/ uint32_t aPid,
-      /*mozilla::ipc::SharedMemoryBasic::Handle*/ void* aOut);
+      uint32_t aGeneration, uint32_t aIndex, base::ProcessId aPid,
+      base::SharedMemoryHandle* aOut);
+
+  // Populate the array aBlocks with the complete list of shmem handles ready
+  // to be shared to the given processId.
+  void ShareFontListToProcess(nsTArray<base::SharedMemoryHandle>* aBlocks,
+                              base::ProcessId aPid);
 
   void SetCharacterMap(uint32_t aGeneration,
                        const mozilla::fontlist::Pointer& aFacePtr,

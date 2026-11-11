@@ -421,7 +421,7 @@ static void SetPaintPattern(SkPaint& aPaint, const Pattern& aPattern,
                             const Rect* aBounds = nullptr) {
   switch (aPattern.GetType()) {
     case PatternType::COLOR: {
-      Color color = static_cast<const ColorPattern&>(aPattern).mColor;
+      DeviceColor color = static_cast<const ColorPattern&>(aPattern).mColor;
       aPaint.setColor(ColorToSkColor(color, aAlpha));
       break;
     }
@@ -434,8 +434,7 @@ static void SetPaintPattern(SkPaint& aPaint, const Pattern& aPattern,
           !pat.mEnd.IsFinite() || pat.mBegin == pat.mEnd) {
         aPaint.setColor(SK_ColorTRANSPARENT);
       } else {
-        SkShader::TileMode mode =
-            ExtendModeToTileMode(stops->mExtendMode, Axis::BOTH);
+        SkTileMode mode = ExtendModeToTileMode(stops->mExtendMode, Axis::BOTH);
         SkPoint points[2];
         points[0] = SkPoint::Make(SkFloatToScalar(pat.mBegin.x),
                                   SkFloatToScalar(pat.mBegin.y));
@@ -469,8 +468,7 @@ static void SetPaintPattern(SkPaint& aPaint, const Pattern& aPattern,
           (pat.mCenter1 == pat.mCenter2 && pat.mRadius1 == pat.mRadius2)) {
         aPaint.setColor(SK_ColorTRANSPARENT);
       } else {
-        SkShader::TileMode mode =
-            ExtendModeToTileMode(stops->mExtendMode, Axis::BOTH);
+        SkTileMode mode = ExtendModeToTileMode(stops->mExtendMode, Axis::BOTH);
         SkPoint points[2];
         points[0] = SkPoint::Make(SkFloatToScalar(pat.mCenter1.x),
                                   SkFloatToScalar(pat.mCenter1.y));
@@ -486,6 +484,45 @@ static void SetPaintPattern(SkPaint& aPaint, const Pattern& aPattern,
             points[0], SkFloatToScalar(pat.mRadius1), points[1],
             SkFloatToScalar(pat.mRadius2), &stops->mColors.front(),
             &stops->mPositions.front(), stops->mCount, mode, 0, &mat);
+        if (shader) {
+          aPaint.setShader(shader);
+        } else {
+          aPaint.setColor(SK_ColorTRANSPARENT);
+        }
+      }
+      break;
+    }
+    case PatternType::CONIC_GRADIENT: {
+      const ConicGradientPattern& pat =
+          static_cast<const ConicGradientPattern&>(aPattern);
+      GradientStopsSkia* stops =
+          static_cast<GradientStopsSkia*>(pat.mStops.get());
+      if (!stops || stops->mCount < 2 || !pat.mCenter.IsFinite() ||
+          !IsFinite(pat.mAngle)) {
+        aPaint.setColor(SK_ColorTRANSPARENT);
+      } else {
+        SkMatrix mat;
+        GfxMatrixToSkiaMatrix(pat.mMatrix, mat);
+        if (aMatrix) {
+          mat.postConcat(*aMatrix);
+        }
+
+        SkScalar cx = SkFloatToScalar(pat.mCenter.x);
+        SkScalar cy = SkFloatToScalar(pat.mCenter.y);
+
+        // Skia's sweep gradient angles are relative to the x-axis, not the
+        // y-axis.
+        Float angle = (pat.mAngle * 180.0 / M_PI) - 90.0;
+        if (angle != 0.0) {
+          mat.preRotate(angle, cx, cy);
+        }
+
+        SkTileMode mode = ExtendModeToTileMode(stops->mExtendMode, Axis::BOTH);
+        sk_sp<SkShader> shader = SkGradientShader::MakeSweep(
+            cx, cy, &stops->mColors.front(), &stops->mPositions.front(),
+            stops->mCount, mode, 360 * pat.mStartOffset, 360 * pat.mEndOffset,
+            0, &mat);
+
         if (shader) {
           aPaint.setShader(shader);
         } else {
@@ -514,12 +551,10 @@ static void SetPaintPattern(SkPaint& aPaint, const Pattern& aPattern,
         mat.preTranslate(pat.mSamplingRect.X(), pat.mSamplingRect.Y());
       }
 
-      SkShader::TileMode xTileMode =
-          ExtendModeToTileMode(pat.mExtendMode, Axis::X_AXIS);
-      SkShader::TileMode yTileMode =
-          ExtendModeToTileMode(pat.mExtendMode, Axis::Y_AXIS);
+      SkTileMode xTile = ExtendModeToTileMode(pat.mExtendMode, Axis::X_AXIS);
+      SkTileMode yTile = ExtendModeToTileMode(pat.mExtendMode, Axis::Y_AXIS);
 
-      aPaint.setShader(image->makeShader(xTileMode, yTileMode, &mat));
+      aPaint.setShader(image->makeShader(xTile, yTile, &mat));
 
       if (pat.mSamplingFilter == SamplingFilter::POINT) {
         aPaint.setFilterQuality(kNone_SkFilterQuality);
@@ -655,7 +690,7 @@ void DrawTargetSkia::DrawFilter(FilterNode* aNode, const Rect& aSourceRect,
 
 void DrawTargetSkia::DrawSurfaceWithShadow(SourceSurface* aSurface,
                                            const Point& aDest,
-                                           const Color& aColor,
+                                           const DeviceColor& aColor,
                                            const Point& aOffset, Float aSigma,
                                            CompositionOp aOperator) {
   if (aSurface->GetSize().IsEmpty()) {
@@ -703,7 +738,7 @@ void DrawTargetSkia::DrawSurfaceWithShadow(SourceSurface* aSurface,
   } else {
     sk_sp<SkImageFilter> blurFilter(
         SkBlurImageFilter::Make(aSigma, aSigma, nullptr));
-    sk_sp<SkColorFilter> colorFilter(SkColorFilter::MakeModeFilter(
+    sk_sp<SkColorFilter> colorFilter(SkColorFilters::Blend(
         ColorToSkColor(aColor, 1.0f), SkBlendMode::kSrcIn));
 
     shadowPaint.setImageFilter(blurFilter);
@@ -1150,7 +1185,7 @@ void BorrowedCGContext::ReturnCGContextToDrawTarget(DrawTarget* aDT,
 
 static void SetFontColor(CGContextRef aCGContext, CGColorSpaceRef aColorSpace,
                          const Pattern& aPattern) {
-  const Color& color = static_cast<const ColorPattern&>(aPattern).mColor;
+  const DeviceColor& color = static_cast<const ColorPattern&>(aPattern).mColor;
   CGColorRef textColor = ColorToCGColor(aColorSpace, color);
   CGContextSetFillColorWithColor(aCGContext, textColor);
   CGColorRelease(textColor);
@@ -1229,7 +1264,7 @@ bool DrawTargetSkia::FillGlyphsWithCG(ScaledFont* aFont,
 static bool HasFontSmoothingBackgroundColor(ScaledFont* aFont) {
   // This should generally only be true if we have a popup context menu
   if (aFont && aFont->GetType() == FontType::MAC) {
-    Color fontSmoothingBackgroundColor =
+    DeviceColor fontSmoothingBackgroundColor =
         static_cast<ScaledFontMac*>(aFont)->FontSmoothingBackgroundColor();
     return fontSmoothingBackgroundColor.a > 0;
   }

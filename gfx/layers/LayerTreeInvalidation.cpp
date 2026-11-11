@@ -616,7 +616,7 @@ struct ColorLayerProperties : public LayerPropertiesBase {
     return true;
   }
 
-  Color mColor;
+  DeviceColor mColor;
   IntRect mBounds;
 };
 

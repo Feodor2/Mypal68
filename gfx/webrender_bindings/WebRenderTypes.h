@@ -270,7 +270,7 @@ static inline MixBlendMode ToMixBlendMode(gfx::CompositionOp compositionOp) {
   }
 }
 
-static inline wr::ColorF ToColorF(const gfx::Color& color) {
+static inline wr::ColorF ToColorF(const gfx::DeviceColor& color) {
   wr::ColorF c;
   c.r = color.r;
   c.g = color.g;
@@ -279,7 +279,7 @@ static inline wr::ColorF ToColorF(const gfx::Color& color) {
   return c;
 }
 
-static inline wr::ColorU ToColorU(const gfx::Color& color) {
+static inline wr::ColorU ToColorU(const gfx::DeviceColor& color) {
   wr::ColorU c;
   c.r = uint8_t(color.r * 255.0f);
   c.g = uint8_t(color.g * 255.0f);
@@ -465,7 +465,7 @@ static inline wr::LayoutTransform ToLayoutTransform(
 
 wr::BorderStyle ToBorderStyle(StyleBorderStyle style);
 
-static inline wr::BorderSide ToBorderSide(const gfx::Color& color,
+static inline wr::BorderSide ToBorderSide(const gfx::DeviceColor& color,
                                           StyleBorderStyle style) {
   wr::BorderSide bs;
   bs.color = ToColorF(color);

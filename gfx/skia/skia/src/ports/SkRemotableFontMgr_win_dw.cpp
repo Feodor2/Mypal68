@@ -4,21 +4,24 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "SkTypes.h"
+#include "src/utils/win/SkDWriteNTDDI_VERSION.h"
+
+#include "include/core/SkTypes.h"
 #if defined(SK_BUILD_FOR_WIN)
 
-#include "SkDWrite.h"
-#include "SkDWriteFontFileStream.h"
-#include "SkHRESULT.h"
-#include "SkMutex.h"
-#include "SkRemotableFontMgr.h"
-#include "SkStream.h"
-#include "SkString.h"
-#include "SkTArray.h"
-#include "SkTScopedComPtr.h"
-#include "SkTypeface_win_dw.h"
-#include "SkTypes.h"
-#include "SkUTF.h"
+#include "include/core/SkStream.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTypes.h"
+#include "include/ports/SkRemotableFontMgr.h"
+#include "include/private/SkMutex.h"
+#include "include/private/SkTArray.h"
+#include "src/ports/SkTypeface_win_dw.h"
+#include "src/utils/SkUTF.h"
+#include "src/utils/win/SkDWrite.h"
+#include "src/utils/win/SkDWriteFontFileStream.h"
+#include "src/utils/win/SkHRESULT.h"
+#include "src/utils/win/SkObjBase.h"
+#include "src/utils/win/SkTScopedComPtr.h"
 
 #include <dwrite.h>
 
@@ -56,7 +59,7 @@ private:
                    "Failed to re-convert to IDWriteFontFileLoader.",
                    SkFontIdentity::kInvalidDataId);
 
-        SkAutoMutexAcquire ama(fDataIdCacheMutex);
+        SkAutoMutexExclusive ama(fDataIdCacheMutex);
         int count = fDataIdCache.count();
         int i;
         for (i = 0; i < count; ++i) {
@@ -234,7 +237,7 @@ public:
         virtual ~FontFallbackRenderer() { }
 
         // IDWriteTextRenderer methods
-        virtual HRESULT STDMETHODCALLTYPE DrawGlyphRun(
+        SK_STDMETHODIMP DrawGlyphRun(
             void* clientDrawingContext,
             FLOAT baselineOriginX,
             FLOAT baselineOriginY,
@@ -260,7 +263,7 @@ public:
             return S_OK;
         }
 
-        virtual HRESULT STDMETHODCALLTYPE DrawUnderline(
+        SK_STDMETHODIMP DrawUnderline(
             void* clientDrawingContext,
             FLOAT baselineOriginX,
             FLOAT baselineOriginY,
@@ -268,7 +271,7 @@ public:
             IUnknown* clientDrawingEffect) override
         { return E_NOTIMPL; }
 
-        virtual HRESULT STDMETHODCALLTYPE DrawStrikethrough(
+        SK_STDMETHODIMP DrawStrikethrough(
             void* clientDrawingContext,
             FLOAT baselineOriginX,
             FLOAT baselineOriginY,
@@ -276,7 +279,7 @@ public:
             IUnknown* clientDrawingEffect) override
         { return E_NOTIMPL; }
 
-        virtual HRESULT STDMETHODCALLTYPE DrawInlineObject(
+        SK_STDMETHODIMP DrawInlineObject(
             void* clientDrawingContext,
             FLOAT originX,
             FLOAT originY,
@@ -287,7 +290,7 @@ public:
         { return E_NOTIMPL; }
 
         // IDWritePixelSnapping methods
-        virtual HRESULT STDMETHODCALLTYPE IsPixelSnappingDisabled(
+        SK_STDMETHODIMP IsPixelSnappingDisabled(
             void* clientDrawingContext,
             BOOL* isDisabled) override
         {
@@ -295,7 +298,7 @@ public:
             return S_OK;
         }
 
-        virtual HRESULT STDMETHODCALLTYPE GetCurrentTransform(
+        SK_STDMETHODIMP GetCurrentTransform(
             void* clientDrawingContext,
             DWRITE_MATRIX* transform) override
         {
@@ -304,7 +307,7 @@ public:
             return S_OK;
         }
 
-        virtual HRESULT STDMETHODCALLTYPE GetPixelsPerDip(
+        SK_STDMETHODIMP GetPixelsPerDip(
             void* clientDrawingContext,
             FLOAT* pixelsPerDip) override
         {
@@ -313,11 +316,11 @@ public:
         }
 
         // IUnknown methods
-        ULONG STDMETHODCALLTYPE AddRef() override {
+        SK_STDMETHODIMP_(ULONG) AddRef() override {
             return InterlockedIncrement(&fRefCount);
         }
 
-        ULONG STDMETHODCALLTYPE Release() override {
+        SK_STDMETHODIMP_(ULONG) Release() override {
             ULONG newCount = InterlockedDecrement(&fRefCount);
             if (0 == newCount) {
                 delete this;
@@ -325,7 +328,7 @@ public:
             return newCount;
         }
 
-        virtual HRESULT STDMETHODCALLTYPE QueryInterface(
+        SK_STDMETHODIMP QueryInterface(
             IID const& riid, void** ppvObject) override
         {
             if (__uuidof(IUnknown) == riid ||
@@ -415,7 +418,7 @@ public:
     }
 
     SkStreamAsset* getData(int dataId) const override {
-        SkAutoMutexAcquire ama(fDataIdCacheMutex);
+        SkAutoMutexExclusive ama(fDataIdCacheMutex);
         if (dataId >= fDataIdCache.count()) {
             return nullptr;
         }

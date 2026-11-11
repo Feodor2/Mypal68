@@ -182,7 +182,7 @@ class FilterNodeRecording : public FilterNode {
   FORWARD_SET_ATTRIBUTE(const Matrix&, MATRIX);
   FORWARD_SET_ATTRIBUTE(const Matrix5x4&, MATRIX5X4);
   FORWARD_SET_ATTRIBUTE(const Point3D&, POINT3D);
-  FORWARD_SET_ATTRIBUTE(const Color&, COLOR);
+  FORWARD_SET_ATTRIBUTE(const DeviceColor&, COLOR);
 
 #undef FORWARD_SET_ATTRIBUTE
 
@@ -387,7 +387,7 @@ void DrawTargetRecording::DrawDependentSurface(
 }
 
 void DrawTargetRecording::DrawSurfaceWithShadow(
-    SourceSurface* aSurface, const Point& aDest, const Color& aColor,
+    SourceSurface* aSurface, const Point& aDest, const DeviceColor& aColor,
     const Point& aOffset, Float aSigma, CompositionOp aOp) {
   EnsureSurfaceStoredRecording(mRecorder, aSurface, "DrawSurfaceWithShadow");
 
@@ -627,13 +627,24 @@ void DrawTargetRecording::EnsurePatternDependenciesStored(
       // No dependencies here.
       return;
     case PatternType::LINEAR_GRADIENT: {
-      MOZ_ASSERT(mRecorder->HasStoredObject(
-          static_cast<const LinearGradientPattern*>(&aPattern)->mStops));
+      MOZ_ASSERT_IF(
+          static_cast<const LinearGradientPattern*>(&aPattern)->mStops,
+          mRecorder->HasStoredObject(
+              static_cast<const LinearGradientPattern*>(&aPattern)->mStops));
       return;
     }
     case PatternType::RADIAL_GRADIENT: {
-      MOZ_ASSERT(mRecorder->HasStoredObject(
-          static_cast<const RadialGradientPattern*>(&aPattern)->mStops));
+      MOZ_ASSERT_IF(
+          static_cast<const LinearGradientPattern*>(&aPattern)->mStops,
+          mRecorder->HasStoredObject(
+              static_cast<const RadialGradientPattern*>(&aPattern)->mStops));
+      return;
+    }
+    case PatternType::CONIC_GRADIENT: {
+      MOZ_ASSERT_IF(
+          static_cast<const ConicGradientPattern*>(&aPattern)->mStops,
+          mRecorder->HasStoredObject(
+              static_cast<const ConicGradientPattern*>(&aPattern)->mStops));
       return;
     }
     case PatternType::SURFACE: {

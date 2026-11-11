@@ -127,7 +127,7 @@ struct MorphologyAttributes {
 };
 
 struct FloodAttributes {
-  Color mColor;
+  sRGBColor mColor;
 
   bool operator==(const FloodAttributes& aOther) const {
     return mColor == aOther.mColor;
@@ -207,7 +207,7 @@ struct GaussianBlurAttributes {
 struct DropShadowAttributes {
   Size mStdDeviation;
   Point mOffset;
-  Color mColor;
+  sRGBColor mColor;
 
   bool operator==(const DropShadowAttributes& aOther) const {
     return mStdDeviation == aOther.mStdDeviation && mOffset == aOther.mOffset &&
@@ -334,7 +334,7 @@ struct DiffuseLightingAttributes {
   ImplicitlyCopyableFloatArray mLightValues;
   float mSurfaceScale;
   Size mKernelUnitLength;
-  Color mColor;
+  sRGBColor mColor;
   float mLightingConstant;
   float mSpecularExponent;
 

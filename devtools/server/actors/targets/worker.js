@@ -49,16 +49,27 @@ const WorkerTargetActor = protocol.ActorClassWithSpec(workerTargetSpec, {
       threadActor: this._threadActor,
       id: this._dbg.id,
       url: this._dbg.url,
+      traits: {
+        isParentInterceptEnabled: swm.isParentInterceptEnabled(),
+      },
       type: this._dbg.type,
     };
     if (this._dbg.type === Ci.nsIWorkerDebugger.TYPE_SERVICE) {
-      const registration = this._getServiceWorkerRegistrationInfo();
-      form.scope = registration.scope;
-      const newestWorker =
-        registration.activeWorker ||
-        registration.waitingWorker ||
-        registration.installingWorker;
-      form.fetch = newestWorker && newestWorker.handlesFetchEvents;
+      /**
+       * With parent-intercept mode, the ServiceWorkerManager in content
+       * processes don't maintain ServiceWorkerRegistrations; record the
+       * ServiceWorker's ID, and this data will be merged with the
+       * corresponding registration in the parent process.
+       */
+      if (!swm.isParentInterceptEnabled() || !DevToolsServer.isInChildProcess) {
+        const registration = this._getServiceWorkerRegistrationInfo();
+        form.scope = registration.scope;
+        const newestWorker =
+          registration.activeWorker ||
+          registration.waitingWorker ||
+          registration.installingWorker;
+        form.fetch = newestWorker && newestWorker.handlesFetchEvents;
+      }
     }
     return form;
   },
@@ -69,13 +80,10 @@ const WorkerTargetActor = protocol.ActorClassWithSpec(workerTargetSpec, {
     }
 
     if (!this._attached) {
-      // Automatically disable their internal timeout that shut them down
-      // Should be refactored by having actors specific to service workers
-      if (this._dbg.type == Ci.nsIWorkerDebugger.TYPE_SERVICE) {
-        const worker = this._getServiceWorkerInfo();
-        if (worker) {
-          worker.attachDebugger();
-        }
+      const isServiceWorker =
+        this._dbg.type == Ci.nsIWorkerDebugger.TYPE_SERVICE;
+      if (isServiceWorker) {
+        this._preventServiceWorkerShutdown();
       }
       this._dbg.addListener(this);
       this._attached = true;
@@ -183,15 +191,46 @@ const WorkerTargetActor = protocol.ActorClassWithSpec(workerTargetSpec, {
       // nothing
     }
 
-    if (type == Ci.nsIWorkerDebugger.TYPE_SERVICE) {
-      const worker = this._getServiceWorkerInfo();
-      if (worker) {
-        worker.detachDebugger();
-      }
+    const isServiceWorker = type == Ci.nsIWorkerDebugger.TYPE_SERVICE;
+    if (isServiceWorker) {
+      this._allowServiceWorkerShutdown();
     }
 
     this._dbg.removeListener(this);
     this._attached = false;
+  },
+
+  /**
+   * Automatically disable the internal sw timeout that shut them down by calling
+   * nsIWorkerInfo.attachDebugger().
+   * This can be removed when Bug 1496997 lands.
+   */
+  _preventServiceWorkerShutdown() {
+    if (swm.isParentInterceptEnabled()) {
+      // In parentIntercept mode, the worker target actor cannot call attachDebugger
+      // because this API can only be called from the parent process. This will be
+      // done by the worker target front.
+      return;
+    }
+
+    const worker = this._getServiceWorkerInfo();
+    if (worker) {
+      worker.attachDebugger();
+    }
+  },
+
+  /**
+   * Allow the service worker to time out. See _preventServiceWorkerShutdown.
+   */
+  _allowServiceWorkerShutdown() {
+    if (swm.isParentInterceptEnabled()) {
+      return;
+    }
+
+    const worker = this._getServiceWorkerInfo();
+    if (worker) {
+      worker.detachDebugger();
+    }
   },
 });
 

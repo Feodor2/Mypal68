@@ -23,6 +23,12 @@ loader.lazyRequireGetter(
   "BrowserConsole",
   "devtools/client/webconsole/browser-console"
 );
+loader.lazyRequireGetter(
+  this,
+  "PREFS",
+  "devtools/client/webconsole/constants",
+  true
+);
 
 const BC_WINDOW_FEATURES =
   "chrome,titlebar,toolbar,centerscreen,resizable,dialog=no";
@@ -52,13 +58,11 @@ class BrowserConsoleManager {
    *        The target that the browser console will connect to.
    * @param nsIDOMWindow iframeWindow
    *        The window where the browser console UI is already loaded.
-   * @param nsIDOMWindow chromeWindow
-   *        The window of the browser console owner.
    * @return object
    *         A promise object for the opening of the new BrowserConsole instance.
    */
-  async openBrowserConsole(target, iframeWindow, chromeWindow) {
-    const hud = new BrowserConsole(target, iframeWindow, chromeWindow);
+  async openBrowserConsole(target, win) {
+    const hud = new BrowserConsole(target, win, win);
     this._browserConsole = hud;
     await hud.init();
     return hud;
@@ -96,12 +100,8 @@ class BrowserConsoleManager {
     this._browserConsoleInitializing = (async () => {
       const target = await this.connect();
       await target.attach();
-      const { iframeWindow, chromeWindow } = await this.openWindow();
-      const browserConsole = await this.openBrowserConsole(
-        target,
-        iframeWindow,
-        chromeWindow
-      );
+      const win = await this.openWindow();
+      const browserConsole = await this.openBrowserConsole(target, win);
       return browserConsole;
     })();
 
@@ -160,9 +160,14 @@ class BrowserConsoleManager {
       once: true,
     });
 
-    win.document.title = l10n.getStr("browserConsole.title");
-
-    return { iframeWindow: win, chromeWindow: win };
+    const fissionSupport = Services.prefs.getBoolPref(
+      PREFS.FEATURES.BROWSER_TOOLBOX_FISSION
+    );
+    const title = fissionSupport
+      ? `💥 Fission Browser Console 💥`
+      : l10n.getStr("browserConsole.title");
+    win.document.title = title;
+    return win;
   }
 
   /**

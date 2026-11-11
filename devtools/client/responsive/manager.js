@@ -211,7 +211,7 @@ class ResponsiveUIManager {
   }
 
   removeMenuCheckListenerFor(window) {
-    if (window && window.gBrowser && window.gBrowser.tabContainer) {
+    if (window?.gBrowser?.tabContainer) {
       const { tabContainer } = window.gBrowser;
       tabContainer.removeEventListener("TabSelect", this.handleMenuCheck);
     }

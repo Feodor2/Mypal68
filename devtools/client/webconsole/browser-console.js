@@ -4,8 +4,9 @@
 
 "use strict";
 
-var Services = require("Services");
-var WebConsole = require("devtools/client/webconsole/webconsole");
+const Services = require("Services");
+const WebConsole = require("devtools/client/webconsole/webconsole");
+const { TargetList } = require("devtools/shared/resources/target-list");
 
 loader.lazyRequireGetter(
   this,
@@ -39,12 +40,17 @@ class BrowserConsole extends WebConsole {
     super(null, iframeWindow, chromeWindow, true);
 
     this._browserConsoleTarget = target;
+    this._targetList = new TargetList(target.client.mainRoot, target);
     this._bcInitializer = null;
     this._bcDestroyer = null;
   }
 
   get currentTarget() {
     return this._browserConsoleTarget;
+  }
+
+  get targetList() {
+    return this._targetList;
   }
 
   /**
@@ -58,10 +64,13 @@ class BrowserConsole extends WebConsole {
       return this._bcInitializer;
     }
 
-    // Only add the shutdown observer if we've opened a Browser Console window.
-    ShutdownObserver.init();
+    this._bcInitializer = (async () => {
+      // Only add the shutdown observer if we've opened a Browser Console window.
+      ShutdownObserver.init();
 
-    this._bcInitializer = super.init();
+      await this.targetList.startListening();
+      await super.init();
+    })();
     return this._bcInitializer;
   }
 
@@ -77,6 +86,7 @@ class BrowserConsole extends WebConsole {
     }
 
     this._bcDestroyer = (async () => {
+      await this.targetList.stopListening();
       await super.destroy();
       await this.currentTarget.destroy();
       this.chromeWindow.close();

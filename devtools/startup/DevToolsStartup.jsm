@@ -38,6 +38,11 @@ const { XPCOMUtils } = ChromeUtils.import(
 
 ChromeUtils.defineModuleGetter(
   this,
+  "ActorManagerParent",
+  "resource://gre/modules/ActorManagerParent.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "Services",
   "resource://gre/modules/Services.jsm"
 );
@@ -269,6 +274,8 @@ DevToolsStartup.prototype = {
     const isInitialLaunch =
       cmdLine.state == Ci.nsICommandLine.STATE_INITIAL_LAUNCH;
     if (isInitialLaunch) {
+      this._registerDevToolsJsWindowActors();
+
       // Enable devtools for all users on startup (onboarding experiment from Bug 1408969
       // is over).
       Services.prefs.setBoolPref(DEVTOOLS_ENABLED_PREF, true);
@@ -977,6 +984,23 @@ DevToolsStartup.prototype = {
     }
   },
 
+  _registerDevToolsJsWindowActors() {
+    ActorManagerParent.addJSWindowActors({
+      DevToolsFrame: {
+        parent: {
+          moduleURI:
+            "resource://devtools/server/connectors/js-window-actor/DevToolsFrameParent.jsm",
+        },
+        child: {
+          moduleURI:
+            "resource://devtools/server/connectors/js-window-actor/DevToolsFrameChild.jsm",
+        },
+        allFrames: true,
+      },
+    });
+    ActorManagerParent.flush();
+  },
+
   // Used by tests and the toolbox to register the same key shortcuts in toolboxes loaded
   // in a window window.
   get KeyShortcuts() {
@@ -1061,7 +1085,7 @@ const JsonView = {
       //   principal is from the child. Null principals don't survive crossing
       //   over IPC, so there's no other principal that'll work.
       const persistable = browser.frameLoader;
-      persistable.startPersistence(0, {
+      persistable.startPersistence(null, {
         onDocumentReady(doc) {
           const uri = chrome.makeURI(doc.documentURI, doc.characterSet);
           const filename = chrome.getDefaultFileName(undefined, uri, doc, null);

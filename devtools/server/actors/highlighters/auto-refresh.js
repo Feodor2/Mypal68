@@ -84,6 +84,7 @@ function AutoRefreshHighlighter(highlighterEnv) {
 
 AutoRefreshHighlighter.prototype = {
   _ignoreZoom: false,
+  _ignoreScroll: false,
 
   /**
    * Window corresponding to the current highlighterEnv.
@@ -191,7 +192,7 @@ AutoRefreshHighlighter.prototype = {
         this.contentWindow,
         this.currentNode,
         region,
-        { ignoreZoom: this._ignoreZoom }
+        { ignoreScroll: this._ignoreScroll, ignoreZoom: this._ignoreZoom }
       );
     }
   },

@@ -20,12 +20,20 @@ class WebConsoleConnectionProxy {
    * @constructor
    * @param {WebConsoleUI} webConsoleUI
    *        A WebConsoleUI instance that owns this connection proxy.
-   * @param RemoteTarget target
+   * @param {RemoteTarget} target
    *        The target that the console will connect to.
+   * @param {Boolean} needContentProcessMessagesListener
+   *        Set to true to specifically add a ContentProcessMessages listener. This is
+   *        needed for non-fission Browser Console for example.
    */
-  constructor(webConsoleUI, target) {
+  constructor(
+    webConsoleUI,
+    target,
+    needContentProcessMessagesListener = false
+  ) {
     this.webConsoleUI = webConsoleUI;
     this.target = target;
+    this.needContentProcessMessagesListener = needContentProcessMessagesListener;
 
     this._connecter = null;
 
@@ -117,7 +125,7 @@ class WebConsoleConnectionProxy {
     // when we open the Browser Console or Toolbox without fission support. If Fission
     // is enabled, we don't use the ContentProcessMessages listener, but attach to the
     // content processes directly.
-    if (this.target.chrome && !this.target.isAddon && true) {
+    if (this.needContentProcessMessagesListener) {
       listeners.push("ContentProcessMessages");
     }
     return this.webConsoleFront.startListeners(listeners);

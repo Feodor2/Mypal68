@@ -10,8 +10,9 @@ const { TargetList } = require("devtools/shared/resources/target-list");
 const FISSION_TEST_URL = URL_ROOT + "/fission_document.html";
 
 add_task(async function() {
-  // Enabled fission's pref as the TargetList is almost disabled without it
+  // Enabled fission's prefs as the TargetList is almost disabled without it
   await pushPref("devtools.browsertoolbox.fission", true);
+  await pushPref("devtools.contenttoolbox.fission", true);
   // Disable the preloaded process as it gets created lazily and may interfere
   // with process count assertions
   await pushPref("dom.ipc.processPrelaunch.enabled", false);
@@ -21,7 +22,10 @@ add_task(async function() {
   const client = await createLocalClient();
   const mainRoot = client.mainRoot;
 
+  // Test fetching the frames from the main process target
   await testBrowserFrames(mainRoot);
+
+  // Test fetching the frames from a tab target
   await testTabFrames(mainRoot);
 
   await client.close();
@@ -33,7 +37,7 @@ async function testBrowserFrames(mainRoot) {
   const targetDescriptor = await mainRoot.getMainProcess();
   const target = await targetDescriptor.getTarget();
   const targetList = new TargetList(mainRoot, target);
-  await targetList.startListening([TargetList.TYPES.FRAME]);
+  await targetList.startListening();
 
   // Very naive sanity check against getAllTargets(frame)
   const frames = await targetList.getAllTargets(TargetList.TYPES.FRAME);
@@ -57,17 +61,17 @@ async function testBrowserFrames(mainRoot) {
 
   // Assert that watchTargets will call the create callback for all existing frames
   const targets = [];
-  const onAvailable = (type, newTarget, isTopLevel) => {
+  const onAvailable = ({ type, targetFront, isTopLevel }) => {
     is(
       type,
       TargetList.TYPES.FRAME,
       "We are only notified about frame targets"
     );
     ok(
-      newTarget == target ? isTopLevel : !isTopLevel,
+      targetFront == target ? isTopLevel : !isTopLevel,
       "isTopLevel argument is correct"
     );
-    targets.push(newTarget);
+    targets.push(targetFront);
   };
   await targetList.watchTargets([TargetList.TYPES.FRAME], onAvailable);
   is(
@@ -100,10 +104,9 @@ async function testBrowserFrames(mainRoot) {
   ok(hasTabDocument, "retrieve the target for tab via getAllTargets");
   */
 
-  targetList.stopListening([TargetList.TYPES.FRAME]);
+  targetList.stopListening();
 }
 
-// For now as we do not support "real fission", for tabs, this behaves as if devtools fission pref was false
 async function testTabFrames(mainRoot) {
   info("Test TargetList against frames via a tab target");
 
@@ -113,34 +116,25 @@ async function testTabFrames(mainRoot) {
   const target = await mainRoot.getTab({ tab });
   const targetList = new TargetList(mainRoot, target);
 
-  await targetList.startListening([TargetList.TYPES.FRAME]);
+  await targetList.startListening();
 
   // Check that calling getAllTargets(frame) return the same target instances
   const frames = await targetList.getAllTargets(TargetList.TYPES.FRAME);
-  is(
-    frames.length,
-    1,
-    "retrieved the top level document and the remoted frame"
-  );
-  is(
-    frames[0].url,
-    FISSION_TEST_URL,
-    "The first frame is the top level document"
-  );
+  is(frames.length, 1, "retrieved only the top level document");
 
   // Assert that watchTargets will call the create callback for all existing frames
   const targets = [];
-  const onAvailable = (type, newTarget, isTopLevel) => {
+  const onAvailable = ({ type, targetFront, isTopLevel }) => {
     is(
       type,
       TargetList.TYPES.FRAME,
       "We are only notified about frame targets"
     );
     ok(
-      newTarget == target ? isTopLevel : !isTopLevel,
+      targetFront == target ? isTopLevel : !isTopLevel,
       "isTopLevel argument is correct"
     );
-    targets.push(newTarget);
+    targets.push(targetFront);
   };
   await targetList.watchTargets([TargetList.TYPES.FRAME], onAvailable);
   is(
@@ -157,7 +151,7 @@ async function testTabFrames(mainRoot) {
   }
   targetList.unwatchTargets([TargetList.TYPES.FRAME], onAvailable);
 
-  targetList.stopListening([TargetList.TYPES.FRAME]);
+  targetList.stopListening();
 
   BrowserTestUtils.removeTab(tab);
 }

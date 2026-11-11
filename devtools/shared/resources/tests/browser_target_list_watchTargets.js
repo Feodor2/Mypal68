@@ -35,7 +35,7 @@ async function testWatchTargets(mainRoot) {
   const target = await mainRoot.getMainProcess();
   const targetList = new TargetList(mainRoot, target);
 
-  await targetList.startListening([TargetList.TYPES.PROCESS]);
+  await targetList.startListening();
 
   // Note that ppmm also includes the parent process, which is considered as a frame rather than a process
   const originalProcessesCount = Services.ppmm.childCount - 1;
@@ -44,8 +44,8 @@ async function testWatchTargets(mainRoot) {
     "Check that onAvailable is called for processes already created *before* the call to watchTargets"
   );
   const targets = new Set();
-  const onAvailable = (type, newTarget, isTopLevel) => {
-    if (targets.has(newTarget)) {
+  const onAvailable = ({ type, targetFront, isTopLevel }) => {
+    if (targets.has(targetFront)) {
       ok(false, "The same target is notified multiple times via onAvailable");
     }
     is(
@@ -54,13 +54,13 @@ async function testWatchTargets(mainRoot) {
       "We are only notified about process targets"
     );
     ok(
-      newTarget == target ? isTopLevel : !isTopLevel,
+      targetFront == target ? isTopLevel : !isTopLevel,
       "isTopLevel argument is correct"
     );
-    targets.add(newTarget);
+    targets.add(targetFront);
   };
-  const onDestroyed = (type, newTarget, isTopLevel) => {
-    if (!targets.has(newTarget)) {
+  const onDestroyed = ({ type, targetFront, isTopLevel }) => {
+    if (!targets.has(targetFront)) {
       ok(
         false,
         "A target is declared destroyed via onDestroyed without being notified via onAvailable"
@@ -75,7 +75,7 @@ async function testWatchTargets(mainRoot) {
       !isTopLevel,
       "We are not notified about the top level target destruction"
     );
-    targets.delete(newTarget);
+    targets.delete(targetFront);
   };
   await targetList.watchTargets(
     [TargetList.TYPES.PROCESS],
@@ -104,12 +104,12 @@ async function testWatchTargets(mainRoot) {
   );
   const previousTargets = new Set(targets);
   const onProcessCreated = new Promise(resolve => {
-    const onAvailable2 = (type, newTarget, isTopLevel) => {
-      if (previousTargets.has(newTarget)) {
+    const onAvailable2 = ({ type, targetFront, isTopLevel }) => {
+      if (previousTargets.has(targetFront)) {
         return;
       }
       targetList.unwatchTargets([TargetList.TYPES.PROCESS], onAvailable2);
-      resolve(newTarget);
+      resolve(targetFront);
     };
     targetList.watchTargets([TargetList.TYPES.PROCESS], onAvailable2);
   });
@@ -129,8 +129,8 @@ async function testWatchTargets(mainRoot) {
   // Assert that onDestroyed is called for destroyed processes
   const onProcessDestroyed = new Promise(resolve => {
     const onAvailable3 = () => {};
-    const onDestroyed3 = (type, newTarget, isTopLevel) => {
-      resolve(newTarget);
+    const onDestroyed3 = ({ type, targetFront, isTopLevel }) => {
+      resolve(targetFront);
       targetList.unwatchTargets(
         [TargetList.TYPES.PROCESS],
         onAvailable3,
@@ -168,7 +168,7 @@ async function testWatchTargets(mainRoot) {
     onDestroyed
   );
 
-  targetList.stopListening([TargetList.TYPES.PROCESS]);
+  targetList.stopListening();
 }
 
 async function testContentProcessTarget(mainRoot) {
@@ -178,14 +178,14 @@ async function testContentProcessTarget(mainRoot) {
   const target = await processes[1].getTarget();
   const targetList = new TargetList(mainRoot, target);
 
-  await targetList.startListening([TargetList.TYPES.PROCESS]);
+  await targetList.startListening();
 
   // Assert that watchTargets is only called for the top level content process target
   // as listening for additional target is only enable for the parent process target.
   // See bug 1593928.
   const targets = new Set();
-  const onAvailable = (type, newTarget, isTopLevel) => {
-    if (targets.has(newTarget)) {
+  const onAvailable = ({ type, targetFront, isTopLevel }) => {
+    if (targets.has(targetFront)) {
       // This may fail if the top level target is reported by LegacyImplementation
       // to TargetList and emits an available event for it.
       ok(false, "The same target is notified multiple times via onAvailable");
@@ -195,11 +195,11 @@ async function testContentProcessTarget(mainRoot) {
       TargetList.TYPES.PROCESS,
       "We are only notified about process targets"
     );
-    is(newTarget, target, "This is the existing top level target");
+    is(targetFront, target, "This is the existing top level target");
     ok(isTopLevel, "We are only notified about the top level target");
-    targets.add(newTarget);
+    targets.add(targetFront);
   };
-  const onDestroyed = (type, newTarget, isTopLevel) => {
+  const onDestroyed = ({ type, targetFront, isTopLevel }) => {
     ok(false, "onDestroyed should never be called in this test");
   };
   await targetList.watchTargets(
@@ -212,7 +212,7 @@ async function testContentProcessTarget(mainRoot) {
   // to TargetList and registers a duplicated entry
   is(targets.size, 1, "We were only notified about the top level target");
 
-  targetList.stopListening([TargetList.TYPES.PROCESS]);
+  targetList.stopListening();
 }
 
 async function testThrowingInOnAvailable(mainRoot) {
@@ -223,7 +223,7 @@ async function testThrowingInOnAvailable(mainRoot) {
   const target = await mainRoot.getMainProcess();
   const targetList = new TargetList(mainRoot, target);
 
-  await targetList.startListening([TargetList.TYPES.PROCESS]);
+  await targetList.startListening();
 
   // Note that ppmm also includes the parent process, which is considered as a frame rather than a process
   const originalProcessesCount = Services.ppmm.childCount - 1;
@@ -233,12 +233,12 @@ async function testThrowingInOnAvailable(mainRoot) {
   );
   const targets = new Set();
   let thrown = false;
-  const onAvailable = (type, newTarget, isTopLevel) => {
+  const onAvailable = ({ type, targetFront, isTopLevel }) => {
     if (!thrown) {
       thrown = true;
       throw new Error("Force an exception when processing the first target");
     }
-    targets.add(newTarget);
+    targets.add(targetFront);
   };
   await targetList.watchTargets([TargetList.TYPES.PROCESS], onAvailable);
   is(
@@ -247,5 +247,5 @@ async function testThrowingInOnAvailable(mainRoot) {
     "retrieved the expected number of processes via onAvailable. All but the first one where we have thrown."
   );
 
-  targetList.stopListening([TargetList.TYPES.PROCESS]);
+  targetList.stopListening();
 }

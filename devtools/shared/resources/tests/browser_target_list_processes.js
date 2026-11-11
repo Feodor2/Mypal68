@@ -24,11 +24,11 @@ add_task(async function() {
   const mainProcess = await mainRoot.getMainProcess();
 
   const targetList = new TargetList(mainRoot, mainProcess);
-  await targetList.startListening([TargetList.TYPES.PROCESS]);
+  await targetList.startListening();
 
   await testProcesses(targetList, mainProcess);
 
-  await targetList.stopListening([TargetList.TYPES.PROCESS]);
+  await targetList.stopListening();
   await client.close();
 });
 
@@ -61,8 +61,8 @@ async function testProcesses(targetList, target) {
 
   // Assert that watchTargets will call the create callback for all existing frames
   const targets = new Set();
-  const onAvailable = (type, newTarget, isTopLevel) => {
-    if (targets.has(newTarget)) {
+  const onAvailable = ({ type, targetFront, isTopLevel }) => {
+    if (targets.has(targetFront)) {
       ok(false, "The same target is notified multiple times via onAvailable");
     }
     is(
@@ -71,13 +71,13 @@ async function testProcesses(targetList, target) {
       "We are only notified about process targets"
     );
     ok(
-      newTarget == target ? isTopLevel : !isTopLevel,
+      targetFront == target ? isTopLevel : !isTopLevel,
       "isTopLevel argument is correct"
     );
-    targets.add(newTarget);
+    targets.add(targetFront);
   };
-  const onDestroyed = (type, newTarget, isTopLevel) => {
-    if (!targets.has(newTarget)) {
+  const onDestroyed = ({ type, targetFront, isTopLevel }) => {
+    if (!targets.has(targetFront)) {
       ok(
         false,
         "A target is declared destroyed via onDestroyed without being notified via onAvailable"
@@ -92,7 +92,7 @@ async function testProcesses(targetList, target) {
       !isTopLevel,
       "We are never notified about the top level target destruction"
     );
-    targets.delete(newTarget);
+    targets.delete(targetFront);
   };
   await targetList.watchTargets(
     [TargetList.TYPES.PROCESS],
@@ -114,12 +114,12 @@ async function testProcesses(targetList, target) {
   const previousTargets = new Set(targets);
   // Assert that onAvailable is called for processes created *after* the call to watchTargets
   const onProcessCreated = new Promise(resolve => {
-    const onAvailable2 = (type, newTarget, isTopLevel) => {
-      if (previousTargets.has(newTarget)) {
+    const onAvailable2 = ({ type, targetFront, isTopLevel }) => {
+      if (previousTargets.has(targetFront)) {
         return;
       }
       targetList.unwatchTargets([TargetList.TYPES.PROCESS], onAvailable2);
-      resolve(newTarget);
+      resolve(targetFront);
     };
     targetList.watchTargets([TargetList.TYPES.PROCESS], onAvailable2);
   });
@@ -138,8 +138,8 @@ async function testProcesses(targetList, target) {
   // Assert that onDestroyed is called for destroyed processes
   const onProcessDestroyed = new Promise(resolve => {
     const onAvailable3 = () => {};
-    const onDestroyed3 = (type, newTarget, isTopLevel) => {
-      resolve(newTarget);
+    const onDestroyed3 = ({ type, targetFront, isTopLevel }) => {
+      resolve(targetFront);
       targetList.unwatchTargets(
         [TargetList.TYPES.PROCESS],
         onAvailable3,

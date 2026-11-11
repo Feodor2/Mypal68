@@ -506,7 +506,7 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
     }
 
     debugService.activationHandler = function(window) {
-      const chromeWindow = window.docShell.rootTreeItem.domWindow;
+      const chromeWindow = window.browsingContext.topChromeWindow;
 
       let setupFinished = false;
       slowScriptDebugHandler(chromeWindow.gBrowser.selectedTab, () => {

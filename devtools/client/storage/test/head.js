@@ -60,7 +60,7 @@ async function openTab(url, options = {}) {
   const tab = await addTab(url, options);
 
   // Setup the async storages in main window and for all its iframes
-  await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
     /**
      * Get all windows including frames recursively.
      *
@@ -222,7 +222,7 @@ function forceCollections() {
  */
 async function finishTests() {
   while (gBrowser.tabs.length > 1) {
-    await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
+    await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function() {
       /**
        * Get all windows including frames recursively.
        *
@@ -1029,7 +1029,7 @@ function setPermission(url, permission) {
   const nsIPermissionManager = Ci.nsIPermissionManager;
 
   const uri = Services.io.newURI(url);
-  const principal = Services.scriptSecurityManager.createCodebasePrincipal(
+  const principal = Services.scriptSecurityManager.createContentPrincipal(
     uri,
     {}
   );

@@ -262,7 +262,7 @@ const browsingContextTargetPrototype = {
 
     // Flag eventually overloaded by sub classes in order to watch new docshells
     // Used by the ParentProcessTargetActor to list all frames in the Browser Toolbox
-    this.listenForNewDocShells = false;
+    this.watchNewDocShells = false;
 
     this.traits = {
       reconfigure: true,
@@ -611,9 +611,7 @@ const browsingContextTargetPrototype = {
 
   _watchDocshells() {
     // In child processes, we watch all docshells living in the process.
-    if (this.listenForNewDocShells) {
-      Services.obs.addObserver(this, "webnavigation-create");
-    }
+    Services.obs.addObserver(this, "webnavigation-create");
     Services.obs.addObserver(this, "webnavigation-destroy");
 
     // We watch for all child docshells under the current document,
@@ -759,7 +757,7 @@ const browsingContextTargetPrototype = {
 
       // In child processes, we have new root docshells,
       // let's watch them and all their child docshells.
-      if (this._isRootDocShell(docShell)) {
+      if (this._isRootDocShell(docShell) && this.watchNewDocShells) {
         this._progressListener.watch(docShell);
       }
       this._notifyDocShellsUpdate([docShell]);
@@ -930,9 +928,7 @@ const browsingContextTargetPrototype = {
       this._originalWindow = null;
 
       // Removes the observers being set in _watchDocShells
-      if (this.listenForNewDocShells) {
-        Services.obs.removeObserver(this, "webnavigation-create");
-      }
+      Services.obs.removeObserver(this, "webnavigation-create");
       Services.obs.removeObserver(this, "webnavigation-destroy");
     }
 
@@ -1540,7 +1536,15 @@ DebuggerProgressListener.prototype = {
       this._knownWindowIDs.set(getWindowID(win), win);
     }
 
-    docShell.watchedByDevtools = true;
+    // The `watchedByDevTools` enables gecko behavior tied to this flag, such as:
+    //  - reporting the contents of HTML loaded in the docshells,
+    //  - or capturing stacks for the network monitor.
+    //
+    // This attribute may already have been toggled by a parent BrowsingContext.
+    // Typically the parent process or tab target. Both are top level BrowsingContext.
+    if (docShell.browsingContext.top == docShell.browsingContext) {
+      docShell.browsingContext.watchedByDevTools = true;
+    }
   },
 
   unwatch(docShell) {
@@ -1548,6 +1552,7 @@ DebuggerProgressListener.prototype = {
     if (!this._watchedDocShells.has(docShellWindow)) {
       return;
     }
+    this._watchedDocShells.delete(docShellWindow);
 
     const webProgress = docShell
       .QueryInterface(Ci.nsIInterfaceRequestor)
@@ -1572,7 +1577,13 @@ DebuggerProgressListener.prototype = {
       this._knownWindowIDs.delete(getWindowID(win));
     }
 
-    docShell.watchedByDevtools = false;
+    // We can only toggle this attribute on top level BrowsingContext,
+    // this will be propagated over the whole tree of BC.
+    // So we only need to set it from Parent Process Target
+    // and Tab Target. Tab's BrowsingContext are actually considered as top level BC.
+    if (docShell.browsingContext.top == docShell.browsingContext) {
+      docShell.browsingContext.watchedByDevTools = false;
+    }
   },
 
   _getWindowsInDocShell(docShell) {

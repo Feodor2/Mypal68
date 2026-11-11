@@ -14,6 +14,7 @@ loader.lazyRequireGetter(this, "flags", "devtools/shared/flags");
 
 const SHOW_ALL_ANONYMOUS_CONTENT_PREF =
   "devtools.inspector.showAllAnonymousContent";
+const CONTENT_FISSION_ENABLED_PREF = "devtools.contenttoolbox.fission";
 
 /**
  * Client side of the inspector actor, which is used to create
@@ -32,7 +33,21 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
 
   // async initialization
   async initialize() {
-    await Promise.all([this._getWalker(), this._getHighlighter()]);
+    await Promise.all([
+      this._getWalker(),
+      this._getHighlighter(),
+      this._getPageStyle(),
+    ]);
+  }
+
+  get isContentFissionEnabled() {
+    if (this._isContentFissionEnabled === undefined) {
+      this._isContentFissionEnabled = Services.prefs.getBoolPref(
+        CONTENT_FISSION_ENABLED_PREF
+      );
+    }
+
+    return this._isContentFissionEnabled;
   }
 
   async _getWalker() {
@@ -47,6 +62,11 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
       // Older servers used separate flags. See Bug 1613773.
       showUserAgentShadowRoots: showAllAnonymousContent,
     });
+
+    // We need to reparent the RootNode of remote iframe Walkers
+    // so that their parent is the NodeFront of the <iframe>
+    // element, coming from another process/target/WalkerFront.
+    await this.walker.reparentRemoteFrame();
   }
 
   async _getHighlighter() {
@@ -56,6 +76,10 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
 
   hasHighlighter(type) {
     return this._highlighters.has(type);
+  }
+
+  async _getPageStyle() {
+    this.pageStyle = await super.getPageStyle();
   }
 
   destroy() {
@@ -115,7 +139,7 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
   async getNodeFrontFromNodeGrip(grip) {
     const gripHasContentDomReference = "contentDomReference" in grip;
 
-    if (!gripHasContentDomReference) {
+    if (!this.isContentFissionEnabled || !gripHasContentDomReference) {
       // Backward compatibility ( < Firefox 71):
       // If the grip does not have a contentDomReference, we can't know in which browsing
       // context id the node lives. We fall back on gripToNodeFront that might retrieve
@@ -145,27 +169,6 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
     const target = await descriptor.getTarget();
     const { walker } = await target.getFront("inspector");
     return walker.getNodeActorFromContentDomReference(contentDomReference);
-  }
-
-  async getChildInspectors() {
-    const fissionEnabled = false;
-    const childInspectors = [];
-    const target = this.targetFront;
-    // this line can be removed when we are ready for fission frames
-    if (fissionEnabled && target.chrome && !target.isAddon) {
-      const { frames } = await target.listRemoteFrames();
-      // attempt to get targets and filter by targets that could connect
-      for (const descriptor of frames) {
-        const remoteTarget = await descriptor.getTarget();
-        if (remoteTarget) {
-          // get inspector
-          const remoteInspectorFront = await remoteTarget.getFront("inspector");
-          await remoteInspectorFront.walker.reparentRemoteFrame();
-          childInspectors.push(remoteInspectorFront);
-        }
-      }
-    }
-    return childInspectors;
   }
 }
 

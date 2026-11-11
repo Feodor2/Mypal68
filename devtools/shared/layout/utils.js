@@ -152,7 +152,12 @@ exports.getFrameOffsets = getFrameOffsets;
  *        An array of objects that have the same structure as quads returned by
  *        getBoxQuads. An empty array if the node has no quads or is invalid.
  */
-function getAdjustedQuads(boundaryWindow, node, region, { ignoreZoom } = {}) {
+function getAdjustedQuads(
+  boundaryWindow,
+  node,
+  region,
+  { ignoreZoom, ignoreScroll } = {}
+) {
   if (!node || !node.getBoxQuads) {
     return [];
   }
@@ -168,7 +173,9 @@ function getAdjustedQuads(boundaryWindow, node, region, { ignoreZoom } = {}) {
   }
 
   const scale = ignoreZoom ? 1 : getCurrentZoom(node);
-  const { scrollX, scrollY } = boundaryWindow;
+  const { scrollX, scrollY } = ignoreScroll
+    ? { scrollX: 0, scrollY: 0 }
+    : boundaryWindow;
 
   const xOffset = scrollX * scale;
   const yOffset = scrollY * scale;
@@ -828,16 +835,18 @@ exports.getAbsoluteScrollOffsetsForNode = getAbsoluteScrollOffsetsForNode;
  * - In the context of the content toolbox, a remote frame can be a <iframe> that contains
  * a different origin document.
  *
- * For now, this function only checks the former.
- *
  * @param  {DOMNode} node
  * @return {Boolean}
  */
 function isRemoteFrame(node) {
-  return (
-    node.childNodes.length == 0 &&
-    ChromeUtils.getClassName(node) == "XULFrameElement" &&
-    node.getAttribute("remote") == "true"
-  );
+  if (ChromeUtils.getClassName(node) == "HTMLIFrameElement") {
+    return node.frameLoader && node.frameLoader.isRemoteFrame;
+  }
+
+  if (ChromeUtils.getClassName(node) == "XULFrameElement") {
+    return !node.childNodes.length && node.getAttribute("remote") == "true";
+  }
+
+  return false;
 }
 exports.isRemoteFrame = isRemoteFrame;

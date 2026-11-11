@@ -16,9 +16,13 @@ add_task(async function() {
 
   const firstURL = "http://example.com/";
   const secondURL = "http://example.com/?id=secondURL";
-  ContentTask.spawn(gBrowser.selectedBrowser, [firstURL, secondURL], urls => {
-    content.wrappedJSObject.console.log("Visit ", urls[0], " and ", urls[1]);
-  });
+  SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [[firstURL, secondURL]],
+    urls => {
+      content.wrappedJSObject.console.log("Visit ", urls[0], " and ", urls[1]);
+    }
+  );
 
   const node = await waitFor(() => findMessage(hud, firstURL));
   const [urlEl1, urlEl2] = Array.from(node.querySelectorAll("a.url"));
@@ -58,4 +62,34 @@ add_task(async function() {
     "The new tab was opened in the position to the right of the current tab"
   );
   is(gBrowser.selectedTab, currentTab, "The tab was opened in the background");
+
+  info(
+    "Test that Ctrl/Cmd + Click on a link in an array doesn't open the sidebar"
+  );
+  const onMessage = waitForMessage(hud, "Visit");
+  SpecialPowers.spawn(gBrowser.selectedBrowser, [firstURL], url => {
+    content.wrappedJSObject.console.log([`Visit ${url}`]);
+  });
+  const message = await onMessage;
+  const urlEl3 = message.node.querySelector("a.url");
+
+  onTabLoaded = BrowserTestUtils.waitForNewTab(gBrowser, firstURL, true);
+
+  EventUtils.sendMouseEvent(
+    {
+      type: "click",
+      [isMacOS ? "metaKey" : "ctrlKey"]: true,
+    },
+    urlEl3,
+    hud.ui.window
+  );
+  await onTabLoaded;
+
+  info("Log a message and wait for it to appear so we know the UI was updated");
+  const onSmokeMessage = waitForMessage(hud, "smoke");
+  SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+    content.wrappedJSObject.console.log("smoke");
+  });
+  await onSmokeMessage;
+  ok(!hud.ui.document.querySelector(".sidebar"), "Sidebar wasn't closed");
 });

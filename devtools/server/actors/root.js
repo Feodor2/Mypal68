@@ -574,14 +574,28 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     return { processDescriptor };
   },
 
+  /**
+   * Note that this method behaves differently when called for a top level
+   * window.
+   * For a top level window, it will ONLY return remote browser elements.
+   * For any other window, it will return chidren elements, remote or not.
+   *
+   * Also important to note, this method only returns direct children, not the
+   * complete browsing context tree.
+   */
   async _getChildBrowsingContexts(id) {
     // If we have the id of the parent, then we need to get the child
     // contexts in a special way. We have a method on the descriptor
     // to take care of this.
-    const window = Services.wm.getMostRecentWindow(
-      DevToolsServer.chromeWindowType
-    );
-    if (window.docShell.browsingContext.id === id) {
+    const parentBrowsingContext = BrowsingContext.get(id);
+    // If this is a parent-process window, and it's top-level (not embedded in a browser),
+    // collect all the remote browsers in the window ourselves. getChildren() will not return
+    // these contexts otherwise.
+    if (
+      parentBrowsingContext.window &&
+      !parentBrowsingContext.embedderElement
+    ) {
+      const { window } = parentBrowsingContext;
       return [
         ...window.document.querySelectorAll(`browser[remote="true"]`),
       ].map(browser => browser.browsingContext);
@@ -589,11 +603,22 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
     // for all other contexts, since we do not need to get contexts of
     // a different type, we can just get the children directly from
     // the BrowsingContext.
-    const parentBrowsingContext = BrowsingContext.get(id);
-    return parentBrowsingContext.getChildren();
+    return (
+      parentBrowsingContext
+        .getChildren()
+        // For now, we only return the "remote frames".
+        // i.e. the frames which are in a distinct process compared to their parent document
+        .filter(browsingContext => {
+          return (
+            !browsingContext.parent ||
+            browsingContext.currentWindowGlobal.osPid !=
+              browsingContext.parent.currentWindowGlobal.osPid
+          );
+        })
+    );
   },
 
-  async onListRemoteFrames({ id }) {
+  async listRemoteFrames(id) {
     const frames = [];
     const contextsToWalk = await this._getChildBrowsingContexts(id);
 
@@ -623,8 +648,7 @@ exports.RootActor = protocol.ActorClassWithSpec(rootSpec, {
 
     this._frameDescriptorActorPool = pool;
 
-    // TODO: determine why we cannot return frames without a cyclical object value
-    return { frames: frames.map(f => f.form()) };
+    return { frames };
   },
 
   _getKnownDescriptor(id, pool) {

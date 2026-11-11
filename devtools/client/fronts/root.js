@@ -9,6 +9,7 @@ const {
   FrontClassWithSpec,
   registerFront,
 } = require("devtools/shared/protocol");
+const { XPCOMUtils } = require("resource://gre/modules/XPCOMUtils.jsm");
 
 loader.lazyRequireGetter(this, "getFront", "devtools/shared/protocol", true);
 loader.lazyRequireGetter(
@@ -22,6 +23,13 @@ loader.lazyRequireGetter(
   "LocalTabTargetFront",
   "devtools/client/fronts/targets/local-tab",
   true
+);
+
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "swm",
+  "@mozilla.org/serviceworkers/manager;1",
+  "nsIServiceWorkerManager"
 );
 
 class RootFront extends FrontClassWithSpec(rootSpec) {
@@ -90,6 +98,9 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
     };
 
     registrations.forEach(front => {
+      const { activeWorker, waitingWorker, installingWorker } = front;
+      const newestWorker = activeWorker || waitingWorker || installingWorker;
+
       // All the information is simply mirrored from the registration front.
       // However since registering workers will fetch similar information from the worker
       // target front and will not have a service worker registration front, consumers
@@ -103,8 +114,19 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
         registrationFront: front,
         scope: front.scope,
         url: front.url,
+        newestWorkerId: newestWorker && newestWorker.id,
       });
     });
+
+    /**
+     * FIXME (bug 1557170): Make this compatible with remote debugging.
+     *
+     * Getting the value from `ServiceWorkerManager.isParentInterceptEnabled`
+     * may not return the same value as what exists on a remote server.
+     * Unfortunately, calling `DeviceFront.getDescription()` here to read the
+     * dom.serviceWorkers.parent_intercept pref causes test failures.
+     */
+    const isParentInterceptEnabled = swm.isParentInterceptEnabled();
 
     workers.forEach(front => {
       const worker = {
@@ -116,11 +138,33 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
       switch (front.type) {
         case Ci.nsIWorkerDebugger.TYPE_SERVICE:
           const registration = result.service.find(r => {
+            // If registrationFront is missing, it means this entry is actually
+            // a workerFront that has been augmented and pushed to
+            // result.service in an earlier iteration.
+            // This should no longer happen after Bug 1595964 is resolved.
             if (!r.registrationFront) {
+              // We can safely return false here since `r` is not a full
+              // service worker registration, but merely a worker
               return false;
             }
-            return r.scope === front.scope;
+
+            /**
+             * Older servers will not define `ServiceWorkerFront.id` (the value
+             * of `r.newestWorkerId`), and a `ServiceWorkerFront`'s ID will only
+             * match its corresponding WorkerTargetFront's ID if their
+             * underlying actors are "connected" - this is only guaranteed with
+             * parent-intercept mode. The `if` statement is for backward
+             * compatibility and can be removed when the release channel is
+             * >= FF69 _and_ parent-intercept is stable (which definitely won't
+             * happen when the release channel is < FF69).
+             */
+            if (!r.newestWorkerId || !isParentInterceptEnabled) {
+              return r.scope === front.scope;
+            }
+
+            return r.newestWorkerId === front.id;
           });
+
           if (registration) {
             // Before bug 1595964, URLs were not available for registrations
             // whose worker's main script is being evaluated. Now, URLs are

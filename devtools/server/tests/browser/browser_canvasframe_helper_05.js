@@ -11,7 +11,7 @@ const TEST_URL =
 
 add_task(async function() {
   const browser = await addTab(TEST_URL);
-  await ContentTask.spawn(browser, null, async function() {
+  await SpecialPowers.spawn(browser, [], async function() {
     const { require } = ChromeUtils.import(
       "resource://devtools/shared/Loader.jsm"
     );
@@ -125,17 +125,6 @@ add_task(async function() {
       // event right after having been inserted, and so we need to force a sync
       // reflow.
       win.document.documentElement.offsetWidth;
-      // Minimal environment for EventUtils to work.
-      const EventUtils = {
-        window: content,
-        parent: content,
-        _EU_Ci: Ci,
-        _EU_Cc: Cc,
-      };
-      Services.scriptloader.loadSubScript(
-        "chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
-        EventUtils
-      );
       EventUtils.synthesizeMouseAtPoint(x, y, { type: "mousedown" }, win);
     }
   });

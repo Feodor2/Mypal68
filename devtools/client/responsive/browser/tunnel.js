@@ -29,11 +29,9 @@ const SWAPPED_BROWSER_STATE = [
   "_securityUI",
   "_documentURI",
   "_documentContentType",
-  "_contentTitle",
   "_characterSet",
   "_contentPrincipal",
   "_isSyntheticDocument",
-  "_innerWindowID",
 ];
 
 /**
@@ -91,7 +89,7 @@ function tunnelToInnerBrowser(outer, inner) {
   // <iframe mozbrowser>.
   const mirroringProgressListener = {
     onStateChange: (webProgress, request, stateFlags, status) => {
-      if (webProgress && webProgress.isTopLevel) {
+      if (webProgress?.isTopLevel) {
         inner._characterSet = outer._characterSet;
         inner._documentURI = outer._documentURI;
         inner._documentContentType = outer._documentContentType;
@@ -99,13 +97,11 @@ function tunnelToInnerBrowser(outer, inner) {
     },
 
     onLocationChange: (webProgress, request, location, flags) => {
-      if (webProgress && webProgress.isTopLevel) {
+      if (webProgress?.isTopLevel) {
         inner._documentURI = outer._documentURI;
         inner._documentContentType = outer._documentContentType;
-        inner._contentTitle = outer._contentTitle;
         inner._characterSet = outer._characterSet;
         inner._isSyntheticDocument = outer._isSyntheticDocument;
-        inner._innerWindowID = outer._innerWindowID;
         inner._remoteWebNavigation._currentURI =
           outer._remoteWebNavigation._currentURI;
         // mozbrowser elements do not support the `contentPrincipal` property.
@@ -462,7 +458,6 @@ MessageManagerTunnel.prototype = {
     // Messages sent to browser.js
     "PageStyle:StyleSheets",
     // Messages sent to browser.js
-    "DOMTitleChanged",
     "InPermitUnload",
     "PermitUnload",
     // Messages sent to SessionStore.jsm

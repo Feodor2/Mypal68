@@ -2077,7 +2077,7 @@ StorageActors.createActor(
       const uri = Services.io.newURI(host);
       const attrs = this.storageActor.document.effectiveStoragePrincipal
         .originAttributes;
-      const principal = Services.scriptSecurityManager.createCodebasePrincipal(
+      const principal = Services.scriptSecurityManager.createContentPrincipal(
         uri,
         attrs
       );

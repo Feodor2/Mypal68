@@ -75,7 +75,9 @@ async function unregisterAllWorkers(client) {
 async function waitForWorkerRegistration(swTab) {
   info("Wait until the registration appears on the window");
   const swBrowser = swTab.linkedBrowser;
-  await asyncWaitUntil(async () => ContentTask.spawn(swBrowser, {}, function() {
-    return content.wrappedJSObject.getRegistration();
-  }));
+  await asyncWaitUntil(async () =>
+    SpecialPowers.spawn(swBrowser, [], function() {
+      return !!content.wrappedJSObject.getRegistration();
+    })
+  );
 }

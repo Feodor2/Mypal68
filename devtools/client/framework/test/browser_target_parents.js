@@ -5,8 +5,8 @@
 
 // Test a given Target's parentFront attribute returns the correct parent front.
 
-const { DebuggerClient } = require("devtools/shared/client/debugger-client");
-const { DebuggerServer } = require("devtools/server/debugger-server");
+const { DevToolsClient } = require("devtools/client/devtools-client");
+const { DevToolsServer } = require("devtools/server/devtools-server");
 
 const TEST_URL = `data:text/html;charset=utf-8,<div id="test"></div>`;
 
@@ -29,13 +29,13 @@ add_task(async function() {
 // Test against Process targets
 add_task(async function() {
   // Instantiate a minimal server
-  DebuggerServer.init();
-  DebuggerServer.allowChromeProcess = true;
-  if (!DebuggerServer.createRootActor) {
-    DebuggerServer.registerAllActors();
+  DevToolsServer.init();
+  DevToolsServer.allowChromeProcess = true;
+  if (!DevToolsServer.createRootActor) {
+    DevToolsServer.registerAllActors();
   }
-  const transport = DebuggerServer.connectPipe();
-  const client = new DebuggerClient(transport);
+  const transport = DevToolsServer.connectPipe();
+  const client = new DevToolsClient(transport);
   await client.connect();
 
   const mainRoot = client.mainRoot;
@@ -86,13 +86,13 @@ add_task(async function() {
 // Test against Frame targets
 add_task(async function() {
   // Instantiate a minimal server
-  DebuggerServer.init();
-  DebuggerServer.allowChromeProcess = true;
-  if (!DebuggerServer.createRootActor) {
-    DebuggerServer.registerAllActors();
+  DevToolsServer.init();
+  DevToolsServer.allowChromeProcess = true;
+  if (!DevToolsServer.createRootActor) {
+    DevToolsServer.registerAllActors();
   }
-  const transport = DebuggerServer.connectPipe();
-  const client = new DebuggerClient(transport);
+  const transport = DevToolsServer.connectPipe();
+  const client = new DevToolsClient(transport);
   await client.connect();
 
   const mainRoot = client.mainRoot;
@@ -142,13 +142,13 @@ add_task(async function() {
 // Test against Webextension targets
 add_task(async function() {
   // Instantiate a minimal server
-  DebuggerServer.init();
-  DebuggerServer.allowChromeProcess = true;
-  if (!DebuggerServer.createRootActor) {
-    DebuggerServer.registerAllActors();
+  DevToolsServer.init();
+  DevToolsServer.allowChromeProcess = true;
+  if (!DevToolsServer.createRootActor) {
+    DevToolsServer.registerAllActors();
   }
-  const transport = DebuggerServer.connectPipe();
-  const client = new DebuggerClient(transport);
+  const transport = DevToolsServer.connectPipe();
+  const client = new DevToolsClient(transport);
   await client.connect();
 
   const mainRoot = client.mainRoot;
@@ -175,13 +175,13 @@ add_task(async function() {
 // Test against worker targets on parent process
 add_task(async function() {
   // Instantiate a minimal server
-  DebuggerServer.init();
-  DebuggerServer.allowChromeProcess = true;
-  if (!DebuggerServer.createRootActor) {
-    DebuggerServer.registerAllActors();
+  DevToolsServer.init();
+  DevToolsServer.allowChromeProcess = true;
+  if (!DevToolsServer.createRootActor) {
+    DevToolsServer.registerAllActors();
   }
-  const transport = DebuggerServer.connectPipe();
-  const client = new DebuggerClient(transport);
+  const transport = DevToolsServer.connectPipe();
+  const client = new DevToolsClient(transport);
   await client.connect();
 
   const mainRoot = client.mainRoot;

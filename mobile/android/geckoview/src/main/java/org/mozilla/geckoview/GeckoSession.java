@@ -293,8 +293,37 @@ public class GeckoSession implements Parcelable {
             }
         };
 
+    private static class WebExtensionSender {
+        public String webExtensionId;
+        public String nativeApp;
+
+        public WebExtensionSender(final String webExtensionId, final String nativeApp) {
+            this.webExtensionId = webExtensionId;
+            this.nativeApp = nativeApp;
+        }
+
+        @Override
+        public boolean equals(final Object other) {
+            if (!(other instanceof WebExtensionSender)) {
+                return false;
+            }
+
+            WebExtensionSender o = (WebExtensionSender) other;
+            return webExtensionId.equals(o.webExtensionId) &&
+                    nativeApp.equals(o.nativeApp);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = 17;
+            result = 31 * result + (webExtensionId != null ? webExtensionId.hashCode() : 0);
+            result = 31 * result + (nativeApp != null ? nativeApp.hashCode() : 0);
+            return result;
+        }
+    }
+
     private final class WebExtensionListener implements BundleEventListener {
-        final private HashMap<String, WebExtension.MessageDelegate> mMessageDelegates;
+        final private HashMap<WebExtensionSender, WebExtension.MessageDelegate> mMessageDelegates;
 
         public WebExtensionListener() {
             mMessageDelegates = new HashMap<>();
@@ -305,22 +334,25 @@ public class GeckoSession implements Parcelable {
                     "GeckoView:WebExtension:Message",
                     "GeckoView:WebExtension:PortMessage",
                     "GeckoView:WebExtension:Connect",
+                    "GeckoView:WebExtension:CloseTab",
                     null);
         }
 
-        public void setDelegate(final WebExtension.MessageDelegate delegate,
+        public void setDelegate(final WebExtension webExtension,
+                                final WebExtension.MessageDelegate delegate,
                                 final String nativeApp) {
-            mMessageDelegates.put(nativeApp, delegate);
+            mMessageDelegates.put(new WebExtensionSender(webExtension.id, nativeApp), delegate);
         }
 
-        public WebExtension.MessageDelegate getDelegate(final String nativeApp) {
-            return mMessageDelegates.get(nativeApp);
+        public WebExtension.MessageDelegate getDelegate(final WebExtension webExtension,
+                                                        final String nativeApp) {
+            return mMessageDelegates.get(new WebExtensionSender(webExtension.id, nativeApp));
         }
 
         @Override
         public void handleMessage(final String event, final GeckoBundle message,
                                   final EventCallback callback) {
-            if (mWindow == null || mWindow.runtime.getWebExtensionDispatcher() == null) {
+            if (mWindow == null) {
                 return;
             }
 
@@ -329,6 +361,8 @@ public class GeckoSession implements Parcelable {
                     || "GeckoView:WebExtension:Connect".equals(event)) {
                 mWindow.runtime.getWebExtensionDispatcher()
                         .handleMessage(event, message, callback, GeckoSession.this);
+            } else if ("GeckoView:WebExtension:CloseTab".equals(event)) {
+                mWindow.runtime.getWebExtensionController().closeTab(message, callback, GeckoSession.this);
             }
         }
     }
@@ -338,6 +372,7 @@ public class GeckoSession implements Parcelable {
     /**
      * Get the message delegate for <code>nativeApp</code>.
      *
+     * @param webExtension {@link WebExtension} that this delegate receives messages from.
      * @param nativeApp identifier for the native app
      * @return The {@link WebExtension.MessageDelegate} attached to the
      *         <code>nativeApp</code>.  <code>null</code> if no delegate is
@@ -345,8 +380,9 @@ public class GeckoSession implements Parcelable {
      */
     @AnyThread
     public @Nullable WebExtension.MessageDelegate getMessageDelegate(
+            final @NonNull WebExtension webExtension,
             final @NonNull String nativeApp) {
-        return mWebExtensionListener.getDelegate(nativeApp);
+        return mWebExtensionListener.getDelegate(webExtension, nativeApp);
     }
 
     /**
@@ -362,6 +398,9 @@ public class GeckoSession implements Parcelable {
      * to explicitely allow it in {@link WebExtension#WebExtension} by setting
      * {@link WebExtension.Flags#ALLOW_CONTENT_MESSAGING}.
      *
+     * @param webExtension {@link WebExtension} that this delegate receives
+     *                     messages from.
+     *
      * @param delegate {@link WebExtension.MessageDelegate} that will receive
      *                 messages from this session.
      * @param nativeApp which native app id this message delegate will handle
@@ -369,9 +408,10 @@ public class GeckoSession implements Parcelable {
      * @see WebExtension#setMessageDelegate
      */
     @AnyThread
-    public void setMessageDelegate(final @Nullable WebExtension.MessageDelegate delegate,
+    public void setMessageDelegate(final @NonNull WebExtension webExtension,
+                                   final @Nullable WebExtension.MessageDelegate delegate,
                                    final @NonNull String nativeApp) {
-        mWebExtensionListener.setDelegate(delegate, nativeApp);
+        mWebExtensionListener.setDelegate(webExtension, delegate, nativeApp);
     }
 
     private final GeckoSessionHandler<ContentDelegate> mContentHandler =
@@ -379,6 +419,7 @@ public class GeckoSession implements Parcelable {
             "GeckoViewContent", this,
             new String[]{
                 "GeckoView:ContentCrash",
+                "GeckoView:ContentKill",
                 "GeckoView:ContextMenu",
                 "GeckoView:DOMTitleChanged",
                 "GeckoView:DOMWindowClose",
@@ -394,10 +435,12 @@ public class GeckoSession implements Parcelable {
                                       final String event,
                                       final GeckoBundle message,
                                       final EventCallback callback) {
-
                 if ("GeckoView:ContentCrash".equals(event)) {
                     close();
                     delegate.onCrash(GeckoSession.this);
+                } else if ("GeckoView:ContentKill".equals(event)) {
+                    close();
+                    delegate.onKill(GeckoSession.this);
                 } else if ("GeckoView:ContextMenu".equals(event)) {
                     final ContentDelegate.ContextElement elem =
                         new ContentDelegate.ContextElement(
@@ -1441,7 +1484,7 @@ public class GeckoSession implements Parcelable {
     @Retention(RetentionPolicy.SOURCE)
     @IntDef(flag = true,
             value = { LOAD_FLAGS_NONE, LOAD_FLAGS_BYPASS_CACHE, LOAD_FLAGS_BYPASS_PROXY,
-                      LOAD_FLAGS_EXTERNAL, LOAD_FLAGS_ALLOW_POPUPS })
+                      LOAD_FLAGS_EXTERNAL, LOAD_FLAGS_ALLOW_POPUPS, LOAD_FLAGS_FORCE_ALLOW_DATA_URI })
     /* package */ @interface LoadFlags {}
 
     // These flags follow similarly named ones in Gecko's nsIWebNavigation.idl
@@ -1479,6 +1522,12 @@ public class GeckoSession implements Parcelable {
      * Bypass the URI classifier (content blocking and Safe Browsing).
      */
     public static final int LOAD_FLAGS_BYPASS_CLASSIFIER = 1 << 4;
+
+    /**
+     * Allows a top-level data: navigation to occur. E.g. view-image
+     * is an explicit user action which should be allowed.
+     */
+    public static final int LOAD_FLAGS_FORCE_ALLOW_DATA_URI = 1 << 5;
 
     /**
      * Load the given URI.
@@ -1603,7 +1652,7 @@ public class GeckoSession implements Parcelable {
             throw new IllegalArgumentException("data cannot be null");
         }
 
-        loadUri(createDataUri(bytes, mimeType), (GeckoSession)null, LOAD_FLAGS_NONE);
+        loadUri(createDataUri(bytes, mimeType), (GeckoSession)null, LOAD_FLAGS_FORCE_ALLOW_DATA_URI);
     }
 
     /**
@@ -3100,10 +3149,23 @@ public class GeckoSession implements Parcelable {
          * is preserved. Most applications will want to call
          * {@link #loadUri(Uri)} or {@link #restoreState(SessionState)} at this point.
          *
-         * @param session The GeckoSession that crashed.
+         * @param session The GeckoSession for which the content process has crashed.
          */
         @UiThread
         default void onCrash(@NonNull GeckoSession session) {}
+
+        /**
+         * The content process hosting this GeckoSession has been killed. The
+         * GeckoSession is now closed and unusable. You may call
+         * {@link #open(GeckoRuntime)} to recover the session, but no state
+         * is preserved. Most applications will want to call
+         * {@link #loadUri(Uri)} or {@link #restoreState(SessionState)} at this point.
+         *
+         * @param session The GeckoSession for which the content process has been killed.
+         */
+        @UiThread
+        default void onKill(@NonNull GeckoSession session) {}
+
 
         /**
          * Notification that the first content composition has occurred.
@@ -4311,50 +4373,35 @@ public class GeckoSession implements Parcelable {
 
         class MediaSource {
             @Retention(RetentionPolicy.SOURCE)
-            @IntDef({SOURCE_CAMERA, SOURCE_SCREEN, SOURCE_APPLICATION,
-                     SOURCE_WINDOW, SOURCE_BROWSER, SOURCE_MICROPHONE,
-                     SOURCE_AUDIOCAPTURE, SOURCE_OTHER})
+            @IntDef({SOURCE_CAMERA, SOURCE_SCREEN,
+                     SOURCE_MICROPHONE, SOURCE_AUDIOCAPTURE,
+                     SOURCE_OTHER})
             /* package */ @interface Source {}
 
             /**
-             * The media source is a camera.
+             * Constant to indicate that camera will be recorded.
              */
             public static final int SOURCE_CAMERA = 0;
 
             /**
-             * The media source is the screen.
+             * Constant to indicate that screen will be recorded.
              */
             public static final int SOURCE_SCREEN  = 1;
 
             /**
-             * The media source is an application.
+             * Constant to indicate that microphone will be recorded.
              */
-            public static final int SOURCE_APPLICATION = 2;
+            public static final int SOURCE_MICROPHONE = 2;
 
             /**
-             * The media source is a window.
+             * Constant to indicate that device audio playback will be recorded.
              */
-            public static final int SOURCE_WINDOW = 3;
+            public static final int SOURCE_AUDIOCAPTURE = 3;
 
             /**
-             * The media source is the browser.
+             * Constant to indicate a media source that does not fall under the other categories.
              */
-            public static final int SOURCE_BROWSER = 4;
-
-            /**
-             * The media source is a microphone.
-             */
-            public static final int SOURCE_MICROPHONE = 5;
-
-            /**
-             * The media source is audio capture.
-             */
-            public static final int SOURCE_AUDIOCAPTURE = 6;
-
-            /**
-             * The media source does not fall into any of the other categories.
-             */
-            public static final int SOURCE_OTHER = 7;
+            public static final int SOURCE_OTHER = 4;
 
             @Retention(RetentionPolicy.SOURCE)
             @IntDef({TYPE_VIDEO, TYPE_AUDIO})
@@ -4388,9 +4435,9 @@ public class GeckoSession implements Parcelable {
             public final @Nullable String name;
 
             /**
-             * An int giving the media source type.
+             * An int indicating the media source type.
              * Possible values for a video source are:
-             * SOURCE_CAMERA, SOURCE_SCREEN, SOURCE_APPLICATION, SOURCE_WINDOW, SOURCE_BROWSER, and SOURCE_OTHER.
+             * SOURCE_CAMERA, SOURCE_SCREEN, and SOURCE_OTHER.
              * Possible values for an audio source are:
              * SOURCE_MICROPHONE, SOURCE_AUDIOCAPTURE, and SOURCE_OTHER.
              */
@@ -4405,19 +4452,13 @@ public class GeckoSession implements Parcelable {
                 // The strings here should match those in MediaSourceEnum in MediaStreamTrack.webidl
                 if ("camera".equals(src)) {
                     return SOURCE_CAMERA;
-                } else if ("screen".equals(src)) {
+                } else if ("screen".equals(src) || "window".equals(src) || "browser".equals(src)) {
                     return SOURCE_SCREEN;
-                } else if ("application".equals(src)) {
-                    return SOURCE_APPLICATION;
-                } else if ("window".equals(src)) {
-                    return SOURCE_WINDOW;
-                } else if ("browser".equals(src)) {
-                    return SOURCE_BROWSER;
                 } else if ("microphone".equals(src)) {
                     return SOURCE_MICROPHONE;
                 } else if ("audioCapture".equals(src)) {
                     return SOURCE_AUDIOCAPTURE;
-                } else if ("other".equals(src)) {
+                } else if ("other".equals(src) || "application".equals(src)) {
                     return SOURCE_OTHER;
                 } else {
                     throw new IllegalArgumentException("String: " + src + " is not a valid media source string");

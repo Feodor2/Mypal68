@@ -28,7 +28,7 @@ AboutCompat.prototype = {
     channel.originalURI = aURI;
 
     channel.owner = (Services.scriptSecurityManager.createContentPrincipal ||
-      Services.scriptSecurityManager.createCodebasePrincipal)(
+      Services.scriptSecurityManager.createContentPrincipal)(
       uri,
       aLoadInfo.originAttributes
     );

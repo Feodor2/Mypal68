@@ -15,6 +15,8 @@ import org.mozilla.geckoview.GeckoRuntimeSettings;
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.GeckoSessionSettings;
 import org.mozilla.geckoview.GeckoView;
+import org.mozilla.geckoview.WebExtension;
+import org.mozilla.geckoview.WebExtensionController;
 import org.mozilla.geckoview.WebRequestError;
 
 import android.Manifest;
@@ -155,6 +157,21 @@ public class GeckoViewActivity extends AppCompatActivity {
 
             sGeckoRuntime = GeckoRuntime.create(this, runtimeSettingsBuilder.build());
 
+            sGeckoRuntime.getWebExtensionController().setTabDelegate(new WebExtensionController.TabDelegate() {
+                @Override
+                public GeckoResult<GeckoSession> onNewTab(WebExtension source, String uri) {
+                    final TabSession newSession = createSession();
+                    mToolbarView.updateTabCount();
+                    return GeckoResult.fromValue(newSession);
+                }
+                @Override
+                public GeckoResult<AllowOrDeny> onCloseTab(WebExtension source, GeckoSession session) {
+                    TabSession tabSession = mTabSessionManager.getSession(session);
+                    closeTab(tabSession);
+                    return GeckoResult.ALLOW;
+                }
+            });
+
             sGeckoRuntime.setDelegate(() -> {
                 mKillProcessOnDestroy = true;
                 finish();
@@ -173,15 +190,15 @@ public class GeckoViewActivity extends AppCompatActivity {
                 mUseMultiprocess = session.getSettings().getUseMultiprocess();
                 mFullAccessibilityTree = session.getSettings().getFullAccessibilityTree();
 
-                mTabSessionManager.setCurrentSession(session);
-                mGeckoView.setSession(session);
+                mTabSessionManager.addSession(session);
+                setGeckoViewSession(session);
             } else {
                 session = createSession();
+                session.open(sGeckoRuntime);
                 mTabSessionManager.setCurrentSession(session);
-                mGeckoView.setSession(session, sGeckoRuntime);
-
-                loadFromIntent(getIntent());
+                mGeckoView.setSession(session);
             }
+            loadFromIntent(getIntent());
         }
 
         mToolbarView.getLocationView().setCommitListener(mCommitListener);

@@ -3,12 +3,15 @@
 
 package org.mozilla.geckoview.test
 
+import android.app.ActivityManager
+import android.content.Context
 import android.graphics.Matrix
 import android.graphics.SurfaceTexture
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.LocaleList
+import android.os.Process
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
@@ -18,6 +21,7 @@ import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.IgnoreCrash
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDisplay
 import org.mozilla.geckoview.test.util.Callbacks
 
+import android.support.annotation.AnyThread
 import android.support.test.filters.MediumTest
 import android.support.test.filters.SdkSuppress
 import android.support.test.runner.AndroidJUnit4
@@ -36,6 +40,7 @@ import org.json.JSONObject
 import org.junit.Assume.assumeThat
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.gecko.GeckoAppShell
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule
 
 @RunWith(AndroidJUnit4::class)
@@ -86,10 +91,6 @@ class ContentDelegateTest : BaseSessionTest() {
     @Test fun crashContent() {
         // This test doesn't make sense without multiprocess
         assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
-        // Cannot test x86 debug builds due to Gecko's "ah_crap_handler"
-        // that waits for debugger to attach during a SIGSEGV.
-        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.isX86,
-                   equalTo(false))
 
         mainSession.loadUri(CONTENT_CRASH_URL)
         mainSession.waitUntilCalled(object : Callbacks.ContentDelegate {
@@ -98,7 +99,7 @@ class ContentDelegateTest : BaseSessionTest() {
                 assertThat("Session should be closed after a crash",
                            session.isOpen, equalTo(false))
             }
-        });
+        })
 
         // Recover immediately
         mainSession.open()
@@ -116,10 +117,6 @@ class ContentDelegateTest : BaseSessionTest() {
     @Test fun crashContent_tapAfterCrash() {
         // This test doesn't make sense without multiprocess
         assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
-        // Cannot test x86 debug builds due to Gecko's "ah_crap_handler"
-        // that waits for debugger to attach during a SIGSEGV.
-        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.isX86,
-                   equalTo(false))
 
         mainSession.delegateUntilTestEnd(object : Callbacks.ContentDelegate {
             override fun onCrash(session: GeckoSession) {
@@ -141,28 +138,94 @@ class ContentDelegateTest : BaseSessionTest() {
     @Test fun crashContentMultipleSessions() {
         // This test doesn't make sense without multiprocess
         assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
-        // Cannot test x86 debug builds due to Gecko's "ah_crap_handler"
-        // that waits for debugger to attach during a SIGSEGV.
-        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.isX86,
-                   equalTo(false))
 
         // XXX we need to make sure all sessions in a given content process receive onCrash().
         // If we add multiple content processes, this test will need to be fixed to ensure the
         // test sessions go into the same one.
         val newSession = sessionRule.createOpenSession()
+
+        // We can inadvertently catch the `onCrash` call for the cached session if we don't specify
+        // individual sessions here. Therefore, assert 'onCrash' is called for the two sessions
+        // individually.
+        val mainSessionCrash = GeckoResult<Void>()
+        val newSessionCrash = GeckoResult<Void>()
+        sessionRule.delegateUntilTestEnd(object : Callbacks.ContentDelegate {
+            fun reportCrash(session: GeckoSession) {
+                if (session == mainSession) {
+                    mainSessionCrash.complete(null)
+                } else if (session == newSession) {
+                    newSessionCrash.complete(null)
+                }
+            }
+            // Slower devices may not catch crashes in a timely manner, so we check to see
+            // if either `onKill` or `onCrash` is called
+            override fun onCrash(session: GeckoSession) {
+                reportCrash(session)
+            }
+            override fun onKill(session: GeckoSession) {
+                reportCrash(session)
+            }
+        })
+
         newSession.loadTestPath(HELLO_HTML_PATH)
         newSession.waitForPageStop()
 
         mainSession.loadUri(CONTENT_CRASH_URL)
 
-        // We can inadvertently catch the `onCrash` call for the cached session if we don't specify
-        // individual sessions here. Therefore, assert 'onCrash' is called for the two sessions
-        // individually.
+        sessionRule.waitForResult(newSessionCrash)
+        sessionRule.waitForResult(mainSessionCrash)
+    }
+
+    @AnyThread
+    fun killContentProcess() {
+        val context = GeckoAppShell.getApplicationContext()
+        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        for (info in manager.runningAppProcesses) {
+            if (info.processName.endsWith(":tab")) {
+                Process.killProcess(info.pid)
+            }
+        }
+    }
+
+    @IgnoreCrash
+    @Test fun killContent() {
+        assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
+        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.isX86,
+                equalTo(false))
+
+        killContentProcess()
+        mainSession.waitUntilCalled(object : Callbacks.ContentDelegate {
+            @AssertCalled(count = 1)
+            override fun onKill(session: GeckoSession) {
+                assertThat("Session should be closed after being killed",
+                        session.isOpen, equalTo(false))
+            }
+        })
+
+        mainSession.open()
+        mainSession.loadTestPath(HELLO_HTML_PATH)
+        mainSession.waitUntilCalled(object : Callbacks.ProgressDelegate {
+            @AssertCalled(count = 1)
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
+                assertThat("Page should load successfully", success, equalTo(true))
+            }
+        })
+    }
+
+    @IgnoreCrash
+    @Test fun killContentMultipleSessions() {
+        assumeThat(sessionRule.env.isMultiprocess, equalTo(true))
+        assumeThat(sessionRule.env.isDebugBuild && sessionRule.env.isX86,
+                equalTo(false))
+
+        val newSession = sessionRule.createOpenSession()
+        killContentProcess()
+
         val remainingSessions = mutableListOf(newSession, mainSession)
         while (remainingSessions.isNotEmpty()) {
             sessionRule.waitUntilCalled(object : Callbacks.ContentDelegate {
                 @AssertCalled(count = 1)
-                override fun onCrash(session: GeckoSession) {
+                override fun onKill(session: GeckoSession) {
                     remainingSessions.remove(session)
                 }
             })

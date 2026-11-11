@@ -21,7 +21,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 
 const { debug, warn } = GeckoViewUtils.initLogging("Startup"); // eslint-disable-line no-unused-vars
 
-const ACTORS = {
+const JSWINDOWACTORS = {
   LoadURIDelegate: {
     child: {
       moduleURI: "resource:///actors/LoadURIDelegateChild.jsm",
@@ -43,7 +43,7 @@ GeckoViewStartup.prototype = {
   QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
 
   /* ----------  nsIObserver  ---------- */
-  observe: function(aSubject, aTopic, aData) {
+  observe(aSubject, aTopic, aData) {
     debug`observe: ${aTopic}`;
     switch (aTopic) {
       case "app-startup": {
@@ -79,7 +79,11 @@ GeckoViewStartup.prototype = {
 
         GeckoViewUtils.addLazyGetter(this, "GeckoViewStorageController", {
           module: "resource://gre/modules/GeckoViewStorageController.jsm",
-          ged: ["GeckoView:ClearData", "GeckoView:ClearHostData"],
+          ged: [
+            "GeckoView:ClearData",
+            "GeckoView:ClearSessionContextData",
+            "GeckoView:ClearHostData",
+          ],
         });
 
         GeckoViewUtils.addLazyPrefObserver(
@@ -110,7 +114,7 @@ GeckoViewStartup.prototype = {
         if (
           Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_DEFAULT
         ) {
-          ActorManagerParent.addActors(ACTORS);
+          ActorManagerParent.addJSWindowActors(JSWINDOWACTORS);
           ActorManagerParent.flush();
 
           Services.mm.loadFrameScript(

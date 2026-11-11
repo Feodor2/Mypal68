@@ -17,6 +17,7 @@
             android:supportsRtl="true"
             android:theme="@style/AppTheme">
         <activity android:name=".TestRunnerActivity" android:exported="true"/>
+        <activity android:name=".GeckoViewTestActivity" android:exported="true"/>
         <activity-alias android:name=".App" android:targetActivity=".TestRunnerActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
@@ -33,17 +34,12 @@
                 android:process=":crash">
         </service>
 
-        <!-- These are needed for CrashTest -->
+        <!-- This is needed for ParentCrashTest -->
         <service
                 android:name=".crash.RemoteGeckoService"
                 android:enabled="true"
                 android:exported="false"
                 android:process=":gecko">
-        </service>
-        <service
-                android:name=".crash.CrashTestHandler"
-                android:enabled="true"
-                android:exported="false">
         </service>
     </application>
 

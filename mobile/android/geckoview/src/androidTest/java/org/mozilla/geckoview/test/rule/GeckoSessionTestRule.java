@@ -102,7 +102,7 @@ public class GeckoSessionTestRule implements TestRule {
             sOnNewSession = GeckoSession.NavigationDelegate.class.getMethod(
                     "onNewSession", GeckoSession.class, String.class);
             sOnCrash = GeckoSession.ContentDelegate.class.getMethod(
-                    "onCrash", GeckoSession.class);
+                    "onKill", GeckoSession.class);
         } catch (final NoSuchMethodException e) {
             throw new RuntimeException(e);
         }
@@ -612,7 +612,7 @@ public class GeckoSessionTestRule implements TestRule {
 
         /** Generate a JS function to set new prefs and return a set of saved prefs. */
         public void setPrefs(final @NonNull Map<String, ?> prefs) {
-            try {
+            mOldPrefs = (JSONObject) webExtensionApiCall("SetPrefs", args -> {
                 final JSONObject existingPrefs = mOldPrefs != null ? mOldPrefs : new JSONObject();
 
                 final JSONObject newPrefs = new JSONObject();
@@ -626,14 +626,9 @@ public class GeckoSessionTestRule implements TestRule {
                     }
                 }
 
-                final JSONObject args = new JSONObject();
                 args.put("oldPrefs", existingPrefs);
                 args.put("newPrefs", newPrefs);
-
-                mOldPrefs = (JSONObject) webExtensionApiCall("SetPrefs", args);
-            } catch (JSONException ex) {
-                throw new RuntimeException(ex);
-            }
+            });
         }
 
         /** Generate a JS function to set new prefs and reset a set of saved prefs. */
@@ -642,15 +637,10 @@ public class GeckoSessionTestRule implements TestRule {
                 return;
             }
 
-            try {
-                final JSONObject args = new JSONObject();
+            webExtensionApiCall("RestorePrefs", args -> {
                 args.put("oldPrefs", mOldPrefs);
-                webExtensionApiCall("RestorePrefs", args);
-
                 mOldPrefs = null;
-            } catch (JSONException ex) {
-                throw new RuntimeException(ex);
-            }
+            });
         }
 
         public void clear() {
@@ -1088,7 +1078,8 @@ public class GeckoSessionTestRule implements TestRule {
     }
 
     protected void prepareSession(final GeckoSession session) {
-        session.setMessageDelegate(mMessageDelegate, "browser");
+        session.setMessageDelegate(RuntimeCreator.TEST_SUPPORT_WEB_EXTENSION, mMessageDelegate,
+                "browser");
         for (final Class<?> cls : DEFAULT_DELEGATES) {
             try {
                 setDelegate(cls, session, mNullDelegates.contains(cls) ? null : mCallbackProxy);
@@ -1990,14 +1981,9 @@ public class GeckoSessionTestRule implements TestRule {
      * @return Pref values as a list of values.
      */
     public JSONArray getPrefs(final @NonNull String... prefs) {
-        try {
-            final JSONObject args = new JSONObject();
+        return (JSONArray) webExtensionApiCall("GetPrefs", args -> {
             args.put("prefs", new JSONArray(Arrays.asList(prefs)));
-
-            return (JSONArray) webExtensionApiCall("GetPrefs", args);
-        } catch (JSONException ex) {
-            throw new RuntimeException(ex);
-        }
+        });
     }
 
     /**
@@ -2008,15 +1994,10 @@ public class GeckoSessionTestRule implements TestRule {
      * @return String representing the color, e.g. rgb(0, 0, 255)
      */
     public String getLinkColor(final String uri, final String selector) {
-        try {
-            final JSONObject args = new JSONObject();
+        return (String) webExtensionApiCall("GetLinkColor", args -> {
             args.put("uri", uri);
             args.put("selector", selector);
-
-            return (String) webExtensionApiCall("GetLinkColor", args);
-        } catch (JSONException ex) {
-            throw new RuntimeException(ex);
-        }
+        });
     }
 
     public List<String> getRequestedLocales() {
@@ -2034,7 +2015,11 @@ public class GeckoSessionTestRule implements TestRule {
         }
     }
 
-    private Object webExtensionApiCall(final String apiName, JSONObject args) throws JSONException {
+    private interface SetArgs {
+        void setArgs(JSONObject object) throws JSONException;
+    }
+
+    private Object webExtensionApiCall(final String apiName, SetArgs argsSetter) {
         // Ensure background script is connected
         UiThreadUtils.waitForCondition(() -> RuntimeCreator.backgroundPort() != null,
                 env.getDefaultTimeoutMillis());
@@ -2042,9 +2027,19 @@ public class GeckoSessionTestRule implements TestRule {
         final String id = UUID.randomUUID().toString();
 
         final JSONObject message = new JSONObject();
-        message.put("id", id);
-        message.put("type", apiName);
-        message.put("args", args);
+
+        try {
+            final JSONObject args = new JSONObject();
+            if (argsSetter != null) {
+                argsSetter.setArgs(args);
+            }
+
+            message.put("id", id);
+            message.put("type", apiName);
+            message.put("args", args);
+        } catch (JSONException ex) {
+            throw new RuntimeException(ex);
+        }
 
         RuntimeCreator.backgroundPort().postMessage(message);
         return waitForMessage(id);

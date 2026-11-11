@@ -56,9 +56,6 @@ import java.util.AbstractSequentialList;
 import java.util.List;
 import java.util.Map;
 import org.json.JSONObject;
-import org.mozilla.gecko.util.BundleEventListener;
-import org.mozilla.gecko.util.EventCallback;
-import org.mozilla.gecko.util.GeckoBundle;
 import org.mozilla.geckoview.AllowOrDeny;
 import org.mozilla.geckoview.CompositorController;
 import org.mozilla.geckoview.ContentBlocking;
@@ -214,8 +211,8 @@ package org.mozilla.geckoview {
     ctor public CrashReporter();
     method @AnyThread @NonNull public static GeckoResult<String> sendCrashReport(@NonNull Context, @NonNull Intent, @NonNull String);
     method @AnyThread @NonNull public static GeckoResult<String> sendCrashReport(@NonNull Context, @NonNull Bundle, @NonNull String);
-    method @AnyThread @NonNull public static GeckoResult<String> sendCrashReport(@NonNull Context, @NonNull File, @NonNull File, boolean, @NonNull String);
-    method @AnyThread @NonNull public static GeckoResult<String> sendCrashReport(@NonNull Context, @NonNull File, @NonNull Map<String,String>, boolean, @NonNull String);
+    method @AnyThread @NonNull public static GeckoResult<String> sendCrashReport(@NonNull Context, @NonNull File, @NonNull File, @NonNull String);
+    method @AnyThread @NonNull public static GeckoResult<String> sendCrashReport(@NonNull Context, @NonNull File, @NonNull Map<String,String>, @NonNull String);
   }
 
   @UiThread public final class DynamicToolbarAnimator {
@@ -325,7 +322,6 @@ package org.mozilla.geckoview {
     field public static final String EXTRA_CRASH_FATAL = "fatal";
     field public static final String EXTRA_EXTRAS_PATH = "extrasPath";
     field public static final String EXTRA_MINIDUMP_PATH = "minidumpPath";
-    field public static final String EXTRA_MINIDUMP_SUCCESS = "minidumpSuccess";
   }
 
   public static interface GeckoRuntime.Delegate {
@@ -428,7 +424,7 @@ package org.mozilla.geckoview {
     method @AnyThread @NonNull public SessionFinder getFinder();
     method @AnyThread @Nullable public GeckoSession.HistoryDelegate getHistoryDelegate();
     method @AnyThread @Nullable public GeckoSession.MediaDelegate getMediaDelegate();
-    method @AnyThread @Nullable public WebExtension.MessageDelegate getMessageDelegate(@NonNull String);
+    method @AnyThread @Nullable public WebExtension.MessageDelegate getMessageDelegate(@NonNull WebExtension, @NonNull String);
     method @UiThread @Nullable public GeckoSession.NavigationDelegate getNavigationDelegate();
     method @UiThread @NonNull public OverscrollEdgeEffect getOverscrollEdgeEffect();
     method @UiThread public void getPageToScreenMatrix(@NonNull Matrix);
@@ -467,7 +463,7 @@ package org.mozilla.geckoview {
     method @AnyThread public void setFocused(boolean);
     method @AnyThread public void setHistoryDelegate(@Nullable GeckoSession.HistoryDelegate);
     method @AnyThread public void setMediaDelegate(@Nullable GeckoSession.MediaDelegate);
-    method @AnyThread public void setMessageDelegate(@Nullable WebExtension.MessageDelegate, @NonNull String);
+    method @AnyThread public void setMessageDelegate(@NonNull WebExtension, @Nullable WebExtension.MessageDelegate, @NonNull String);
     method @UiThread public void setNavigationDelegate(@Nullable GeckoSession.NavigationDelegate);
     method @UiThread public void setPermissionDelegate(@Nullable GeckoSession.PermissionDelegate);
     method @UiThread public void setProgressDelegate(@Nullable GeckoSession.ProgressDelegate);
@@ -489,6 +485,7 @@ package org.mozilla.geckoview {
     field public static final int LOAD_FLAGS_BYPASS_CLASSIFIER = 16;
     field public static final int LOAD_FLAGS_BYPASS_PROXY = 2;
     field public static final int LOAD_FLAGS_EXTERNAL = 4;
+    field public static final int LOAD_FLAGS_FORCE_ALLOW_DATA_URI = 32;
     field public static final int LOAD_FLAGS_NONE = 0;
     field @Nullable protected GeckoSession.Window mWindow;
   }
@@ -501,6 +498,7 @@ package org.mozilla.geckoview {
     method @UiThread default public void onFirstComposite(@NonNull GeckoSession);
     method @UiThread default public void onFocusRequest(@NonNull GeckoSession);
     method @UiThread default public void onFullScreen(@NonNull GeckoSession, boolean);
+    method @UiThread default public void onKill(@NonNull GeckoSession);
     method @UiThread default public void onTitleChange(@NonNull GeckoSession, @Nullable String);
     method @UiThread default public void onWebAppManifest(@NonNull GeckoSession, @NonNull JSONObject);
   }
@@ -619,14 +617,11 @@ package org.mozilla.geckoview {
 
   public static class GeckoSession.PermissionDelegate.MediaSource {
     ctor protected MediaSource();
-    field public static final int SOURCE_APPLICATION = 2;
-    field public static final int SOURCE_AUDIOCAPTURE = 6;
-    field public static final int SOURCE_BROWSER = 4;
+    field public static final int SOURCE_AUDIOCAPTURE = 3;
     field public static final int SOURCE_CAMERA = 0;
-    field public static final int SOURCE_MICROPHONE = 5;
-    field public static final int SOURCE_OTHER = 7;
+    field public static final int SOURCE_MICROPHONE = 2;
+    field public static final int SOURCE_OTHER = 4;
     field public static final int SOURCE_SCREEN = 1;
-    field public static final int SOURCE_WINDOW = 3;
     field public static final int TYPE_AUDIO = 1;
     field public static final int TYPE_VIDEO = 0;
     field @NonNull public final String id;
@@ -824,6 +819,7 @@ package org.mozilla.geckoview {
     ctor public GeckoSessionSettings(@NonNull GeckoSessionSettings);
     method public boolean getAllowJavascript();
     method @Nullable public String getChromeUri();
+    method @Nullable public String getContextId();
     method public int getDisplayMode();
     method public boolean getFullAccessibilityTree();
     method public int getScreenId();
@@ -861,6 +857,7 @@ package org.mozilla.geckoview {
     method @NonNull public GeckoSessionSettings.Builder allowJavascript(boolean);
     method @NonNull public GeckoSessionSettings build();
     method @NonNull public GeckoSessionSettings.Builder chromeUri(@NonNull String);
+    method @NonNull public GeckoSessionSettings.Builder contextId(@Nullable String);
     method @NonNull public GeckoSessionSettings.Builder displayMode(int);
     method @NonNull public GeckoSessionSettings.Builder fullAccessibilityTree(boolean);
     method @NonNull public GeckoSessionSettings.Builder screenId(int);
@@ -890,11 +887,9 @@ package org.mozilla.geckoview {
     method @AnyThread @Nullable public GeckoSession getSession();
     method @UiThread @Nullable public GeckoSession releaseSession();
     method @UiThread public void setSession(@NonNull GeckoSession);
-    method @UiThread public void setSession(@NonNull GeckoSession, @Nullable GeckoRuntime);
     method public void setVerticalClipping(int);
     method public boolean shouldPinOnScreen();
     field @NonNull protected final GeckoView.Display mDisplay;
-    field @Nullable protected GeckoRuntime mRuntime;
     field @Nullable protected GeckoSession mSession;
     field @Nullable protected SurfaceView mSurfaceView;
   }
@@ -1072,6 +1067,7 @@ package org.mozilla.geckoview {
   public final class StorageController {
     ctor public StorageController();
     method @AnyThread @NonNull public GeckoResult<Void> clearData(long);
+    method @AnyThread public void clearDataForSessionContext(@NonNull String);
     method @AnyThread @NonNull public GeckoResult<Void> clearDataFromHost(@NonNull String, long);
   }
 
@@ -1134,13 +1130,14 @@ package org.mozilla.geckoview {
     method default public void onPortMessage(@NonNull Object, @NonNull WebExtension.Port);
   }
 
-  public class WebExtensionController implements BundleEventListener {
+  public class WebExtensionController {
     ctor protected WebExtensionController(GeckoRuntime, WebExtensionEventDispatcher);
     method @UiThread @Nullable public WebExtensionController.TabDelegate getTabDelegate();
     method @UiThread public void setTabDelegate(@Nullable WebExtensionController.TabDelegate);
   }
 
   public static interface WebExtensionController.TabDelegate {
+    method @UiThread @NonNull default public GeckoResult<AllowOrDeny> onCloseTab(@Nullable WebExtension, @NonNull GeckoSession);
     method @UiThread @Nullable default public GeckoResult<GeckoSession> onNewTab(@Nullable WebExtension, @Nullable String);
   }
 

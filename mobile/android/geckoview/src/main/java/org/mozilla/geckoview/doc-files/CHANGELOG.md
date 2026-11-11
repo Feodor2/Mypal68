@@ -8,9 +8,36 @@ exclude: true
 
 <h1> GeckoView API Changelog. </h1>
 
+## v70
+
+- Removed the obsolete `success` parameter from
+  [`CrashReporter#sendCrashReport`][70.3] and
+  [`CrashReporter#sendCrashReport`][70.4].
+
+[70.3]: ../CrashReporter.html#sendCrashReport-android.content.Context-java.io.File-java.io.File-java.lang.String-
+[70.4]: ../CrashReporter.html#sendCrashReport-android.content.Context-java.io.File-java.util.Map-java.lang.String-
+
+- Added API for session context assignment
+  [`GeckoSessionSettings.Builder.contextId`][70.1] and deletion of data
+  related to a session context
+  [`StorageController.clearDataForSessionContext`][70.2].
+
+[70.1]: ../GeckoSessionSettings.Builder.html#contextId-java.lang.String-
+[70.2]: ../StorageController.html#clearDataForSessionContext-java.lang.String-
+
+- Removed `setSession(session, runtime)` from `GeckoView`. With this change, `GeckoView` will no longer
+  manage opening/closing of the `GeckoSession` and instead leave that up to the app. It's also now allowed
+  to call `setSession` with a closed `GeckoSession`.
+
+- Added an overload of `GeckoSession.loadUri()` that accepts a referring `GeckoSession`. This should be used
+  when the URI we're loading originates from another page. A common example of this would be long pressing
+  a link and then opening that in a new `GeckoSession`.
+
 ## v69
 - Modified behavior of ['setAutomaticFontSizeAdjustment'][69.1] so that it no
   longer has any effect on ['setFontInflationEnabled'][69.2]
+
+- Add GeckoSession.LOAD_FLAGS_FORCE_ALLOW_DATA_URI
 
 [69.1]: ./GeckoRuntimeSettings.html#setAutomaticFontSizeAdjustment-boolean-
 [69.2]: ./GeckoRuntimeSettings.html#setFontInflationEnabled-boolean-
@@ -19,6 +46,28 @@ exclude: true
   transforming it.
 
 [69.3]: ../GeckoResult.html#accept-org.mozilla.geckoview.GeckoResult.Consumer-org.mozilla.geckoview.GeckoResult.Consumer-
+
+- [`GeckoSession.setMessageDelegate`][69.2] callers must now specify the
+  [`WebExtension`][69.3] that the [`MessageDelegate`][69.4] will receive
+  messages from.
+
+[69.2]: ../GeckoSession.html#setMessageDelegate-org.mozilla.geckoview.WebExtension-org.mozilla.geckoview.WebExtension.MessageDelegate-java.lang.String-
+[69.3]: ../WebExtension.html
+[69.4]: ../WebExtension.MessageDelegate.html
+
+- Added `WebExtensionController` and `TabDelegate` to handle
+  [`browser.tabs.create`][69.6] calls by WebExtensions.
+
+[69.6]: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabs/create
+
+[69.7]: ../GeckoSession.ContentDelegate.html#onKill
+
+- Created `onKill` to `ContentDelegate` to differentiate from crashes.
+
+- Added `onCloseTab` to `WebExtensionController.TabDelegate` to handle
+  [`browser.tabs.remove`][69.8] calls by WebExtensions.
+
+[69.8]: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabs/remove
 
 ## v68
 - Added [`GeckoRuntime#configurationChanged`][68.1] to notify the device
@@ -120,6 +169,10 @@ exclude: true
 
 [68.26]: ./GeckoSession.MediaDelegate.html#onRecordingStatusChanged-org.mozilla.geckoview.GeckoSession-org.mozilla.geckoview.GeckoSession.MediaDelegate.RecordingDevice:A-
 [68.27]: ./GeckoSession.MediaDelegate.html
+
+- Removed redundant constants in [`MediaSource`][68.28]
+
+[68.28]: ./GeckoSession.MediaSource.html
 
 ## v67
 - Added [`setAutomaticFontSizeAdjustment`][67.2] to
@@ -327,4 +380,4 @@ exclude: true
 [65.24]: ../CrashReporter.html#sendCrashReport-android.content.Context-android.os.Bundle-java.lang.String-
 [65.25]: ../GeckoResult.html
 
-[api-version]: b202be24f2a6f5fae68aff8bd8f8d0cfcf44a3ef
+[api-version]: a378cc7122deed44920fd8f3aad8627ed7a7960d

@@ -2,36 +2,29 @@
 
 module.exports = {
   rules: {
-    // XXX Bug 1358949 - This should be reduced down - probably to 20 or to
-    // be removed & synced with the mozilla/recommended value.
-    "complexity": ["error", 31],
-
     // Rules enabled in mozilla/recommended, and disabled for now, we should
     // re-enable these over time.
     "consistent-return": "off",
     "no-empty": "off",
-    "no-nested-ternary": "off",
-    "no-new-object": "off",
-    "no-octal": "off",
     "no-redeclare": "off",
-    "no-useless-call": "off",
-    "no-useless-concat": "off",
-    "object-shorthand": "off",
   },
 
   "overrides": [{
     files: [
-      // Bug 1425047.
-      "chrome/**",
-      // Bug 1425048.
+      // Bug 1425048 - mainly going away, see bug 1583370.
       "components/extensions/**",
-      // Bug 1425051.
-      "tests/browser/robocop/**",
     ],
     rules: {
       "no-unused-vars": "off",
       "no-undef": "off",
     }
+  }, {
+    files: [
+      "chrome/geckoview/*Child.js",
+    ],
+    env: {
+      "mozilla/frame-script": true,
+    },
   }, {
     files: [
       "chrome/geckoview/**",

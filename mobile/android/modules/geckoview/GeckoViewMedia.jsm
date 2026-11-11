@@ -118,7 +118,7 @@ const GeckoViewRecordingMedia = {
       }
       dispatcher.sendRequestForResult({
         type: "GeckoView:MediaRecordingStatusChanged",
-        devices: devices,
+        devices,
       });
     } else {
       console.log("no dispatcher present");

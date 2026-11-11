@@ -96,10 +96,8 @@ nsIWidget* nsWebBrowser::EnsureWidget() {
 /* static */
 already_AddRefed<nsWebBrowser> nsWebBrowser::Create(
     nsIWebBrowserChrome* aContainerWindow, nsIWidget* aParentWidget,
-    const OriginAttributes& aOriginAttributes,
     dom::BrowsingContext* aBrowsingContext,
-    dom::WindowGlobalChild* aInitialWindowChild,
-    bool aDisableHistory /* = false */) {
+    dom::WindowGlobalChild* aInitialWindowChild) {
   MOZ_ASSERT_IF(aInitialWindowChild,
                 aInitialWindowChild->BrowsingContext() == aBrowsingContext);
 
@@ -123,13 +121,15 @@ already_AddRefed<nsWebBrowser> nsWebBrowser::Create(
   if (NS_WARN_IF(!docShell)) {
     return nullptr;
   }
-  MOZ_ASSERT(aBrowsingContext->OriginAttributesRef() == aOriginAttributes);
   browser->SetDocShell(docShell);
   MOZ_ASSERT(browser->mDocShell == docShell);
 
   // get the system default window background colour
-  LookAndFeel::GetColor(LookAndFeel::ColorID::WindowBackground,
-                        &browser->mBackgroundColor);
+  //
+  // TODO(emilio): Can we get the color-scheme from somewhere here?
+  browser->mBackgroundColor = LookAndFeel::Color(
+      LookAndFeel::ColorID::WindowBackground, LookAndFeel::ColorScheme::Light,
+      LookAndFeel::UseStandins::No);
 
   // HACK ALERT - this registration registers the nsDocShellTreeOwner as a
   // nsIWebBrowserListener so it can setup its MouseListener in one of the
@@ -147,30 +147,14 @@ already_AddRefed<nsWebBrowser> nsWebBrowser::Create(
   // handler that always gets called (even for subframes) for any bubbling
   // event.
 
-  docShell->InitSessionHistory();
-
-  if (XRE_IsParentProcess() && !aDisableHistory) {
-    // Hook up global history. Do not fail if we can't - just warn.
-    DebugOnly<nsresult> rv =
-        browser->EnableGlobalHistory(browser->mShouldEnableHistory);
-    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "EnableGlobalHistory() failed");
+  if (aBrowsingContext->IsTop()) {
+    aBrowsingContext->InitSessionHistory();
   }
 
   nsresult rv = docShell->InitWindow(nullptr, docShellParentWidget, 0, 0, 0, 0);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return nullptr;
   }
-
-  // Hook into the OnSecurityChange() notification for lock/unlock icon
-  // updates
-  // this works because the implementation of nsISecureBrowserUI
-  // (nsSecureBrowserUIImpl) calls docShell->SetSecurityUI(this);
-  nsCOMPtr<nsISecureBrowserUI> securityUI =
-      do_CreateInstance(NS_SECURE_BROWSER_UI_CONTRACTID);
-  if (NS_WARN_IF(!securityUI)) {
-    return nullptr;
-  }
-  securityUI->Init(docShell);
 
   docShellTreeOwner->AddToWatcher();  // evil twin of Remove in SetDocShell(0)
   docShellTreeOwner->AddChromeListeners();
@@ -253,13 +237,6 @@ nsWebBrowser::GetInterface(const nsIID& aIID, void** aSink) {
 //*****************************************************************************
 // nsWebBrowser::nsIWebBrowser
 //*****************************************************************************
-
-NS_IMETHODIMP
-nsWebBrowser::EnableGlobalHistory(bool aEnable) {
-  NS_ENSURE_STATE(mDocShell);
-
-  return mDocShell->SetUseGlobalHistory(aEnable);
-}
 
 NS_IMETHODIMP
 nsWebBrowser::GetContainerWindow(nsIWebBrowserChrome** aTopWindow) {
@@ -480,17 +457,17 @@ nsWebBrowser::GetCanGoForward(bool* aCanGoForward) {
 }
 
 NS_IMETHODIMP
-nsWebBrowser::GoBack() {
+nsWebBrowser::GoBack(bool aRequireUserInteraction) {
   NS_ENSURE_STATE(mDocShell);
 
-  return mDocShell->GoBack();
+  return mDocShell->GoBack(aRequireUserInteraction);
 }
 
 NS_IMETHODIMP
-nsWebBrowser::GoForward() {
+nsWebBrowser::GoForward(bool aRequireUserInteraction) {
   NS_ENSURE_STATE(mDocShell);
 
-  return mDocShell->GoForward();
+  return mDocShell->GoForward(aRequireUserInteraction);
 }
 
 nsresult nsWebBrowser::LoadURI(const nsAString& aURI,

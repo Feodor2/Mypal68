@@ -471,15 +471,6 @@ LoginManager.prototype = {
       if (!matchData.hasKey("origin")) {
         log.warn("searchLogins: An `origin` is recommended");
       }
-
-      if (
-        !matchData.hasKey("formActionOrigin") &&
-        !matchData.hasKey("httpRealm")
-      ) {
-        log.warn(
-          "searchLogins: `formActionOrigin` or `httpRealm` is recommended"
-        );
-      }
     }
 
     return this._storage.searchLogins(matchData);
@@ -520,7 +511,7 @@ LoginManager.prototype = {
     }
 
     let uri = Services.io.newURI(origin);
-    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+    let principal = Services.scriptSecurityManager.createContentPrincipal(
       uri,
       {}
     );
@@ -540,7 +531,7 @@ LoginManager.prototype = {
     LoginHelper.checkOriginValue(origin);
 
     let uri = Services.io.newURI(origin);
-    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+    let principal = Services.scriptSecurityManager.createContentPrincipal(
       uri,
       {}
     );

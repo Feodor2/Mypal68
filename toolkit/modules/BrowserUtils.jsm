@@ -7,6 +7,9 @@
 var EXPORTED_SYMBOLS = ["BrowserUtils"];
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
 ChromeUtils.defineModuleGetter(
   this,
   "PlacesUtils",
@@ -103,7 +106,7 @@ var BrowserUtils = {
     ) {
       return true;
     }
-    if (contentPrincipal.isCodebasePrincipal) {
+    if (contentPrincipal.isContentPrincipal) {
       return contentPrincipal.equalsURI(uri);
     }
     // ... so for those that don't have them, enforce that the page has the
@@ -174,8 +177,8 @@ var BrowserUtils = {
     }
 
     let secMan = Services.scriptSecurityManager;
-    if (principal.isCodebasePrincipal) {
-      return secMan.createCodebasePrincipal(
+    if (principal.isContentPrincipal) {
+      return secMan.createContentPrincipal(
         principal.URI,
         existingPrincipal.originAttributes
       );
@@ -851,3 +854,10 @@ var BrowserUtils = {
     return url;
   },
 };
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  BrowserUtils,
+  "navigationRequireUserInteraction",
+  "browser.navigation.requireUserInteraction",
+  false
+);

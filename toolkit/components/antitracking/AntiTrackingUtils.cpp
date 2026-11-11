@@ -6,12 +6,14 @@
 
 #include "AntiTrackingLog.h"
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/WindowGlobalParent.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/PermissionManager.h"
+#include "mozIThirdPartyUtil.h"
 #include "nsGlobalWindowOuter.h"
 #include "nsIChannel.h"
 #include "nsIPermission.h"
@@ -25,6 +27,19 @@
 
 using namespace mozilla;
 using namespace mozilla::dom;
+
+/* static */ already_AddRefed<nsPIDOMWindowInner>
+AntiTrackingUtils::GetInnerWindow(BrowsingContext* aBrowsingContext) {
+  MOZ_ASSERT(aBrowsingContext);
+
+  nsCOMPtr<nsPIDOMWindowOuter> outer = aBrowsingContext->GetDOMWindow();
+  if (!outer) {
+    return nullptr;
+  }
+
+  nsCOMPtr<nsPIDOMWindowInner> inner = outer->GetCurrentInnerWindow();
+  return inner.forget();
+}
 
 /* static */ already_AddRefed<nsPIDOMWindowOuter>
 AntiTrackingUtils::GetTopWindow(nsPIDOMWindowInner* aWindow) {
@@ -72,7 +87,7 @@ already_AddRefed<nsIURI> AntiTrackingUtils::MaybeGetDocumentURIBeingLoaded(
 
 // static
 void AntiTrackingUtils::CreateStoragePermissionKey(
-    const nsCString& aTrackingOrigin, nsACString& aPermissionKey) {
+    const nsACString& aTrackingOrigin, nsACString& aPermissionKey) {
   MOZ_ASSERT(aPermissionKey.IsEmpty());
 
   static const nsLiteralCString prefix =
@@ -242,6 +257,15 @@ bool AntiTrackingUtils::CheckStoragePermission(nsIPrincipal* aPrincipal,
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   nsCOMPtr<nsICookieJarSettings> cookieJarSettings;
 
+  auto policyType = loadInfo->GetExternalContentPolicyType();
+
+  // The channel is for the document load of the top-level window. The top-level
+  // window should always has 'hasStoragePermission' flag as false. So, we can
+  // return here directly.
+  if (policyType == ExtContentPolicy::TYPE_DOCUMENT) {
+    return false;
+  }
+
   nsresult rv =
       loadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -255,28 +279,37 @@ bool AntiTrackingUtils::CheckStoragePermission(nsIPrincipal* aPrincipal,
 
   // We only need to check the storage permission if the cookie behavior is
   // BEHAVIOR_REJECT_TRACKER, BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN or
-  // BEHAVIOR_REJECT_FOREIGN. Because ContentBlocking wouldn't update or check
-  // the storage permission if the cookie behavior is not belongs to these two.
+  // BEHAVIOR_REJECT_FOREIGN with exceptions. Because ContentBlocking wouldn't
+  // update or check the storage permission if the cookie behavior is not
+  // belongs to these three.
   if (!net::CookieJarSettings::IsRejectThirdPartyContexts(cookieBehavior)) {
     return false;
   }
 
-  nsCOMPtr<nsIPrincipal> targetPrincipal =
+  RefPtr<BrowsingContext> bc;
+  rv = loadInfo->GetTargetBrowsingContext(getter_AddRefs(bc));
+  if (NS_WARN_IF(NS_FAILED(rv)) || !bc) {
+    return false;
+  }
+
+  uint64_t targetWindowId =
       (cookieBehavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
        rejectForeignWithExceptions)
-          ? loadInfo->GetTopLevelStorageAreaPrincipal()
-          : loadInfo->GetTopLevelPrincipal();
+          ? GetTopLevelStorageAreaWindowId(bc)
+          : GetTopLevelAntiTrackingWindowId(bc);
+  nsCOMPtr<nsIPrincipal> targetPrincipal;
 
-  if (!targetPrincipal) {
-    if (loadInfo->GetTopLevelPrincipal()) {
-      // We can only get here if the cookieBehavior is BEHAVIOR_REJECT_TRACKER,
-      // the TopLevelStorageAreaPrincipal is null and there is a
-      // TopLevelPrincipal. In this case, the channel is for the top-level
-      // window. So, we can return from here.
+  if (targetWindowId) {
+    RefPtr<WindowGlobalParent> wgp =
+        WindowGlobalParent::GetByInnerWindowId(targetWindowId);
+
+    if (NS_WARN_IF(!wgp)) {
       return false;
     }
 
-    // We try to use the loading principal if there is no TopLevelPrincipal.
+    targetPrincipal = wgp->DocumentPrincipal();
+  } else {
+    // We try to use the loading principal if there is no AntiTrackingWindowId.
     targetPrincipal = loadInfo->GetLoadingPrincipal();
   }
 
@@ -335,20 +368,14 @@ uint64_t AntiTrackingUtils::GetTopLevelAntiTrackingWindowId(
 
   RefPtr<WindowContext> winContext =
       aBrowsingContext->GetCurrentWindowContext();
-  if (!winContext) {
-    return 0;
-  }
-
-  Maybe<net::CookieJarSettingsArgs> cookieJarSettings =
-      winContext->GetCookieJarSettings();
-  if (cookieJarSettings.isNothing()) {
+  if (!winContext || winContext->GetCookieBehavior().isNothing()) {
     return 0;
   }
 
   // Do not check BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN her because when
   // a third-party subresource is inside the main frame, we need to return the
   // top-level window id to partition its cookies correctly.
-  uint32_t behavior = cookieJarSettings->cookieBehavior();
+  uint32_t behavior = *winContext->GetCookieBehavior();
   if (behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER &&
       aBrowsingContext->IsTop()) {
     return 0;
@@ -376,4 +403,191 @@ uint64_t AntiTrackingUtils::GetTopLevelStorageAreaWindowId(
   }
 
   return parentBC->GetCurrentInnerWindowId();
+}
+
+/* static */
+already_AddRefed<nsIPrincipal> AntiTrackingUtils::GetPrincipal(
+    BrowsingContext* aBrowsingContext) {
+  MOZ_ASSERT(aBrowsingContext);
+
+  nsCOMPtr<nsIPrincipal> principal;
+
+  if (XRE_IsContentProcess()) {
+    // Passing an out-of-process browsing context in child processes to
+    // this API won't get any result, so just assert.
+    MOZ_ASSERT(aBrowsingContext->IsInProcess());
+
+    nsPIDOMWindowOuter* outer = aBrowsingContext->GetDOMWindow();
+    if (NS_WARN_IF(!outer)) {
+      return nullptr;
+    }
+
+    nsPIDOMWindowInner* inner = outer->GetCurrentInnerWindow();
+    if (NS_WARN_IF(!inner)) {
+      return nullptr;
+    }
+
+    principal = nsGlobalWindowInner::Cast(inner)->GetPrincipal();
+  } else {
+    WindowGlobalParent* wgp =
+        aBrowsingContext->Canonical()->GetCurrentWindowGlobal();
+    if (NS_WARN_IF(!wgp)) {
+      return nullptr;
+    }
+
+    principal = wgp->DocumentPrincipal();
+  }
+  return principal.forget();
+}
+
+/* static */
+bool AntiTrackingUtils::GetPrincipalAndTrackingOrigin(
+    BrowsingContext* aBrowsingContext, nsIPrincipal** aPrincipal,
+    nsACString& aTrackingOrigin) {
+  MOZ_ASSERT(aBrowsingContext);
+
+  // Passing an out-of-process browsing context in child processes to
+  // this API won't get any result, so just assert.
+  MOZ_ASSERT_IF(XRE_IsContentProcess(), aBrowsingContext->IsInProcess());
+
+  // Let's take the principal and the origin of the tracker.
+  nsCOMPtr<nsIPrincipal> principal =
+      AntiTrackingUtils::GetPrincipal(aBrowsingContext);
+  if (NS_WARN_IF(!principal)) {
+    return false;
+  }
+
+  nsresult rv = principal->GetOriginNoSuffix(aTrackingOrigin);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return false;
+  }
+
+  if (aPrincipal) {
+    principal.forget(aPrincipal);
+  }
+
+  return true;
+};
+
+/* static */
+uint32_t AntiTrackingUtils::GetCookieBehavior(
+    BrowsingContext* aBrowsingContext) {
+  MOZ_ASSERT(aBrowsingContext);
+
+  RefPtr<dom::WindowContext> win = aBrowsingContext->GetCurrentWindowContext();
+  if (!win || win->GetCookieBehavior().isNothing()) {
+    return nsICookieService::BEHAVIOR_REJECT;
+  }
+
+  return *win->GetCookieBehavior();
+}
+
+/* static */
+already_AddRefed<WindowGlobalParent>
+AntiTrackingUtils::GetTopWindowExcludingExtensionAccessibleContentFrames(
+    CanonicalBrowsingContext* aBrowsingContext, nsIURI* aURIBeingLoaded) {
+  MOZ_ASSERT(XRE_IsParentProcess());
+  MOZ_ASSERT(aBrowsingContext);
+
+  CanonicalBrowsingContext* bc = aBrowsingContext;
+  RefPtr<WindowGlobalParent> prev;
+  while (RefPtr<WindowGlobalParent> parent = bc->GetParentWindowContext()) {
+    CanonicalBrowsingContext* parentBC = parent->BrowsingContext();
+
+    nsIPrincipal* parentPrincipal = parent->DocumentPrincipal();
+    nsIURI* uri = prev ? prev->GetDocumentURI() : aURIBeingLoaded;
+
+    // If the new parent has permission to load the current page, we're
+    // at a moz-extension:// frame which has a host permission that allows
+    // it to load the document that we've loaded.  In that case, stop at
+    // this frame and consider it the top-level frame.
+    if (uri &&
+        BasePrincipal::Cast(parentPrincipal)->AddonAllowsLoad(uri, true)) {
+      break;
+    }
+
+    bc = parentBC;
+    prev = parent;
+  }
+  if (!prev) {
+    prev = bc->GetCurrentWindowGlobal();
+  }
+  return prev.forget();
+}
+
+/* static */
+void AntiTrackingUtils::ComputeIsThirdPartyToTopWindow(nsIChannel* aChannel) {
+  MOZ_ASSERT(aChannel);
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+  RefPtr<BrowsingContext> bc;
+  loadInfo->GetBrowsingContext(getter_AddRefs(bc));
+
+  // In xpcshell-tests we don't always have a browsingContext.
+  if (!bc) {
+    return;
+  }
+
+  nsCOMPtr<nsIURI> uri;
+  Unused << aChannel->GetURI(getter_AddRefs(uri));
+
+  RefPtr<WindowGlobalParent> topWindow =
+      GetTopWindowExcludingExtensionAccessibleContentFrames(bc->Canonical(),
+                                                            uri);
+
+  if (NS_WARN_IF(!topWindow)) {
+    return;
+  }
+
+  nsCOMPtr<nsIPrincipal> topWindowPrincipal = topWindow->DocumentPrincipal();
+  if (topWindowPrincipal && !topWindowPrincipal->GetIsNullPrincipal()) {
+    auto* basePrin = BasePrincipal::Cast(topWindowPrincipal);
+    bool isThirdParty = true;
+    basePrin->IsThirdPartyURI(uri, &isThirdParty);
+
+    loadInfo->SetIsThirdPartyContextToTopWindow(isThirdParty);
+  }
+}
+
+/* static */
+bool AntiTrackingUtils::IsThirdPartyChannel(nsIChannel* aChannel) {
+  MOZ_ASSERT(aChannel);
+
+  // We assume that the channel is a third-party by default.
+  bool thirdParty = true;
+
+  nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil = services::GetThirdPartyUtil();
+  if (!thirdPartyUtil) {
+    return thirdParty;
+  }
+
+  // Check that if the channel is a third-party to its parent.
+  nsresult rv =
+      thirdPartyUtil->IsThirdPartyChannel(aChannel, nullptr, &thirdParty);
+  if (NS_FAILED(rv)) {
+    // Assume third-party in case of failure
+    thirdParty = true;
+  }
+
+  // We check the top-level window to prevent the top-level navigation from
+  // being detected as third-party.
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+  return thirdParty && loadInfo->GetIsThirdPartyContextToTopWindow();
+}
+
+/* static */
+bool AntiTrackingUtils::IsThirdPartyWindow(nsPIDOMWindowInner* aWindow,
+                                           nsIURI* aURI) {
+  MOZ_ASSERT(aWindow);
+  MOZ_ASSERT(aURI);
+
+  // We assume that the window is foreign to the URI by default.
+  bool thirdParty = true;
+
+  nsCOMPtr<mozIThirdPartyUtil> thirdPartyUtil = services::GetThirdPartyUtil();
+  Unused << thirdPartyUtil->IsThirdPartyWindow(aWindow->GetOuterWindow(), aURI,
+                                               &thirdParty);
+
+  return thirdParty;
 }

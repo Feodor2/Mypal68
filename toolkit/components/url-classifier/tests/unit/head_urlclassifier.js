@@ -257,7 +257,7 @@ var gAssertions = {
       if (urls.length > 0) {
         var tables = useMoz ? mozTables : allTables;
         var fragment = urls.shift();
-        var principal = Services.scriptSecurityManager.createCodebasePrincipal(
+        var principal = Services.scriptSecurityManager.createContentPrincipal(
           Services.io.newURI("http://" + fragment),
           {}
         );
@@ -278,7 +278,7 @@ var gAssertions = {
   },
 
   checkTables(url, expected, cb) {
-    var principal = Services.scriptSecurityManager.createCodebasePrincipal(
+    var principal = Services.scriptSecurityManager.createContentPrincipal(
       Services.io.newURI("http://" + url),
       {}
     );

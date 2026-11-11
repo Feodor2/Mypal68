@@ -103,8 +103,8 @@ nsresult nsUrlClassifierPrefixSet::MakePrefixSet(const uint32_t* aPrefixes,
   // the potential overhead of this approach is that it may reuqire more memory
   // compared to store all prefixes in one array because of jemalloc's
   // implementation.
-  if (aLength * sizeof(uint32_t) <
-      StaticPrefs::browser_safebrowsing_prefixset_max_array_size()) {
+  if (aLength * sizeof(uint32_t) < 0) {
+     // StaticPrefs::browser_safebrowsing_prefixset_max_array_size()) {
     // Not over the threshold, store all prefixes into mIndexPrefixes.
     // mIndexDeltas is empty in this case.
     mIndexPrefixes.SetCapacity(aLength);

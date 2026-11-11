@@ -14,7 +14,13 @@ const TEST_3RD_PARTY_DOMAIN = "https://tracking.example.org/";
 const TEST_3RD_PARTY_DOMAIN_HTTP = "http://tracking.example.org/";
 const TEST_3RD_PARTY_DOMAIN_TP = "https://tracking.example.com/";
 const TEST_4TH_PARTY_DOMAIN = "http://not-tracking.example.com/";
-const TEST_ANOTHER_3RD_PARTY_DOMAIN = "https://another-tracking.example.net/";
+const TEST_ANOTHER_3RD_PARTY_DOMAIN_HTTP =
+  "http://another-tracking.example.net/";
+const TEST_ANOTHER_3RD_PARTY_DOMAIN_HTTPS =
+  "https://another-tracking.example.net/";
+const TEST_ANOTHER_3RD_PARTY_DOMAIN = SpecialPowers.useRemoteSubframes
+  ? TEST_ANOTHER_3RD_PARTY_DOMAIN_HTTP
+  : TEST_ANOTHER_3RD_PARTY_DOMAIN_HTTPS;
 
 const TEST_PATH = "browser/toolkit/components/antitracking/test/browser/";
 
@@ -40,8 +46,14 @@ const TEST_3RD_PARTY_PAGE_RELAY =
 const TEST_4TH_PARTY_PAGE = TEST_4TH_PARTY_DOMAIN + TEST_PATH + "3rdParty.html";
 const TEST_ANOTHER_3RD_PARTY_PAGE =
   TEST_ANOTHER_3RD_PARTY_DOMAIN + TEST_PATH + "3rdParty.html";
+const TEST_ANOTHER_3RD_PARTY_PAGE_HTTPS =
+  TEST_ANOTHER_3RD_PARTY_DOMAIN_HTTPS + TEST_PATH + "3rdParty.html";
 const TEST_3RD_PARTY_STORAGE_PAGE =
   TEST_3RD_PARTY_DOMAIN_HTTP + TEST_PATH + "3rdPartyStorage.html";
+const TEST_3RD_PARTY_PAGE_WORKER =
+  TEST_3RD_PARTY_DOMAIN + TEST_PATH + "3rdPartyWorker.html";
+const TEST_3RD_PARTY_PARTITIONED_PAGE =
+  TEST_3RD_PARTY_DOMAIN + TEST_PATH + "3rdPartyPartitioned.html";
 const TEST_4TH_PARTY_STORAGE_PAGE =
   TEST_4TH_PARTY_DOMAIN + TEST_PATH + "3rdPartyStorage.html";
 const TEST_4TH_PARTY_PARTITIONED_PAGE =
@@ -52,6 +64,16 @@ const BEHAVIOR_REJECT = Ci.nsICookieService.BEHAVIOR_REJECT;
 const BEHAVIOR_LIMIT_FOREIGN = Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN;
 const BEHAVIOR_REJECT_FOREIGN = Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN;
 const BEHAVIOR_REJECT_TRACKER = Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER;
+const BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN =
+  Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+
+let originalRequestLongerTimeout = requestLongerTimeout;
+// eslint-disable-next-line no-global-assign
+requestLongerTimeout = function AntiTrackingRequestLongerTimeout(factor) {
+  let ccovMultiplier = AppConstants.MOZ_CODE_COVERAGE ? 2 : 1;
+  let fissionMultiplier = SpecialPowers.useRemoteSubframes ? 2 : 1;
+  originalRequestLongerTimeout(ccovMultiplier * fissionMultiplier * factor);
+};
 
 requestLongerTimeout(3);
 

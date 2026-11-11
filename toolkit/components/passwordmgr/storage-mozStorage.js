@@ -1278,7 +1278,7 @@ LoginManagerStorage_mozStorage.prototype = {
       for (let host of disabledHosts) {
         try {
           let uri = Services.io.newURI(host);
-          let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+          let principal = Services.scriptSecurityManager.createContentPrincipal(
             uri,
             {}
           );

@@ -10,6 +10,7 @@
 #include "mozilla/AddonManagerWebAPI.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/StaticPrefs_extensions.h"
+#include "nsContentUtils.h"
 #include "nsEscape.h"
 #include "nsIObserver.h"
 #include "nsISubstitutingProtocolHandler.h"
@@ -244,6 +245,11 @@ bool WebExtensionPolicy::Enable() {
     return false;
   }
 
+  if (XRE_IsParentProcess()) {
+    // Reserve a BrowsingContextGroup ID for use by this WebExtensionPolicy.
+    mBrowsingContextGroupId = nsContentUtils::GenerateBrowsingContextId();
+  }
+
   Unused << Proto()->SetSubstitution(MozExtensionHostname(), mBaseURI);
 
   mActive = true;
@@ -397,9 +403,9 @@ NS_IMPL_ISUPPORTS(AtomSetPref, nsIObserver, nsISupportsWeakReference)
 /* static */
 bool WebExtensionPolicy::IsRestrictedDoc(const DocInfo& aDoc) {
   // With the exception of top-level about:blank documents with null
-  // principals, we never match documents that have non-codebase principals,
+  // principals, we never match documents that have non-content principals,
   // including those with null principals or system principals.
-  if (aDoc.Principal() && !aDoc.Principal()->GetIsCodebasePrincipal()) {
+  if (aDoc.Principal() && !aDoc.Principal()->GetIsContentPrincipal()) {
     return true;
   }
 
@@ -471,6 +477,11 @@ void WebExtensionPolicy::GetReadyPromise(
   } else {
     aResult.set(nullptr);
   }
+}
+
+uint64_t WebExtensionPolicy::GetBrowsingContextGroupId() const {
+  MOZ_ASSERT(XRE_IsParentProcess() && mActive);
+  return mBrowsingContextGroupId;
 }
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_WEAK_PTR(WebExtensionPolicy, mParent,
@@ -730,7 +741,7 @@ DocInfo::DocInfo(nsPIDOMWindowOuter* aWindow)
 bool DocInfo::IsTopLevel() const {
   if (mIsTopLevel.isNothing()) {
     struct Matcher {
-      bool operator()(Window aWin) { return aWin->IsTopLevelWindow(); }
+      bool operator()(Window aWin) { return aWin->GetBrowsingContext()->IsTop(); }
       bool operator()(LoadInfo aLoadInfo) {
         return aLoadInfo->GetIsTopLevelLoad();
       }
@@ -741,7 +752,7 @@ bool DocInfo::IsTopLevel() const {
 }
 
 bool WindowShouldMatchActiveTab(nsPIDOMWindowOuter* aWin) {
-  if (aWin->IsTopLevelWindow()) {
+  if (aWin->GetBrowsingContext()->IsTopContent()) {
     return true;
   }
 
@@ -822,7 +833,7 @@ nsIPrincipal* DocInfo::Principal() const {
 }
 
 const URLInfo& DocInfo::PrincipalURL() const {
-  if (!(Principal() && Principal()->GetIsCodebasePrincipal())) {
+  if (!(Principal() && Principal()->GetIsContentPrincipal())) {
     return URL();
   }
 

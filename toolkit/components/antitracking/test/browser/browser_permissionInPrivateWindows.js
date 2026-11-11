@@ -13,7 +13,7 @@ AntiTracking.runTest(
       let Services = SpecialPowers.Services;
       // We would use TEST_3RD_PARTY_DOMAIN here, except that the variable isn't
       // accessible in the context of the web page...
-      let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+      let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
         "https://tracking.example.org/"
       );
       for (let perm of Services.perms.getAllForPrincipal(principal)) {

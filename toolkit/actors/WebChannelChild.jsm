@@ -50,7 +50,7 @@ class WebChannelChild extends JSWindowActorChild {
     if (!_cachedWhitelist) {
       let urls = CACHED_PREFS.URL_WHITELIST.split(/\s+/);
       _cachedWhitelist = urls.map(origin =>
-        Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(origin)
+        Services.scriptSecurityManager.createContentPrincipalFromOrigin(origin)
       );
     }
     return _cachedWhitelist;

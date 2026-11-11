@@ -7,7 +7,7 @@
 add_task(
   function test_isOriginPotentiallyTrustworthnsIContentSecurityManagery() {
     let uri = NetUtil.newURI("moz-extension://foobar/something.html");
-    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+    let principal = Services.scriptSecurityManager.createContentPrincipal(
       uri,
       {}
     );

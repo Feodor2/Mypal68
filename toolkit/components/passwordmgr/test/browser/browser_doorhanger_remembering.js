@@ -481,7 +481,8 @@ add_task(async function test_changeUPLoginOnUPForm_change() {
   Services.logins.addLogin(login1);
 
   await testSubmittingLoginForm("subtst_notifications_8.html", async function(
-    fieldValues
+    fieldValues,
+    browser
   ) {
     is(fieldValues.username, "notifyu1", "Checking submitted username");
     is(fieldValues.password, "pass2", "Checking submitted password");

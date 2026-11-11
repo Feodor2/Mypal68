@@ -6,6 +6,7 @@ with Files('**'):
     BUG_COMPONENT = ('Core', 'DOM: Security')
 
 EXPORTS.mozilla = [
+    'AntiTrackingIPCUtils.h',
     'AntiTrackingRedirectHeuristic.h',
     'AntiTrackingUtils.h',
     'ContentBlocking.h',
@@ -23,6 +24,7 @@ UNIFIED_SOURCES += [
     'AntiTrackingUtils.cpp',
     'ContentBlocking.cpp',
     'ContentBlockingAllowList.cpp',
+    'ContentBlockingLog.cpp',
     'ContentBlockingNotifier.cpp',
     'ContentBlockingUserInteraction.cpp',
     'SettingsChangeObserver.cpp',

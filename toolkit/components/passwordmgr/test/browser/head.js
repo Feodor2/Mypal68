@@ -207,7 +207,7 @@ function testSubmittingLoginForm(
       );
       ok(true, "form submission loaded");
       if (aTaskFn) {
-        await aTaskFn(fieldValues);
+        await aTaskFn(fieldValues, browser);
       }
       return fieldValues;
     }
@@ -475,7 +475,11 @@ async function waitForPasswordManagerDialog(openingFunc) {
 
 async function waitForPasswordManagerTab(openingFunc, waitForFilter) {
   info("waiting for new tab to open");
-  let tabPromise = BrowserTestUtils.waitForNewTab(gBrowser, null);
+  let tabPromise = BrowserTestUtils.waitForNewTab(
+    gBrowser,
+    null,
+    true
+  );
   await openingFunc();
   let tab = await tabPromise;
   ok(tab, "got password management tab");
@@ -534,6 +538,42 @@ async function closePopup(popup) {
     popup.hidePopup();
     await promiseHidden;
   }
+}
+
+async function fillGeneratedPasswordFromOpenACPopup(
+  browser,
+  passwordInputSelector
+) {
+  let popup = browser.ownerDocument.getElementById("PopupAutoComplete");
+  let item;
+
+  await TestUtils.waitForCondition(() => {
+    item = popup.querySelector(`[originaltype="generatedPassword"]`);
+    return item && !EventUtils.isHidden(item);
+  }, "Waiting for item to become visible");
+
+  let inputEventPromise = ContentTask.spawn(
+    browser,
+    [passwordInputSelector],
+    async function waitForInput(inputSelector) {
+      let passwordInput = content.document.querySelector(inputSelector);
+      await ContentTaskUtils.waitForEvent(
+        passwordInput,
+        "input",
+        "Password input value changed"
+      );
+    }
+  );
+
+  let passwordGeneratedPromise = listenForTestNotification(
+    "PasswordFilledOrEdited"
+  );
+
+  info("Clicking the generated password AC item");
+  EventUtils.synthesizeMouseAtCenter(item, {});
+  info("Waiting for the content input value to change");
+  await inputEventPromise;
+  await passwordGeneratedPromise;
 }
 
 // Contextmenu functions //
@@ -648,26 +688,16 @@ async function doFillGeneratedPasswordContextMenuItem(browser, passwordInput) {
     "separator is visible"
   );
 
-  let passwordChangedPromise = ContentTask.spawn(
-    browser,
-    [passwordInput],
-    async function(passwordInput) {
-      let input = content.document.querySelector(passwordInput);
-      await ContentTaskUtils.waitForEvent(input, "input");
-    }
-  );
+  let popup = document.getElementById("PopupAutoComplete");
+  ok(popup, "Got popup");
+  let promiseShown = BrowserTestUtils.waitForEvent(popup, "popupshown");
 
-  let passwordGeneratedPromise = listenForTestNotification(
-    "PasswordFilledOrEdited"
-  );
   await new Promise(resolve => {
     SimpleTest.executeSoon(resolve);
   });
 
   EventUtils.synthesizeMouseAtCenter(generatedPasswordItem, {});
-  info(
-    "doFillGeneratedPasswordContextMenuItem: Waiting for content input event"
-  );
-  await passwordChangedPromise;
-  await passwordGeneratedPromise;
+
+  await promiseShown;
+  await fillGeneratedPasswordFromOpenACPopup(browser, passwordInput);
 }

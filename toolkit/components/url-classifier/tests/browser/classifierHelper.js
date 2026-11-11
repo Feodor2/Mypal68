@@ -37,7 +37,7 @@ classifierHelper.waitForInit = function() {
   // This url must sync with the table, url in SafeBrowsing.jsm addMozEntries
   const table = "test-phish-simple";
   const url = "http://itisatrap.org/firefox/its-a-trap.html";
-  let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+  let principal = Services.scriptSecurityManager.createContentPrincipal(
     Services.io.newURI(url),
     {}
   );

@@ -93,11 +93,17 @@ class DateTimePickerParent extends JSWindowActorParent {
       return;
     }
 
-    if (!aBrowser.dateTimePicker) {
+    let panel;
+    if (tabbrowser) {
+      panel = tabbrowser._getAndMaybeCreateDateTimePickerPanel();
+    } else {
+      panel = aBrowser.dateTimePicker;
+    }
+    if (!panel) {
       debug("aBrowser.dateTimePicker not found, exiting now.");
       return;
     }
-    this._picker = new DateTimePickerPanel(aBrowser.dateTimePicker);
+    this._picker = new DateTimePickerPanel(panel);
     this._picker.openPicker(type, rect, detail);
 
     this.addPickerListeners();

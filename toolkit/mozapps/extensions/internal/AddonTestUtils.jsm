@@ -119,9 +119,7 @@ class MockBarrier {
         } catch (e) {
           Cu.reportError(e);
           dump(
-            `Shutdown blocker '${name}' for ${this.name} threw error: ${e} :: ${
-              e.stack
-            }\n`
+            `Shutdown blocker '${name}' for ${this.name} threw error: ${e} :: ${e.stack}\n`
           );
         }
       })
@@ -882,8 +880,23 @@ var AddonTestUtils = {
       this.overrideEntry = null;
     }
 
+    const XPIscope = ChromeUtils.import(
+      "resource://gre/modules/addons/XPIProvider.jsm",
+      null
+    );
+
+    // Ensure some startup observers in XPIProvider are released.
+    Services.obs.notifyObservers(null, "test-load-xpi-database");
+
     Services.obs.notifyObservers(null, "quit-application-granted");
     await MockAsyncShutdown.quitApplicationGranted.trigger();
+
+    // If XPIDatabase.asyncLoadDB() has been called before, then _dbPromise is
+    // a promise, potentially still pending. Wait for it to settle before
+    // triggering profileBeforeChange, because the latter can trigger errors in
+    // the pending asyncLoadDB() by an indirect call to XPIDatabase.shutdown().
+    await XPIscope.XPIDatabase._dbPromise;
+
     await MockAsyncShutdown.profileBeforeChange.trigger();
     await MockAsyncShutdown.profileChangeTeardown.trigger();
 
@@ -908,10 +921,7 @@ var AddonTestUtils = {
 
     // Force the XPIProvider provider to reload to better
     // simulate real-world usage.
-    let XPIscope = ChromeUtils.import(
-      "resource://gre/modules/addons/XPIProvider.jsm",
-      null
-    );
+
     // This would be cleaner if I could get it as the rejection reason from
     // the AddonManagerInternal.shutdown() promise
     let shutdownError = XPIscope.XPIDatabase._saveError;

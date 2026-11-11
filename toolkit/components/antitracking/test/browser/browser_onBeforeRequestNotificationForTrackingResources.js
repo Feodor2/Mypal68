@@ -62,6 +62,7 @@ add_task(async function() {
         "privacy.restrict3rdpartystorage.userInteractionRequiredForHosts",
         "tracking.example.com,tracking.example.org",
       ],
+      ["privacy.trackingprotection.testing.report_blocked_node", true],
     ],
   });
 
@@ -79,7 +80,7 @@ add_task(async function() {
   await promise;
 
   info("Verify the number of tracking nodes found");
-  await ContentTask.spawn(browser, { expected: 3 }, async function(obj) {
+  await SpecialPowers.spawn(browser, [{ expected: 3 }], async function(obj) {
     is(
       content.document.blockedNodeByClassifierCount,
       obj.expected,

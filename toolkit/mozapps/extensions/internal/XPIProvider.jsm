@@ -674,6 +674,11 @@ class XPIStateLocation extends Map {
     this._installler = undefined;
   }
 
+  hasPrecedence(otherLocation) {
+    let locations = Array.from(XPIStates.locations());
+    return locations.indexOf(this) <= locations.indexOf(otherLocation);
+  }
+
   get installer() {
     if (this._installer === undefined) {
       this._installer = this.makeInstaller();
@@ -1753,9 +1758,7 @@ class BootstrapScope {
         );
       } else {
         logger.debug(
-          `Calling bootstrap method ${aMethod} on ${addon.id} version ${
-            addon.version
-          }`
+          `Calling bootstrap method ${aMethod} on ${addon.id} version ${addon.version}`
         );
 
         this._beforeCallBootstrapMethod(aMethod, params, aReason);
@@ -2445,8 +2448,6 @@ var XPIProvider = {
         async () => {
           XPIProvider._closing = true;
 
-          XPIDatabase.asyncLoadDB();
-
           await XPIProvider.cleanupTemporaryAddons();
           for (let addon of XPIProvider.sortBootstrappedAddons().reverse()) {
             // If no scope has been loaded for this add-on then there is no need
@@ -2499,6 +2500,13 @@ var XPIProvider = {
       // sessionstore-windows-restored.  In a browser toolbox process
       // we wait for the toolbox to show up, based on xul-window-visible
       // and a visible toolbox window.
+      //
+      // TelemetryEnvironment's EnvironmentAddonBuilder awaits databaseReady
+      // before releasing a blocker on AddonManager.beforeShutdown, which in its
+      // turn is a blocker of a shutdown blocker at "profile-before-change".
+      // To avoid a deadlock, trigger the DB load at "profile-before-change" if
+      // the database hasn't started loading yet.
+      //
       // Finally, we have a test-only event called test-load-xpi-database
       // as a temporary workaround for bug 1372845.  The latter can be
       // cleaned up when that bug is resolved.
@@ -2506,6 +2514,7 @@ var XPIProvider = {
         const EVENTS = [
           "sessionstore-windows-restored",
           "xul-window-visible",
+          "profile-before-change",
           "test-load-xpi-database",
         ];
         let observer = (subject, topic, data) => {
@@ -2558,13 +2567,6 @@ var XPIProvider = {
     if (Services.prefs.getBoolPref(PREF_PENDING_OPERATIONS, false)) {
       XPIDatabase.updateActiveAddons();
       Services.prefs.setBoolPref(PREF_PENDING_OPERATIONS, false);
-    }
-
-    // Ugh, if we reach this point without loading the xpi database,
-    // we need to load it know, otherwise the telemetry shutdown blocker
-    // will never resolve.
-    if (!XPIDatabase.initialized) {
-      await XPIDatabase.asyncLoadDB();
     }
 
     await XPIDatabase.shutdown();
@@ -2621,7 +2623,9 @@ var XPIProvider = {
         continue;
       }
 
-      let cleanNames = [];
+      // Collect any install errors for specific removal from the staged directory
+      // during cleanStagingDir.  Successful installs remove the files.
+      let stagedFailureNames = [];
       let promises = [];
       for (let [id, metadata] of loc.getStagedAddons()) {
         loc.unstageAddon(id);
@@ -2634,7 +2638,7 @@ var XPIProvider = {
             },
             error => {
               delete aManifests[loc.name][id];
-              cleanNames.push(`${id}.xpi`);
+              stagedFailureNames.push(`${id}.xpi`);
 
               logger.error(
                 `Failed to install staged add-on ${id} in ${loc.name}`,
@@ -2651,8 +2655,8 @@ var XPIProvider = {
       }
 
       try {
-        if (cleanNames.length) {
-          loc.installer.cleanStagingDir(cleanNames);
+        if (changed || stagedFailureNames.length) {
+          loc.installer.cleanStagingDir(stagedFailureNames);
         }
       } catch (e) {
         // Non-critical, just saves some perf on startup if we clean this up.

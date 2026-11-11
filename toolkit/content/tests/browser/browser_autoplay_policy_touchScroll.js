@@ -29,7 +29,7 @@ async function callMediaPlay(shouldStartPlaying) {
       audio.isPlayStarted = true;
       resolve();
     });
-    setTimeout(() => {
+    content.setTimeout(() => {
       if (audio.isPlayStarted) {
         return;
       }
@@ -74,7 +74,7 @@ add_task(async function setup_test_preference() {
   return SpecialPowers.pushPrefEnv({
     set: [
       ["media.autoplay.default", SpecialPowers.Ci.nsIAutoplay.BLOCKED],
-      ["media.autoplay.enabled.user-gestures-needed", true],
+      ["media.autoplay.blocking_policy", 0],
     ],
   });
 });

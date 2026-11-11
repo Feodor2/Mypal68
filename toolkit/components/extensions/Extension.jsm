@@ -315,14 +315,14 @@ var ExtensionAddonObserver = {
       // Clear any IndexedDB storage created by the extension
       // If LSNG is enabled, this also clears localStorage.
       let baseURI = Services.io.newURI(`moz-extension://${uuid}/`);
-      let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let principal = Services.scriptSecurityManager.createContentPrincipal(
         baseURI,
         {}
       );
       Services.qms.clearStoragesForPrincipal(principal);
 
       // Clear any storage.local data stored in the IDBBackend.
-      let storagePrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let storagePrincipal = Services.scriptSecurityManager.createContentPrincipal(
         baseURI,
         {
           userContextId: WEBEXT_STORAGE_USER_CONTEXT_ID,
@@ -1934,7 +1934,7 @@ class Extension extends ExtensionData {
   }
 
   createPrincipal(uri = this.baseURI, originAttributes = {}) {
-    return Services.scriptSecurityManager.createCodebasePrincipal(
+    return Services.scriptSecurityManager.createContentPrincipal(
       uri,
       originAttributes
     );

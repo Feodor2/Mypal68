@@ -128,7 +128,7 @@ add_task(async function test_CTP_plugins() {
     gHttpTestRoot + "plugin_test.html"
   );
 
-  await ContentTask.spawn(pluginTab.linkedBrowser, null, async function() {
+  await SpecialPowers.spawn(pluginTab.linkedBrowser, [], async function() {
     let testPlugin = content.document.getElementById("test");
     ok(testPlugin, "part5: should have a plugin element in the page");
     let condition = () => testPlugin.activated;
@@ -153,7 +153,7 @@ add_task(async function test_CTP_plugins() {
   );
   pluginBrowser = pluginTab.linkedBrowser;
 
-  await ContentTask.spawn(pluginTab.linkedBrowser, null, async function() {
+  await SpecialPowers.spawn(pluginTab.linkedBrowser, [], async function() {
     let testPlugin = content.document.getElementById("test");
     ok(testPlugin, "part7: should have a plugin element in the page");
     ok(!testPlugin.activated, "part7: plugin should not be activated");
@@ -185,7 +185,7 @@ add_task(async function test_CTP_plugins() {
   );
   pluginBrowser = pluginTab.linkedBrowser;
 
-  await ContentTask.spawn(pluginTab.linkedBrowser, null, async function() {
+  await SpecialPowers.spawn(pluginTab.linkedBrowser, [], async function() {
     let testPlugin = content.document.getElementById("test");
     ok(testPlugin, "part9: should have a plugin element in the page");
     let condition = () => testPlugin.activated;

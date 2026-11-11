@@ -262,7 +262,7 @@ var gViewSourceUtils = {
           webBrowserPersist.persistFlags = this.mnsIWebBrowserPersist.PERSIST_FLAGS_REPLACE_EXISTING_FILES;
           webBrowserPersist.progressListener = this.viewSourceProgressListener;
           let ssm = Services.scriptSecurityManager;
-          let principal = ssm.createCodebasePrincipal(
+          let principal = ssm.createContentPrincipal(
             data.uri,
             browser.contentPrincipal.originAttributes
           );

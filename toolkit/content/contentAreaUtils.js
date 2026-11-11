@@ -84,7 +84,7 @@ function saveURL(
 
 // Save the current document inside any browser/frame-like element,
 // whether in-process or out-of-process.
-function saveBrowser(aBrowser, aSkipPrompt, aOuterWindowID = 0) {
+function saveBrowser(aBrowser, aSkipPrompt, aBrowsingContext = null) {
   if (!aBrowser) {
     throw new Error("Must have a browser when calling saveBrowser");
   }
@@ -95,7 +95,7 @@ function saveBrowser(aBrowser, aSkipPrompt, aOuterWindowID = 0) {
     aBrowser.contentPrincipal.spec == "resource://pdf.js/web/viewer.html" &&
     aBrowser.currentURI.schemeIs("file")
   ) {
-    let correctPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+    let correctPrincipal = Services.scriptSecurityManager.createContentPrincipal(
       aBrowser.currentURI,
       aBrowser.contentPrincipal.originAttributes
     );
@@ -118,7 +118,7 @@ function saveBrowser(aBrowser, aSkipPrompt, aOuterWindowID = 0) {
     return;
   }
   let stack = Components.stack.caller;
-  persistable.startPersistence(aOuterWindowID, {
+  persistable.startPersistence(aBrowsingContext, {
     onDocumentReady(document) {
       if (!document || !(document instanceof Ci.nsIWebBrowserPersistDocument)) {
         throw new Error("Must have an nsIWebBrowserPersistDocument!");

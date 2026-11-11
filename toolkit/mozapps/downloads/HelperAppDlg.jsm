@@ -171,7 +171,7 @@ nsUnknownContentTypeDialog.prototype = {
   reallyShow() {
     try {
       let docShell = this.mContext.getInterface(Ci.nsIDocShell);
-      let rootWin = docShell.rootTreeItem.domWindow;
+      let rootWin = docShell.browsingContext.topChromeWindow;
       this.mDialog = Services.ww.openWindow(
         rootWin,
         "chrome://mozapps/content/downloads/unknownContentType.xhtml",
@@ -608,7 +608,7 @@ nsUnknownContentTypeDialog.prototype = {
     } else if (aTimer == this._saveToDiskTimer) {
       // Since saveToDisk may open a file picker and therefore block this routine,
       // we should only call it once the dialog is closed.
-      this.mLauncher.saveToDisk(null, false);
+      this.mLauncher.promptForSaveDestination();
       this._saveToDiskTimer = null;
     }
   },
@@ -1014,25 +1014,6 @@ nsUnknownContentTypeDialog.prototype = {
       var needUpdate = this.updateMIMEInfo();
 
       if (this.dialogElement("save").selected) {
-        // If we're using a default download location, create a path
-        // for the file to be saved to to pass to |saveToDisk| - otherwise
-        // we must ask the user to pick a save name.
-
-        /*
-        var prefs = Components.classes["@mozilla.org/preferences-service;1"].getService(Components.interfaces.nsIPrefBranch);
-        var targetFile = null;
-        try {
-          targetFile = prefs.getComplexValue("browser.download.defaultFolder",
-                                             Components.interfaces.nsIFile);
-          var leafName = this.dialogElement("location").getAttribute("realname");
-          // Ensure that we don't overwrite any existing files here.
-          targetFile = this.validateLeafName(targetFile, leafName, null);
-        }
-        catch(e) { }
-
-        this.mLauncher.saveToDisk(targetFile, false);
-        */
-
         // see @notify
         // we cannot use opener's setTimeout, see bug 420405
         this._saveToDiskTimer = Cc["@mozilla.org/timer;1"].createInstance(
@@ -1040,7 +1021,7 @@ nsUnknownContentTypeDialog.prototype = {
         );
         this._saveToDiskTimer.initWithCallback(this, 0, nsITimer.TYPE_ONE_SHOT);
       } else {
-        this.mLauncher.launchWithApplication(null, false);
+        this.mLauncher.launchWithApplication();
       }
 
       // Update user pref for this mime type (if necessary). We do not

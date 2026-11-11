@@ -1099,7 +1099,7 @@ static void ReadAllEntriesFromStorage(nsPIDOMWindowOuter* aWindow,
     return;
   }
 
-  nsCOMPtr<nsIPrincipal> storagePrincipal = doc->IntrinsicStoragePrincipal();
+  nsCOMPtr<nsIPrincipal> storagePrincipal = doc->EffectiveStoragePrincipal();
   if (!storagePrincipal) {
     return;
   }
@@ -1171,7 +1171,7 @@ void SessionStoreUtils::CollectedSessionStorage(
   }
 
   // This is not going to work for fission. Bug 1572084 for tracking it.
-  for (BrowsingContext* child : aBrowsingContext->GetChildren()) {
+  for (BrowsingContext* child : aBrowsingContext->Children()) {
     window = child->GetDOMWindow();
     if (!window) {
       return;
@@ -1212,11 +1212,11 @@ void SessionStoreUtils::RestoreSessionStorage(
 
     // OriginAttributes are always after a '^' character
     int32_t pos = entry.mKey.RFindChar('^');
-    nsCOMPtr<nsIPrincipal> principal = BasePrincipal::CreateCodebasePrincipal(
+    nsCOMPtr<nsIPrincipal> principal = BasePrincipal::CreateContentPrincipal(
         NS_ConvertUTF16toUTF8(Substring(entry.mKey, 0, pos)));
 
     nsCOMPtr<nsIPrincipal> storagePrincipal =
-        BasePrincipal::CreateCodebasePrincipal(
+        BasePrincipal::CreateContentPrincipal(
             NS_ConvertUTF16toUTF8(entry.mKey));
 
     BrowsingContext* const browsingContext =
@@ -1286,7 +1286,7 @@ static void CollectFrameTreeData(JSContext* aCx,
   uint32_t trailingNullCounter = 0;
 
   // This is not going to work for fission. Bug 1572084 for tracking it.
-  for (auto& child : aBrowsingContext->GetChildren()) {
+  for (auto& child : aBrowsingContext->Children()) {
     NullableRootedDictionary<CollectedData> data(aCx);
     CollectFrameTreeData(aCx, child, data, aFunc);
     if (data.IsNull()) {

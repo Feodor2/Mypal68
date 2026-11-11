@@ -57,6 +57,8 @@ add_task(async function test_unknownContentType_delayedbutton() {
     {
       gBrowser,
       url: LOAD_URI,
+      waitForLoad: false,
+      waitForStateStop: true,
     },
     async function() {
       let uctWindow = await UCTObserver.opened.promise;

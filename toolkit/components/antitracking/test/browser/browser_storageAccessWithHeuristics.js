@@ -35,11 +35,13 @@ add_task(async function testWindowOpenHeuristic() {
   await BrowserTestUtils.browserLoaded(browser);
 
   info("Loading tracking scripts");
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    {
-      page: TEST_3RD_PARTY_PAGE_WO,
-    },
+    [
+      {
+        page: TEST_3RD_PARTY_PAGE_WO,
+      },
+    ],
     async obj => {
       let msg = {};
       msg.blockingCallback = (async _ => {
@@ -187,12 +189,14 @@ add_task(async function testUserInteractionHeuristic() {
   await BrowserTestUtils.browserLoaded(browser);
 
   info("Loading tracking scripts");
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    {
-      page: TEST_3RD_PARTY_PAGE_UI,
-      popup: TEST_POPUP_PAGE,
-    },
+    [
+      {
+        page: TEST_3RD_PARTY_PAGE_UI,
+        popup: TEST_POPUP_PAGE,
+      },
+    ],
     async obj => {
       let msg = {};
       msg.blockingCallback = (async _ => {
@@ -284,12 +288,14 @@ add_task(async function testUserInteractionHeuristic() {
   await AntiTracking.interactWithTracker();
 
   info("Loading tracking scripts");
-  await ContentTask.spawn(
+  await SpecialPowers.spawn(
     browser,
-    {
-      page: TEST_3RD_PARTY_PAGE_UI,
-      popup: TEST_POPUP_PAGE,
-    },
+    [
+      {
+        page: TEST_3RD_PARTY_PAGE_UI,
+        popup: TEST_POPUP_PAGE,
+      },
+    ],
     async obj => {
       let msg = {};
       msg.blockingCallback = (async _ => {

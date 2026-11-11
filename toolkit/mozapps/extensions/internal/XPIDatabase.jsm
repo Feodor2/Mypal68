@@ -100,7 +100,6 @@ const PENDING_INSTALL_METADATA = [
   "targetApplications",
   "userDisabled",
   "softDisabled",
-  "existingAddonID",
   "sourceURI",
   "releaseNotesURI",
   "installDate",
@@ -1453,9 +1452,7 @@ this.XPIDatabase = {
         // don't know about (bug 902956)
         this._recordStartupError(`schemaMismatch-${inputAddons.schemaVersion}`);
         logger.debug(
-          `JSON schema mismatch: expected ${DB_SCHEMA}, actual ${
-            inputAddons.schemaVersion
-          }`
+          `JSON schema mismatch: expected ${DB_SCHEMA}, actual ${inputAddons.schemaVersion}`
         );
       }
 
@@ -1550,9 +1547,7 @@ this.XPIDatabase = {
           }
         } else {
           logger.warn(
-            `Extensions database ${
-              this.jsonFile.path
-            } exists but is not readable; rebuilding`,
+            `Extensions database ${this.jsonFile.path} exists but is not readable; rebuilding`,
             error
           );
           this._loadError = error;
@@ -2433,9 +2428,7 @@ this.XPIDatabaseReconcile = {
       // The add-on in the manifest should match the add-on ID.
       if (aNewAddon.id != aId) {
         throw new Error(
-          `Invalid addon ID: expected addon ID ${aId}, found ${
-            aNewAddon.id
-          } in manifest`
+          `Invalid addon ID: expected addon ID ${aId}, found ${aNewAddon.id} in manifest`
         );
       }
 
@@ -2476,9 +2469,7 @@ this.XPIDatabaseReconcile = {
       );
       if (aLocation.scope & disablingScopes) {
         logger.warn(
-          `Disabling foreign installed add-on ${aNewAddon.id} in ${
-            aLocation.name
-          }`
+          `Disabling foreign installed add-on ${aNewAddon.id} in ${aLocation.name}`
         );
         aNewAddon.userDisabled = true;
         aNewAddon.seen = false;
@@ -2992,30 +2983,24 @@ this.XPIDatabaseReconcile = {
           id
         );
 
-        if (
-          previousAddon.location &&
-          (!previousAddon._sourceBundle ||
-            (previousAddon._sourceBundle.exists() &&
-              !previousAddon._sourceBundle.equals(currentAddon._sourceBundle)))
-        ) {
-          promise = XPIInternal.BootstrapScope.get(previousAddon).update(
-            currentAddon
+        // Bug 1664144:  If the addon changed on disk we will catch it during
+        // the second scan initiated by getNewSideloads.  The addon may have
+        // already started, if so we need to ensure it restarts during the
+        // update, otherwise we're left in a state where the addon is enabled
+        // but not started.  We use the bootstrap started state to check that.
+        // isActive alone is not sufficient as that changes the characteristics
+        // of other updates and breaks many tests.
+        let restart =
+          isActive && XPIInternal.BootstrapScope.get(currentAddon).started;
+        if (restart) {
+          logger.warn(
+            `Updating and restart addon ${previousAddon.id} that changed on disk after being already started.`
           );
-        } else if (
-          this.isSystemAddonLocation(currentAddon.location) &&
-          previousAddon.version == currentAddon.version &&
-          previousAddon.userDisabled != currentAddon.userDisabled
-        ) {
-          // A system addon change, no need for install or update events.
-        } else {
-          let reason = XPIInstall.newVersionReason(
-            previousAddon.version,
-            currentAddon.version
-          );
-          XPIInternal.BootstrapScope.get(currentAddon).install(reason, false, {
-            oldVersion: previousAddon.version,
-          });
         }
+        promise = XPIInternal.BootstrapScope.get(previousAddon).update(
+          currentAddon,
+          restart
+        );
       }
 
       if (isActive != wasActive) {

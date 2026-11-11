@@ -33,7 +33,7 @@ const HOVER_TOGGLE_OPACITY = 1.0;
  * @resolves With the Picture-in-Picture window when ready.
  */
 async function triggerPictureInPicture(browser, videoID) {
-  let domWindowOpened = BrowserTestUtils.domWindowOpened(null);
+  let domWindowOpened = BrowserTestUtils.domWindowOpenedAndLoaded(null);
   let videoReady = SpecialPowers.spawn(browser, [videoID], async videoID => {
     let video = content.document.getElementById(videoID);
     let event = new content.CustomEvent("MozTogglePictureInPicture", {
@@ -45,7 +45,6 @@ async function triggerPictureInPicture(browser, videoID) {
     }, "Video is being cloned visually.");
   });
   let win = await domWindowOpened;
-  await BrowserTestUtils.waitForEvent(win, "load");
   await win.promiseDocumentFlushed(() => {});
   await videoReady;
   return win;
@@ -406,7 +405,7 @@ async function testToggleHelper(browser, videoID, canToggle) {
     info(
       "Clicking on toggle, and expecting a Picture-in-Picture window to open"
     );
-    let domWindowOpened = BrowserTestUtils.domWindowOpened(null);
+    let domWindowOpened = BrowserTestUtils.domWindowOpenedAndLoaded(null);
     await BrowserTestUtils.synthesizeMouseAtPoint(
       toggleLeft,
       toggleTop,

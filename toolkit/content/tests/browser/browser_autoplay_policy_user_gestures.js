@@ -65,7 +65,7 @@ function setupTestPreferences() {
   return SpecialPowers.pushPrefEnv({
     set: [
       ["media.autoplay.default", SpecialPowers.Ci.nsIAutoplay.BLOCKED],
-      ["media.autoplay.enabled.user-gestures-needed", true],
+      ["media.autoplay.blocking_policy", 0],
       ["media.autoplay.block-event.enabled", true],
       ["media.autoplay.block-webaudio", true],
       ["media.navigator.permission.fake", true],
@@ -210,7 +210,7 @@ function resumeWithoutExpectedSuccess() {
   let promise = ac.resume();
   ac.resumePromises.push(promise);
   return new Promise((resolve, reject) => {
-    setTimeout(() => {
+    content.setTimeout(() => {
       if (ac.state == "suspended") {
         ok(true, "audio context is still suspended");
         resolve();

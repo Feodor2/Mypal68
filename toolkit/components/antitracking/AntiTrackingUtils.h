@@ -18,10 +18,15 @@ class nsIURI;
 namespace mozilla {
 namespace dom {
 class BrowsingContext;
+class CanonicalBrowsingContext;
+class WindowGlobalParent;
 }  // namespace dom
 
 class AntiTrackingUtils final {
  public:
+  static already_AddRefed<nsPIDOMWindowInner> GetInnerWindow(
+      dom::BrowsingContext* aBrowsingContext);
+
   static already_AddRefed<nsPIDOMWindowOuter> GetTopWindow(
       nsPIDOMWindowInner* aWindow);
 
@@ -29,7 +34,7 @@ class AntiTrackingUtils final {
   static already_AddRefed<nsIURI> MaybeGetDocumentURIBeingLoaded(
       nsIChannel* aChannel);
 
-  static void CreateStoragePermissionKey(const nsCString& aTrackingOrigin,
+  static void CreateStoragePermissionKey(const nsACString& aTrackingOrigin,
                                          nsACString& aPermissionKey);
 
   // Given a principal, returns the storage permission key that will be used for
@@ -51,19 +56,63 @@ class AntiTrackingUtils final {
                                      uint32_t aBlockedReason);
 
   // Returns true if the storage permission is granted for the given channel.
-  // And this is meant to be called in the parent process.
+  // And this is meant to be called in the parent process. This only reflects
+  // the fact that whether the channel has the storage permission. It doesn't
+  // take the window hierarchy into account. i.e. this will return true even
+  // for a nested iframe that has storage permission.
   static bool HasStoragePermissionInParent(nsIChannel* aChannel);
 
-  // Return the toplevel inner window id, returns 0 if this is a toplevel
+  // Returns the toplevel inner window id, returns 0 if this is a toplevel
   // window.
   static uint64_t GetTopLevelAntiTrackingWindowId(
       dom::BrowsingContext* aBrowsingContext);
 
-  // Return the parent inner window id, returns 0 if this or the parent are not
+  // Returns the parent inner window id, returns 0 if this or the parent are not
   // a toplevel window. This is mainly used to determine the anti-tracking
   // storage area.
   static uint64_t GetTopLevelStorageAreaWindowId(
       dom::BrowsingContext* aBrowsingContext);
+
+  // Returns the principal of the given browsing context.
+  // This API should only be used either in child processes with an in-process
+  // browsing context or in the parent process.
+  static already_AddRefed<nsIPrincipal> GetPrincipal(
+      dom::BrowsingContext* aBrowsingContext);
+
+  // Returns the principal of the given browsing context and tracking origin.
+  // This API should only be used either in child processes with an in-process
+  // browsing context or in the parent process.
+  static bool GetPrincipalAndTrackingOrigin(
+      dom::BrowsingContext* aBrowsingContext, nsIPrincipal** aPrincipal,
+      nsACString& aTrackingOrigin);
+
+  // Retruns the cookie behavior of the given browsingContext,
+  // return BEHAVIOR_REJECT when fail.
+  static uint32_t GetCookieBehavior(dom::BrowsingContext* aBrowsingContext);
+
+  // Returns the top-level global window parent. But we would stop at the
+  // content window which is loaded by addons and consider this window as a top.
+  //
+  // Note that this is the parent-process implementation of
+  // nsGlobalWindowOuter::GetTopExcludingExtensionAccessibleContentFrames
+  static already_AddRefed<dom::WindowGlobalParent>
+  GetTopWindowExcludingExtensionAccessibleContentFrames(
+      dom::CanonicalBrowsingContext* aBrowsingContext, nsIURI* aURIBeingLoaded);
+
+  // Given a channel, compute and set the IsThirdPartyContextToTopWindow for
+  // this channel. This function is supposed to be called in the parent process.
+  static void ComputeIsThirdPartyToTopWindow(nsIChannel* aChannel);
+
+  // Given a channel, this function determines if this channel is a third party.
+  // Note that this function also considers the top-level window. The channel
+  // will be considered as a third party only when it's a third party to both
+  // its parent and the top-level window.
+  static bool IsThirdPartyChannel(nsIChannel* aChannel);
+
+  // Given a window and a URI, this function first determines if the window is
+  // third-party with respect to the URI. The function returns if it's true.
+  // Otherwise, it will continue to check if the window is third-party.
+  static bool IsThirdPartyWindow(nsPIDOMWindowInner* aWindow, nsIURI* aURI);
 };
 
 }  // namespace mozilla

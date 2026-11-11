@@ -51,6 +51,7 @@ class nsWebBrowserInitInfo {
   }
 
 class mozIDOMWindowProxy;
+class nsDocShell;
 
 namespace mozilla {
 namespace dom {
@@ -106,10 +107,8 @@ class nsWebBrowser final : public nsIWebBrowser,
 
   static already_AddRefed<nsWebBrowser> Create(
       nsIWebBrowserChrome* aContainerWindow, nsIWidget* aParentWidget,
-      const mozilla::OriginAttributes& aOriginAttributes,
       mozilla::dom::BrowsingContext* aBrowsingContext,
-      mozilla::dom::WindowGlobalChild* aInitialWindowChild,
-      bool aDisableHistory = false);
+      mozilla::dom::WindowGlobalChild* aInitialWindowChild);
 
  protected:
   virtual ~nsWebBrowser();
@@ -117,7 +116,6 @@ class nsWebBrowser final : public nsIWebBrowser,
 
   void SetDocShell(nsDocShell* aDocShell);
   void EnsureDocShellTreeOwner();
-  NS_IMETHOD EnableGlobalHistory(bool aEnable);
 
   nsIWidget* EnsureWidget();
 

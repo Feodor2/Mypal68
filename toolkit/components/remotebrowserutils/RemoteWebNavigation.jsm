@@ -28,32 +28,39 @@ class RemoteWebNavigation {
     this._browser = aBrowser;
   }
 
-  goBack() {
-    let cancelContentJSEpoch = this._cancelContentJSEpoch++;
+  maybeCancelContentJSExecution(aNavigationType, aOptions = {}) {
+    const epoch = this._cancelContentJSEpoch++;
     this._browser.frameLoader.remoteTab.maybeCancelContentJSExecution(
-      Ci.nsIRemoteTab.NAVIGATE_BACK,
-      { epoch: cancelContentJSEpoch }
+      aNavigationType,
+      { ...aOptions, epoch }
     );
-    this._sendMessage("WebNavigation:GoBack", { cancelContentJSEpoch });
+    return epoch;
   }
-  goForward() {
-    let cancelContentJSEpoch = this._cancelContentJSEpoch++;
-    this._browser.frameLoader.remoteTab.maybeCancelContentJSExecution(
-      Ci.nsIRemoteTab.NAVIGATE_FORWARD,
-      { epoch: cancelContentJSEpoch }
+
+  goBack(requireUserInteraction = false) {
+    let cancelContentJSEpoch = this.maybeCancelContentJSExecution(
+      Ci.nsIRemoteTab.NAVIGATE_BACK
     );
-    this._sendMessage("WebNavigation:GoForward", { cancelContentJSEpoch });
+    this._browser.browsingContext.goBack(
+      cancelContentJSEpoch,
+      requireUserInteraction
+    );
+  }
+  goForward(requireUserInteraction = false) {
+    let cancelContentJSEpoch = this.maybeCancelContentJSExecution(
+      Ci.nsIRemoteTab.NAVIGATE_FORWARD
+    );
+    this._browser.browsingContext.goForward(
+      cancelContentJSEpoch,
+      requireUserInteraction
+    );
   }
   gotoIndex(aIndex) {
-    let cancelContentJSEpoch = this._cancelContentJSEpoch++;
-    this._browser.frameLoader.remoteTab.maybeCancelContentJSExecution(
+    let cancelContentJSEpoch = this.maybeCancelContentJSExecution(
       Ci.nsIRemoteTab.NAVIGATE_INDEX,
-      { index: aIndex, epoch: cancelContentJSEpoch }
+      { index: aIndex }
     );
-    this._sendMessage("WebNavigation:GotoIndex", {
-      index: aIndex,
-      cancelContentJSEpoch,
-    });
+    this._browser.browsingContext.goToIndex(aIndex, cancelContentJSEpoch);
   }
   loadURI(aURI, aLoadURIOptions) {
     let uri;
@@ -83,7 +90,7 @@ class RemoteWebNavigation {
               ? 1
               : 0,
           };
-          principal = Services.scriptSecurityManager.createCodebasePrincipal(
+          principal = Services.scriptSecurityManager.createContentPrincipal(
             uri,
             attrs
           );
@@ -95,21 +102,20 @@ class RemoteWebNavigation {
       // reason (such as failing to parse the URI), just ignore it.
     }
 
-    let cancelContentJSEpoch = this._cancelContentJSEpoch++;
-    this._browser.frameLoader.remoteTab.maybeCancelContentJSExecution(
+    let cancelContentJSEpoch = this.maybeCancelContentJSExecution(
       Ci.nsIRemoteTab.NAVIGATE_URL,
-      { uri, epoch: cancelContentJSEpoch }
+      { uri }
     );
-    this._browser.frameLoader.browsingContext.loadURI(aURI, {
+    this._browser.browsingContext.loadURI(aURI, {
       ...aLoadURIOptions,
       cancelContentJSEpoch,
     });
   }
   reload(aReloadFlags) {
-    this._sendMessage("WebNavigation:Reload", { loadFlags: aReloadFlags });
+    this._browser.browsingContext.reload(aReloadFlags);
   }
   stop(aStopFlags) {
-    this._sendMessage("WebNavigation:Stop", { loadFlags: aStopFlags });
+    this._browser.browsingContext.stop(aStopFlags);
   }
 
   get document() {

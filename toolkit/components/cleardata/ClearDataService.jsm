@@ -123,11 +123,11 @@ const NetworkCacheCleaner = {
       // Delete data from both HTTP and HTTPS sites.
       let httpURI = Services.io.newURI("http://" + aHost);
       let httpsURI = Services.io.newURI("https://" + aHost);
-      let httpPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let httpPrincipal = Services.scriptSecurityManager.createContentPrincipal(
         httpURI,
         aOriginAttributes
       );
-      let httpsPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let httpsPrincipal = Services.scriptSecurityManager.createContentPrincipal(
         httpsURI,
         aOriginAttributes
       );
@@ -170,11 +170,11 @@ const ImageCacheCleaner = {
       // Delete data from both HTTP and HTTPS sites.
       let httpURI = Services.io.newURI("http://" + aHost);
       let httpsURI = Services.io.newURI("https://" + aHost);
-      let httpPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let httpPrincipal = Services.scriptSecurityManager.createContentPrincipal(
         httpURI,
         aOriginAttributes
       );
-      let httpsPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let httpsPrincipal = Services.scriptSecurityManager.createContentPrincipal(
         httpsURI,
         aOriginAttributes
       );
@@ -490,7 +490,7 @@ const QuotaCleaner = {
 
             let promises = [];
             for (const origin of aRequest.result) {
-              let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+              let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
                 origin
               );
               let host;
@@ -602,7 +602,7 @@ const QuotaCleaner = {
 
             let promises = [];
             for (let item of aRequest.result) {
-              let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+              let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
                 item.origin
               );
               if (

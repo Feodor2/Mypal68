@@ -148,7 +148,7 @@ function check_login_exists(aHost, aExists) {
  */
 function add_permission(aURI) {
   check_permission_exists(aURI, false);
-  let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+  let principal = Services.scriptSecurityManager.createContentPrincipal(
     aURI,
     {}
   );
@@ -166,7 +166,7 @@ function add_permission(aURI) {
  *        True if the permission should exist, false otherwise.
  */
 function check_permission_exists(aURI, aExists) {
-  let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+  let principal = Services.scriptSecurityManager.createContentPrincipal(
     aURI,
     {}
   );
@@ -445,7 +445,7 @@ async function test_cache_cleared() {
 
 async function test_storage_cleared() {
   function getStorageForURI(aURI) {
-    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+    let principal = Services.scriptSecurityManager.createContentPrincipal(
       aURI,
       {}
     );

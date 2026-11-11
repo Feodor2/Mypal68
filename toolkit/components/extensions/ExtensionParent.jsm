@@ -805,7 +805,7 @@ class ExtensionPageContextParent extends ProxyContextParent {
   // The window that contains this context. This may change due to moving tabs.
   get appWindow() {
     let win = this.xulBrowser.ownerGlobal;
-    return win.docShell.rootTreeItem.domWindow;
+    return win.browsingContext.topChromeWindow;
   }
 
   get currentWindow() {
@@ -1256,15 +1256,11 @@ class HiddenXULWindow {
 
     // The windowless browser is a thin wrapper around a docShell that keeps
     // its related resources alive. It implements nsIWebNavigation and
-    // forwards its methods to the underlying docShell, but cannot act as a
-    // docShell itself.  Getting .docShell gives us the
-    // underlying docShell, and `QueryInterface(nsIWebNavigation)` gives us
-    // access to the webNav methods that are already available on the
-    // windowless browser, but contrary to appearances, they are not the same
-    // object.
-    let chromeShell = windowlessBrowser.docShell.QueryInterface(
-      Ci.nsIWebNavigation
-    );
+    // forwards its methods to the underlying docShell. That .docShell
+    // needs `QueryInterface(nsIWebNavigation)` to give us access to the
+    // webNav methods that are already available on the windowless browser.
+    let chromeShell = windowlessBrowser.docShell;
+    chromeShell.QueryInterface(Ci.nsIWebNavigation);
 
     if (PrivateBrowsingUtils.permanentPrivateBrowsing) {
       let attrs = chromeShell.getOriginAttributes();
@@ -1272,16 +1268,10 @@ class HiddenXULWindow {
       chromeShell.setOriginAttributes(attrs);
     }
 
-    let system = Services.scriptSecurityManager.getSystemPrincipal();
-    chromeShell.createAboutBlankContentViewer(system, system);
-    chromeShell.useGlobalHistory = false;
-    let loadURIOptions = {
-      triggeringPrincipal: system,
-    };
-    chromeShell.loadURI(
-      "chrome://extensions/content/dummy.xhtml",
-      loadURIOptions
-    );
+    windowlessBrowser.browsingContext.useGlobalHistory = false;
+    chromeShell.loadURI("chrome://extensions/content/dummy.xhtml", {
+      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+    });
 
     await promiseObserved(
       "chrome-document-global-created",

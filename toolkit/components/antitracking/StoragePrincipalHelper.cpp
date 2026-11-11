@@ -16,16 +16,16 @@ namespace mozilla {
 namespace {
 
 bool ChooseOriginAttributes(nsIChannel* aChannel, OriginAttributes& aAttrs,
-                            bool aForceInstrinsicStoragePrincipal) {
+                            bool aForcePartitionedPrincipal) {
   MOZ_ASSERT(aChannel);
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-  nsCOMPtr<nsICookieJarSettings> cs;
-  if (NS_FAILED(loadInfo->GetCookieJarSettings(getter_AddRefs(cs)))) {
+  nsCOMPtr<nsICookieJarSettings> cjs;
+  if (NS_FAILED(loadInfo->GetCookieJarSettings(getter_AddRefs(cjs)))) {
     return false;
   }
 
-  if (!aForceInstrinsicStoragePrincipal) {
+  if (!aForcePartitionedPrincipal) {
     nsCOMPtr<nsIURI> uri;
     nsresult rv = aChannel->GetURI(getter_AddRefs(uri));
     if (NS_FAILED(rv)) {
@@ -41,11 +41,22 @@ bool ChooseOriginAttributes(nsIChannel* aChannel, OriginAttributes& aAttrs,
     // jar.  We use the lower-level ContentBlocking API here to ensure this
     // check doesn't send notifications.
     if (!ShouldPartitionStorage(rejectedReason) ||
-        !StoragePartitioningEnabled(rejectedReason, cs)) {
+        !StoragePartitioningEnabled(rejectedReason, cjs)) {
       return false;
     }
   }
 
+  nsAutoString partitionKey;
+  Unused << cjs->GetPartitionKey(partitionKey);
+
+  if (!partitionKey.IsEmpty()) {
+    aAttrs.SetPartitionKey(partitionKey);
+    return true;
+  }
+
+  // Fallback to get first-party domain from top-level principal when we can't
+  // get it from CookieJarSetting. This might happen when a channel is not
+  // opened via http, for example, about page.
   nsCOMPtr<nsIPrincipal> toplevelPrincipal = loadInfo->GetTopLevelPrincipal();
   if (!toplevelPrincipal) {
     return false;
@@ -59,7 +70,7 @@ bool ChooseOriginAttributes(nsIChannel* aChannel, OriginAttributes& aAttrs,
     return false;
   }
 
-  aAttrs.SetFirstPartyDomain(false, principalURI, true /* aForced */);
+  aAttrs.SetPartitionKey(principalURI);
   return true;
 }
 
@@ -68,6 +79,7 @@ bool ChooseOriginAttributes(nsIChannel* aChannel, OriginAttributes& aAttrs,
 // static
 nsresult StoragePrincipalHelper::Create(nsIChannel* aChannel,
                                         nsIPrincipal* aPrincipal,
+                                        bool aForceIsolation,
                                         nsIPrincipal** aStoragePrincipal) {
   MOZ_ASSERT(aChannel);
   MOZ_ASSERT(aPrincipal);
@@ -79,7 +91,7 @@ nsresult StoragePrincipalHelper::Create(nsIChannel* aChannel,
   });
 
   OriginAttributes attrs = aPrincipal->OriginAttributesRef();
-  if (!ChooseOriginAttributes(aChannel, attrs, false)) {
+  if (!ChooseOriginAttributes(aChannel, attrs, aForceIsolation)) {
     return NS_OK;
   }
 
@@ -89,6 +101,29 @@ nsresult StoragePrincipalHelper::Create(nsIChannel* aChannel,
       BasePrincipal::Cast(aPrincipal)->CloneForcingOriginAttributes(attrs);
 
   storagePrincipal.forget(aStoragePrincipal);
+  return NS_OK;
+}
+
+// static
+nsresult StoragePrincipalHelper::CreatePartitionedPrincipalForServiceWorker(
+    nsIPrincipal* aPrincipal, nsICookieJarSettings* aCookieJarSettings,
+    nsIPrincipal** aPartitionedPrincipal) {
+  MOZ_ASSERT(aPrincipal);
+  MOZ_ASSERT(aPartitionedPrincipal);
+
+  OriginAttributes attrs = aPrincipal->OriginAttributesRef();
+
+  nsAutoString partitionKey;
+  Unused << aCookieJarSettings->GetPartitionKey(partitionKey);
+
+  if (!partitionKey.IsEmpty()) {
+    attrs.SetPartitionKey(partitionKey);
+  }
+
+  nsCOMPtr<nsIPrincipal> partitionedPrincipal =
+      BasePrincipal::Cast(aPrincipal)->CloneForcingOriginAttributes(attrs);
+
+  partitionedPrincipal.forget(aPartitionedPrincipal);
   return NS_OK;
 }
 
@@ -265,12 +300,13 @@ bool StoragePrincipalHelper::GetOriginAttributesForNetworkState(
 // static
 void StoragePrincipalHelper::GetOriginAttributesForNetworkState(
     Document* aDocument, OriginAttributes& aAttributes) {
+  aAttributes = aDocument->NodePrincipal()->OriginAttributesRef();
+
   if (!StaticPrefs::privacy_partition_network_state()) {
-    aAttributes = aDocument->NodePrincipal()->OriginAttributesRef();
     return;
   }
 
-  aAttributes = aDocument->IntrinsicStoragePrincipal()->OriginAttributesRef();
+  aAttributes = aDocument->PartitionedPrincipal()->OriginAttributesRef();
 }
 
 }  // namespace mozilla

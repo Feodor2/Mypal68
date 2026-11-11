@@ -379,11 +379,9 @@ addon-detail-version-label = Version
 addon-detail-last-updated-label = Last Updated
 addon-detail-homepage-label = Homepage
 
-# The average rating that the add-on has received.
-# Variables:
-#   $rating (number) - A number between 0 and 5. The translation should show at most one digit after the comma.
-five-star-rating =
-  .title = Rated { NUMBER($rating, maximumFractionDigits: 1) } out of 5
+# Message for add-ons with a staged pending update.
+install-postponed-message = This extension will be updated when { -brand-short-name } restarts.
+install-postponed-button = Update Now
 
 # This string is used to show that an add-on is disabled.
 # Variables:

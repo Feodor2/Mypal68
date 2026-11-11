@@ -14,6 +14,10 @@ tooltip {
   -moz-default-appearance: tooltip;
   margin-top: 21px;
   max-width: 40em;
+
+  padding: 6px 10px; /* Matches Adwaita. */
+
   color: InfoText;
+  background-color: InfoBackground;
   font: message-box;
 }

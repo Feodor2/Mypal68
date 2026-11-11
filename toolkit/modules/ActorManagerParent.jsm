@@ -24,12 +24,20 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { DefaultMap } = ExtensionUtils;
 
 /**
+ * Fission-compatible JSProcess implementations.
+ * Each actor options object takes the form of a ProcessActorOptions dictionary.
+ * Detailed documentation of these options is in dom/docs/Fission.rst,
+ * available at https://firefox-source-docs.mozilla.org/dom/Fission.html#jsprocessactor
+ */
+let JSPROCESSACTORS = {};
+
+/**
  * Fission-compatible JSWindowActor implementations.
  * Each actor options object takes the form of a WindowActorOptions dictionary.
  * Detailed documentation of these options is in dom/docs/Fission.rst,
  * available at https://firefox-source-docs.mozilla.org/dom/Fission.html#jswindowactor
  */
-let ACTORS = {
+let JSWINDOWACTORS = {
   AudioPlayback: {
     parent: {
       moduleURI: "resource://gre/actors/AudioPlaybackParent.jsm",
@@ -360,28 +368,6 @@ let ACTORS = {
 
     allFrames: true,
   },
-
-  WebNavigation: {
-    child: {
-      moduleURI: "resource://gre/actors/WebNavigationChild.jsm",
-    },
-  },
-
-  Zoom: {
-    parent: {
-      moduleURI: "resource://gre/actors/ZoomParent.jsm",
-    },
-    child: {
-      moduleURI: "resource://gre/actors/ZoomChild.jsm",
-      events: {
-        FullZoomChange: {},
-        TextZoomChange: {},
-        ZoomChangeUsingMouseWheel: {},
-      },
-    },
-
-    allFrames: true,
-  },
 };
 
 /*
@@ -408,7 +394,7 @@ let ACTORS = {
  * AudioPlaybackChild which lives in AudioPlaybackChild.jsm.
  *
  *
- * Actors are defined by calling ActorManagerParent.addActors, with an object
+ * Actors are defined by calling ActorManagerParent.addJSWindowActors, with an object
  * containing a property for each actor being defined, whose value is an object
  * describing how the actor should be loaded. That object may have the following
  * properties:
@@ -546,10 +532,30 @@ var ActorManagerParent = {
   // filter keys as understood by MozDocumentMatcher.
   singletons: new DefaultMap(() => new ActorSet(null, "Child")),
 
-  addActors(actors) {
-    for (let [actorName, actor] of Object.entries(actors)) {
-      ChromeUtils.registerWindowActor(actorName, actor);
+  _addActors(actors, kind) {
+    let register, unregister;
+    switch (kind) {
+      case "JSProcessActor":
+        register = ChromeUtils.registerProcessActor;
+        unregister = ChromeUtils.unregisterProcessActor;
+        break;
+      case "JSWindowActor":
+        register = ChromeUtils.registerWindowActor;
+        unregister = ChromeUtils.unregisterWindowActor;
+        break;
+      default:
+        throw new Error("Invalid JSActor kind " + kind);
     }
+    for (let [actorName, actor] of Object.entries(actors)) {
+      register(actorName, actor);
+    }
+  },
+
+  addJSProcessActors(actors) {
+    this._addActors(actors, "JSProcessActor");
+  },
+  addJSWindowActors(actors) {
+    this._addActors(actors, "JSWindowActor");
   },
 
   addLegacyActors(actors) {
@@ -591,5 +597,6 @@ var ActorManagerParent = {
   },
 };
 
-ActorManagerParent.addActors(ACTORS);
+ActorManagerParent.addJSProcessActors(JSPROCESSACTORS);
+ActorManagerParent.addJSWindowActors(JSWINDOWACTORS);
 ActorManagerParent.addLegacyActors(LEGACY_ACTORS);

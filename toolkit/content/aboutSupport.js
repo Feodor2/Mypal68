@@ -1373,10 +1373,11 @@ function setupEventListeners() {
   let button = $("show-update-history-button");
   if (button) {
     button.addEventListener("click", function(event) {
-      let uri = "chrome://mozapps/content/update/history.xhtml";
-      let features = "chrome,centerscreen,resizable=no,titlebar,toolbar=no," +
-                     "dialog=yes,modal";
-      Services.ww.openWindow(window, uri, "Update:History", features, null);
+      window.browsingContext.topChromeWindow.openDialog(
+        "chrome://mozapps/content/update/history.xhtml",
+        "Update:History",
+        "centerscreen,resizable=no,titlebar,modal"
+      );
     });
   }
   button = $("reset-box-button");

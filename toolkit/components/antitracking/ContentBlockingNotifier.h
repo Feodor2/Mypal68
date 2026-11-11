@@ -15,6 +15,9 @@ class nsPIDOMWindowInner;
 class nsPIDOMWindowOuter;
 
 namespace mozilla {
+namespace dom {
+class BrowsingContext;
+}  // namespace dom
 
 class ContentBlockingNotifier final {
  public:
@@ -22,7 +25,7 @@ class ContentBlockingNotifier final {
     eBlock,
     eAllow,
   };
-  enum StorageAccessGrantedReason {
+  enum StorageAccessPermissionGrantedReason {
     eStorageAccessAPI,
     eOpenerAfterUserInteraction,
     eOpener
@@ -37,7 +40,6 @@ class ContentBlockingNotifier final {
   //
   // aRejectedReason must be one of these values:
   //  * nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION
-  //  * nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER
   //  * nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL
   //  * nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN
   static void OnDecision(nsIChannel* aChannel, BlockingDecision aDecision,
@@ -46,9 +48,19 @@ class ContentBlockingNotifier final {
   static void OnDecision(nsPIDOMWindowInner* aWindow,
                          BlockingDecision aDecision, uint32_t aRejectedReason);
 
-  static void ReportUnblockingToConsole(nsPIDOMWindowInner* aWindow,
-                                        const nsAString& aTrackingOrigin,
-                                        StorageAccessGrantedReason aReason);
+  static void OnDecision(dom::BrowsingContext* aBrowsingContext,
+                         BlockingDecision aDecision, uint32_t aRejectedReason);
+
+  static void OnEvent(nsIChannel* aChannel, uint32_t aRejectedReason);
+
+  static void OnEvent(
+      nsIChannel* aChannel, bool aBlocked, uint32_t aRejectedReason,
+      const nsACString& aTrackingOrigin,
+      const Maybe<StorageAccessPermissionGrantedReason>& aReason = Nothing());
+
+  static void ReportUnblockingToConsole(
+      dom::BrowsingContext* aBrowsingContext, const nsAString& aTrackingOrigin,
+      StorageAccessPermissionGrantedReason aReason);
 };
 
 }  // namespace mozilla

@@ -5,11 +5,16 @@
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-var EXPORTED_SYMBOLS = ["TestChild"];
+var EXPORTED_SYMBOLS = ["TestProcessActorChild"];
 
-class TestChild extends JSWindowActorChild {
+class TestProcessActorChild extends JSProcessActorChild {
   constructor() {
     super();
+    this.sawActorCreated = false;
+  }
+
+  actorCreated() {
+    this.sawActorCreated = true;
   }
 
   receiveMessage(aMessage) {
@@ -37,34 +42,27 @@ class TestChild extends JSWindowActorChild {
     return undefined;
   }
 
-  handleEvent(aEvent) {
-    this.sendAsyncMessage("event", { type: aEvent.type });
-  }
-
   observe(subject, topic, data) {
-    switch (topic) {
-      case "audio-playback":
-        this.done({subject, topic, data});
-        break;
-      default:
-        this.lastObserved = { subject, topic, data };
-        break;
-    }
+    this.lastObserved = { subject, topic, data };
   }
 
   show() {
-    return "TestChild";
+    return "TestProcessActorChild";
   }
 
   willDestroy() {
     Services.obs.notifyObservers(
       this,
-      "test-js-window-actor-willdestroy",
+      "test-js-content-actor-willdestroy",
       true
     );
   }
 
   didDestroy() {
-    Services.obs.notifyObservers(this, "test-js-window-actor-diddestroy", true);
+    Services.obs.notifyObservers(
+      this,
+      "test-js-content-actor-diddestroy",
+      true
+    );
   }
 }

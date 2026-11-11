@@ -1,4 +1,3 @@
-/* eslint-disable mozilla/no-arbitrary-setTimeout */
 "use strict";
 
 const { E10SUtils } = ChromeUtils.import(
@@ -54,14 +53,11 @@ async function test_coop(
     async function(_browser) {
       info(`test_coop: Test tab ready: ${start}`);
 
-      await new Promise(resolve => setTimeout(resolve, 20));
       let browser = gBrowser.selectedBrowser;
       let firstRemoteType = browser.remoteType;
-      let firstProcessID = browser.frameLoader.remoteTab.osPid;
+      let firstBC = browser.browsingContext;
 
-      info(
-        `firstProcessID: ${firstProcessID} firstRemoteType: ${firstRemoteType}`
-      );
+      info(`firstBC: ${firstBC.id} remoteType: ${firstRemoteType}`);
 
       if (startRemoteTypeCheck) {
         startRemoteTypeCheck(firstRemoteType);
@@ -73,41 +69,22 @@ async function test_coop(
           url: target,
           maybeErrorPage: false,
         },
-        async () => {
-          BrowserTestUtils.loadURI(browser, target);
-          if (expectedProcessSwitch) {
-            await BrowserTestUtils.waitForEvent(
-              gBrowser.getTabForBrowser(browser),
-              "SSTabRestored"
-            );
-          }
-        }
+        async () => BrowserTestUtils.loadURI(browser, target)
       );
 
       info(`Navigated to: ${target}`);
-      await new Promise(resolve => setTimeout(resolve, 20));
       browser = gBrowser.selectedBrowser;
       let secondRemoteType = browser.remoteType;
-      let secondProcessID = browser.frameLoader.remoteTab.osPid;
+      let secondBC = browser.browsingContext;
 
-      info(
-        `secondProcessID: ${secondProcessID} secondRemoteType: ${secondRemoteType}`
-      );
+      info(`secondBC: ${secondBC.id} remoteType: ${secondRemoteType}`);
       if (targetRemoteTypeCheck) {
         targetRemoteTypeCheck(secondRemoteType);
       }
       if (expectedProcessSwitch) {
-        Assert.notEqual(
-          firstProcessID,
-          secondProcessID,
-          `from: ${start} to ${target}`
-        );
+        Assert.notEqual(firstBC.id, secondBC.id, `from: ${start} to ${target}`);
       } else {
-        Assert.equal(
-          firstProcessID,
-          secondProcessID,
-          `from: ${start} to ${target}`
-        );
+        Assert.equal(firstBC.id, secondBC.id, `from: ${start} to ${target}`);
       }
     }
   );
@@ -156,28 +133,17 @@ async function test_download_from(initCoop, downloadCoop) {
         maybeErrorPage: false,
       },
       async () => {
-        BrowserTestUtils.loadURI(_browser, start);
         info(`test_download: Loading download page ${start}`);
-
-        // Wait for process switch even the page is load from a new tab.
-        if (initCoop != "") {
-          await BrowserTestUtils.waitForEvent(
-            gBrowser.getTabForBrowser(_browser),
-            "SSTabRestored"
-          );
-        }
+        return BrowserTestUtils.loadURI(_browser, start);
       }
     );
 
     info(`test_download: Download page ready ${start}`);
-
-    await new Promise(resolve => setTimeout(resolve, 20));
-
     info(`Downloading ${downloadCoop}`);
 
     let winPromise = waitForDownloadWindow();
     let browser = gBrowser.selectedBrowser;
-    ContentTask.spawn(browser, downloadCoop, downloadCoop => {
+    SpecialPowers.spawn(browser, [downloadCoop], downloadCoop => {
       content.document.getElementById(downloadCoop).click();
     });
 
@@ -199,10 +165,7 @@ add_task(async function test_multiple_nav_process_switches() {
       waitForStateStop: true,
     },
     async function(browser) {
-      await new Promise(resolve => setTimeout(resolve, 20));
-      let prevPID = await ContentTask.spawn(browser, null, () => {
-        return Services.appinfo.processID;
-      });
+      let prevBC = browser.browsingContext;
 
       let target = httpURL("coop_header.sjs?.", "https://example.org");
       await performLoad(
@@ -211,17 +174,11 @@ add_task(async function test_multiple_nav_process_switches() {
           url: target,
           maybeErrorPage: false,
         },
-        async () => {
-          BrowserTestUtils.loadURI(browser, target);
-        }
+        async () => BrowserTestUtils.loadURI(browser, target)
       );
 
-      let currentPID = await ContentTask.spawn(browser, null, () => {
-        return Services.appinfo.processID;
-      });
-
-      Assert.equal(prevPID, currentPID);
-      prevPID = currentPID;
+      Assert.equal(prevBC, browser.browsingContext);
+      prevBC = browser.browsingContext;
 
       target = httpURL(
         "coop_header.sjs?coop=same-origin",
@@ -233,22 +190,11 @@ add_task(async function test_multiple_nav_process_switches() {
           url: target,
           maybeErrorPage: false,
         },
-        async () => {
-          BrowserTestUtils.loadURI(browser, target);
-          await BrowserTestUtils.waitForEvent(
-            gBrowser.getTabForBrowser(browser),
-            "SSTabRestored"
-          );
-        }
+        async () => BrowserTestUtils.loadURI(browser, target)
       );
 
-      await new Promise(resolve => setTimeout(resolve, 20));
-      currentPID = await ContentTask.spawn(browser, null, () => {
-        return Services.appinfo.processID;
-      });
-
-      Assert.notEqual(prevPID, currentPID);
-      prevPID = currentPID;
+      Assert.notEqual(prevBC, browser.browsingContext);
+      prevBC = browser.browsingContext;
 
       target = httpURL(
         "coop_header.sjs?coop=same-origin",
@@ -260,22 +206,11 @@ add_task(async function test_multiple_nav_process_switches() {
           url: target,
           maybeErrorPage: false,
         },
-        async () => {
-          BrowserTestUtils.loadURI(browser, target);
-          await BrowserTestUtils.waitForEvent(
-            gBrowser.getTabForBrowser(browser),
-            "SSTabRestored"
-          );
-        }
+        async () => BrowserTestUtils.loadURI(browser, target)
       );
 
-      await new Promise(resolve => setTimeout(resolve, 20));
-      currentPID = await ContentTask.spawn(browser, null, () => {
-        return Services.appinfo.processID;
-      });
-
-      Assert.notEqual(prevPID, currentPID);
-      prevPID = currentPID;
+      Assert.notEqual(prevBC, browser.browsingContext);
+      prevBC = browser.browsingContext;
 
       target = httpURL(
         "coop_header.sjs?coop=same-origin&index=4",
@@ -287,18 +222,10 @@ add_task(async function test_multiple_nav_process_switches() {
           url: target,
           maybeErrorPage: false,
         },
-        async () => {
-          BrowserTestUtils.loadURI(browser, target);
-        }
+        async () => BrowserTestUtils.loadURI(browser, target)
       );
 
-      await new Promise(resolve => setTimeout(resolve, 20));
-      currentPID = await ContentTask.spawn(browser, null, () => {
-        return Services.appinfo.processID;
-      });
-
-      Assert.equal(prevPID, currentPID);
-      prevPID = currentPID;
+      Assert.equal(prevBC, browser.browsingContext);
     }
   );
 });

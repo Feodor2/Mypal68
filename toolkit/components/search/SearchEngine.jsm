@@ -2181,7 +2181,7 @@ class SearchEngine {
 
     let callbacks = options.window.docShell.QueryInterface(Ci.nsILoadContext);
 
-    // Using the codebase principal which is constructed by the search URI
+    // Using the content principal which is constructed by the search URI
     // and given originAttributes. If originAttributes are not given, we
     // fallback to use the docShell's originAttributes.
     let attrs = options.originAttributes;
@@ -2190,7 +2190,7 @@ class SearchEngine {
       attrs = options.window.docShell.getOriginAttributes();
     }
 
-    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+    let principal = Services.scriptSecurityManager.createContentPrincipal(
       searchURI,
       attrs
     );

@@ -5,6 +5,7 @@
 #include "nsISupports.idl"
 
 interface nsIPrincipal;
+interface nsIURI;
 
 /**
  * C++ exposed interface for the `E10SUtils` object from the
@@ -17,6 +18,9 @@ interface nsIE10SUtils : nsISupports {
    * principal.
    *
    * @param aPrincipal  The result principal for the document being loaded.
+   * @param aChannelOriginalURI. The original URI being loaded
+   *                             (which isn't always the same as the Principal's
+   *                              URI)
    * @param aMultiProcess  Does the browser have remote tabs enabled.
    * @param aRemoteSubframes  Does the browser have remote subframes enabled.
    * @param aPreferredRemoteType  If multiple remote types are compatible with
@@ -27,6 +31,7 @@ interface nsIE10SUtils : nsISupports {
    * @return  The remote type to complete this load in.
    */
   AUTF8String getRemoteTypeForPrincipal(in nsIPrincipal aPrincipal,
+                                        in nsIURI aChannelOriginalURI,
                                         in boolean aMultiProcess,
                                         in boolean aRemoteSubframes,
                                         in AUTF8String aPreferredRemoteType,

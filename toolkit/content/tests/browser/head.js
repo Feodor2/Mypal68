@@ -157,7 +157,7 @@ function leave_icon(icon) {
  */
 class DateTimeTestHelper {
   constructor() {
-    this.panel = document.getElementById("DateTimePickerPanel");
+    this.panel = gBrowser._getAndMaybeCreateDateTimePickerPanel();
     this.panel.setAttribute("animate", false);
     this.tab = null;
     this.frame = null;

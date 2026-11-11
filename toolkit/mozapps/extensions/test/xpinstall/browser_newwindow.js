@@ -10,7 +10,7 @@ async function test() {
   waitForExplicitFinish(); // have to call this ourselves because we're async.
   Harness.installConfirmCallback = confirm_install;
   Harness.installEndedCallback = install => {
-    install.cancel();
+    return install.addon.uninstall();
   };
   Harness.installsCompletedCallback = finish_test;
   Harness.finalContentEvent = "InstallComplete";
@@ -46,9 +46,9 @@ async function finish_test(count) {
 
   PermissionTestUtils.remove(exampleURI, "install");
 
-  const results = await ContentTask.spawn(
+  const results = await SpecialPowers.spawn(
     win.gBrowser.selectedBrowser,
-    null,
+    [],
     () => {
       return {
         return: content.document.getElementById("return").textContent,

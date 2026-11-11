@@ -304,7 +304,7 @@ var gTests = [
             { command: "unsolicited" },
             {
               browsingContext: targetBrowser.browsingContext,
-              principal: Services.scriptSecurityManager.createCodebasePrincipal(
+              principal: Services.scriptSecurityManager.createContentPrincipal(
                 targetURI,
                 {}
               ),
@@ -346,7 +346,7 @@ var gTests = [
         },
         async function(targetBrowser) {
           let mismatchURI = Services.io.newURI(HTTP_MISMATCH_PATH);
-          let mismatchPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+          let mismatchPrincipal = Services.scriptSecurityManager.createContentPrincipal(
             mismatchURI,
             {}
           );
@@ -361,7 +361,7 @@ var gTests = [
             }
           );
 
-          let targetPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+          let targetPrincipal = Services.scriptSecurityManager.createContentPrincipal(
             targetURI,
             {}
           );

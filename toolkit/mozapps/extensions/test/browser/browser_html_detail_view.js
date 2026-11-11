@@ -140,7 +140,7 @@ add_task(async function enableHtmlViews() {
       description: "Short description",
       fullDescription: "Longer description\nWith brs!",
       type: "extension",
-      contributionURL: "http://localhost/contribute",
+      contributionURL: "http://example.com/contribute",
       userPermissions: {
         origins: ["<all_urls>", "file://*/*"],
         permissions: ["alarms", "contextMenus", "tabs", "webNavigation"],
@@ -243,6 +243,18 @@ add_task(async function testOpenDetailView() {
   loaded = waitForViewLoad(win);
   card.querySelector('[action="expand"]').click();
   await loaded;
+
+  await goBack(win);
+
+  // Test click on add-on name.
+  card = getAddonCard(doc, id2);
+  ok(!card.querySelector("addon-details"), "The card isn't expanded");
+  let addonName = card.querySelector(".addon-name");
+  loaded = waitForViewLoad(win);
+  EventUtils.synthesizeMouseAtCenter(addonName, {}, win);
+  await loaded;
+  card = getAddonCard(doc, id2);
+  ok(card.querySelector("addon-details"), "The card is expanded");
 
   await closeView(win);
   await extension.unload();
@@ -397,7 +409,7 @@ add_task(async function testFullDetails() {
 
   let waitForTab = BrowserTestUtils.waitForNewTab(
     gBrowser,
-    "http://localhost/contribute"
+    "http://example.com/contribute"
   );
   contrib.querySelector("button").click();
   BrowserTestUtils.removeTab(await waitForTab);
@@ -998,7 +1010,8 @@ add_task(async function testGoBackButtonIsDisabledWhenHistoryIsEmptyInNewTab() {
   );
   let addonsTabLoaded = BrowserTestUtils.waitForNewTab(
     gBrowser,
-    "about:addons"
+    "about:addons",
+    true
   );
   // Simulate a click on "Manage extension" from a context menu.
   let win = await BrowserOpenAddonsMgr(viewID);

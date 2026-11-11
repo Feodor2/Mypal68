@@ -146,19 +146,7 @@ function disallowCertOverridesIfNeeded() {
 
 function initPage() {
   var err = getErrorCode();
-  // List of error pages with an illustration.
-  let illustratedErrors = [
-    "malformedURI",
-    "dnsNotFound",
-    "connectionFailure",
-    "netInterrupt",
-    "netTimeout",
-    "netReset",
-    "netOffline",
-  ];
-  if (illustratedErrors.includes(err)) {
-    document.body.classList.add("illustrated", err);
-  }
+
   if (err == "blockedByPolicy") {
     document.body.classList.add("blocked");
   }

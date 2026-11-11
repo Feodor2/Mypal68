@@ -1,7 +1,1 @@
-<!-- This Source Code Form is subject to the terms of the Mozilla Public
-   - License, v. 2.0. If a copy of the MPL was not distributed with this
-   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="context-fill" fill-opacity="context-fill-opacity">
-  <path d="M14 3h-2v2h2v8H2V5h7V3h-.849L6.584 1.538A2 2 0 0 0 5.219 1H2a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zM2 3h3.219l1.072 1H2z"/>
-  <path d="M8.146 6.146a.5.5 0 0 0 0 .707l2 2a.5.5 0 0 0 .707 0l2-2a.5.5 0 1 0-.707-.707L11 7.293V.5a.5.5 0 0 0-1 0v6.793L8.854 6.146a.5.5 0 0 0-.708 0z"/>
-</svg>
+<svg height="16" width="16" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><image height="16" width="16" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAgY0hSTQAAeiYAAICEAAD6AAAAgOgAAHUwAADqYAAAOpgAABdwnLpRPAAAAAlwSFlzAAAAJgAAACYB+E5zqwAAAYZJREFUOE9jZCACKCTL/kdW9mDuY0YitCGUaDbz/nfeKPXfbYvcf51WQRTDiDJIu0UAqFn+v9d25f96bSKkG6DbKvTfa4fKf7/dGv8N2sVJN0CvTRSoWfN/0D69/0adkqgGPN3hOhOI/yPjN2fi1UB+AwUeDAfv1/sfdsgYzocHLEjj///rUDDMMMtJ8v/d1qj+D96v/z8cqDnqqMX/ojvB/1NPev4371WEuARiwHIoXgakl/1/fyUH7iKn+Rr/fTbq/o8+BtPs9d9rqRHCG4+2uvz//+8JED+F4idgzciu8lxq8D/3cuD/tJMgzcbI3p3JcG+D3f//76oQ+EMV1ABUV1n0Kv+37FMBGvwNjkEWMdxcZ/P//8t8KC4A0gX/sbkK3ZUgPkgdw+UVVv//XYv+/x8JY3PVf6DLwPhdDRRX/QepY7i41Oz/v9OxKBibq/6/ALkO5FIgDWYX/AepY9jWLDkTiP8jY2yugrkSmQapw5oXsLkK3ZUgPkgdVgOwuQrdlVD+TABuwQAE9HN5bwAAAABJRU5ErkJggg=="/></svg>

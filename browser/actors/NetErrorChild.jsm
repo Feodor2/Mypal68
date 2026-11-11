@@ -633,7 +633,6 @@ class NetErrorChild extends ActorChild {
           "wrongSystemTime_systemDate1"
         ).textContent = systemDate;
         if (clockSkew) {
-          doc.body.classList.add("illustrated", "clockSkewError");
           let clockErrTitle = doc.getElementById("et_clockSkewError");
           let clockErrDesc = doc.getElementById("ed_clockSkewError");
           // eslint-disable-next-line no-unsanitized/property

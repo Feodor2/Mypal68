@@ -4,13 +4,6 @@
 
 @import url("chrome://browser/skin/error-pages.css");
 
-.illustrated #errorPageContainer {
-  min-height: 300px;
-  display: flex;
-  flex-direction: column;
-  background-position: left center;
-}
-
 #errorPageContainer:dir(rtl) {
   background-position-x: right;
 }

@@ -28,6 +28,11 @@ appmenu-update-restart-message = After a quick restart, { -brand-shorter-name } 
 appmenu-addon-private-browsing-installed =
     .buttonlabel = Okay, Got It
     .buttonaccesskey = O
+appmenu-addon-install-postponed =
+    .buttonlabel = Okay, Got It
+    .buttonaccesskey = O
+    .secondarybuttonlabel = Force update
+    .secondarybuttonaccesskey = F
 appmenu-addon-post-install-message = Manage your add-ons by clicking <image data-l10n-name='addon-install-icon'></image> in the <image data-l10n-name='addon-menu-icon'></image> menu.
 appmenu-addon-post-install-incognito-checkbox =
     .label = Allow this extension to run in Private Windows

@@ -317,6 +317,20 @@ BrowserListener.prototype = {
   },
 
   cancelInstall() {
+    // Installs that are already staged no longer depend on this browser
+    // window. Cancelling them here (on message-manager-close at shutdown, or
+    // when the tab navigates to another origin) would silently discard a
+    // staged or postponed update: Install.cancel() unstages the XPI and
+    // removes its staged metadata before addonStartup.json is saved, so the
+    // update is lost at the next restart with no error shown.
+    if (
+      this.install.state == AddonManager.STATE_POSTPONED ||
+      this.install.state == AddonManager.STATE_INSTALLED
+    ) {
+      this.unregister();
+      return;
+    }
+
     try {
       this.install.cancel();
     } catch (e) {
@@ -359,6 +373,14 @@ BrowserListener.prototype = {
   },
 
   onInstallEnded(install) {
+    this.unregister();
+  },
+
+  onInstallPostponed(install) {
+    // The install has been staged for the next startup; this browser window
+    // is no longer relevant to it, so stop listening. In particular this
+    // drops the message-manager-close observer, which would otherwise cancel
+    // (and unstage) the postponed install when the browser is closed.
     this.unregister();
   },
 
@@ -2158,6 +2180,67 @@ var AddonManagerInternal = {
             install
           );
         }
+      },
+
+      onInstallPostponed() {
+        // The install has been staged for the next restart (the add-on
+        // registered a runtime.onUpdateAvailable listener). Notify the UI so
+        // the user gets a doorhanger like the one shown for completed
+        // installs, with the option to force the update without restarting.
+        // This listener is deliberately kept attached: if the postponed
+        // install is resumed later (from the doorhanger or from
+        // about:addons), the regular onInstallEnded notification above will
+        // still be shown.
+        //
+        // The notification must NOT be delivered synchronously: this listener
+        // runs inside Install.postpone(), in the middle of its staging
+        // bookkeeping - before the resume callback is handed to the extension
+        // and before the staging directory lock is released. Showing the
+        // doorhanger synchronously here (DOM/Fluent work with nested event
+        // processing) wedges that bookkeeping, so later attempts to resume
+        // the postponed install ("Force update" here or "Update Now" in
+        // about:addons) silently hang. Defer the whole notification to the
+        // next turn of the main thread (same pattern as ExtensionsUI.jsm).
+        Services.tm.dispatchToMainThread(() => {
+          try {
+            if (install.state != AddonManager.STATE_POSTPONED) {
+              // The install was already resumed (e.g. the extension called
+              // its onUpdateAvailable install callback right away, which can
+              // happen before this deferred task runs) or cancelled; showing
+              // a "will be added after restart" doorhanger would be wrong.
+              return;
+            }
+            if (WEBEXT_PERMISSION_PROMPTS) {
+              let subject = {
+                wrappedJSObject: {
+                  target: browser,
+                  addon: install.addon,
+                  // For web installs the closure `install` is already an
+                  // AddonInstallWrapper (getInstallForURL returns wrappers),
+                  // and wrappers have no .wrapper of their own. Pass the
+                  // wrapper when we hold an internal install, otherwise the
+                  // wrapper itself; both expose .state and (since the bug
+                  // 1627495 backport) .continuePostponedInstall().
+                  install: install.wrapper || install,
+                },
+              };
+              Services.obs.notifyObservers(
+                subject,
+                "webextension-install-postponed-notify"
+              );
+            } else {
+              self.installNotifyObservers(
+                "addon-install-complete",
+                browser,
+                url,
+                install
+              );
+            }
+          } catch (e) {
+            // Never let UI notification failures break the install flow.
+            Cu.reportError(e);
+          }
+        });
       },
     };
 

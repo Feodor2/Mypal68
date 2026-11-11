@@ -436,6 +436,8 @@ class PluginParent extends JSWindowActorParent {
       browser
     );
 
+    let plugin = plugins[0];
+
     if (!plugins) {
       this.removeNotification(browser);
       return;
@@ -492,6 +494,7 @@ class PluginParent extends JSWindowActorParent {
       persistent: showNow,
       eventCallback: this._clickToPlayNotificationEventCallback,
       showNow,
+      pluginData,
       popupIconClass: "plugin-icon",
       extraAttr: active ? "active" : "inactive",
       principal,

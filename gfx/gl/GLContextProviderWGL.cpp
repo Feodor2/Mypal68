@@ -24,10 +24,128 @@
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/WinCompositorWidget.h"
 
+#include <psapi.h>
+
 namespace mozilla {
 namespace gl {
 
 using namespace mozilla::gfx;
+
+// Legacy OpenGL ICDs -- NVIDIA's nvoglnt.dll in particular -- implement
+// DllMain(DLL_THREAD_DETACH) on the assumption that DLL_THREAD_ATTACH already
+// allocated their per-thread block. That assumption does not hold for a module
+// that is loaded lazily.
+//
+// The Windows loader only delivers DLL_THREAD_ATTACH to threads created *after*
+// a module maps, but it delivers DLL_THREAD_DETACH to *every* thread that exits
+// while the module is resident. Because the ICD is pulled in on demand, long
+// after Gecko's thread pools are up, every already-running thread is primed to
+// execute a detach handler that never saw a matching attach.
+//
+// nvoglnt dereferences the resulting null pointer. That alone would be
+// survivable, but LdrShutdownThread runs the detach callbacks while holding the
+// loader lock, so the faulting thread dies still owning it. Every subsequent
+// thread creation or module load in the process then blocks forever -- the main
+// thread typically wedges in PR_CreateThread -> _beginthreadex -> the loader
+// lock. The result is a whole-process deadlock triggered by nothing more
+// exotic than a thread pool thread finishing its work.
+//
+// DisableThreadLibraryCalls() makes the loader skip thread notifications for
+// the module, which removes the broken path. It does not suppress
+// DLL_PROCESS_DETACH, so the driver still gets its shutdown callback, and
+// drivers establish per-thread GL state lazily in wglMakeCurrent rather than in
+// DllMain, so nothing legitimate is lost. The call fails for modules with
+// static TLS; those are reported and skipped.
+//
+// Set MOZ_GL_KEEP_ICD_THREAD_CALLBACKS to opt out entirely.
+
+static void SnapshotLoadedModules(nsTArray<HMODULE>& aOut) {
+  aOut.Clear();
+
+  const HANDLE proc = ::GetCurrentProcess();
+  DWORD capBytes = 256 * sizeof(HMODULE);
+
+  for (int attempt = 0; attempt < 4; ++attempt) {
+    aOut.SetLength(capBytes / sizeof(HMODULE));
+
+    DWORD neededBytes = 0;
+    if (!::EnumProcessModules(proc, aOut.Elements(), capBytes, &neededBytes)) {
+      aOut.Clear();
+      return;
+    }
+
+    if (neededBytes <= capBytes) {
+      aOut.SetLength(neededBytes / sizeof(HMODULE));
+      return;
+    }
+
+    // The module list grew between sizing and filling; retry with room to spare.
+    capBytes = neededBytes + 16 * sizeof(HMODULE);
+  }
+
+  aOut.Clear();
+}
+
+// Microsoft's own OpenGL plumbing is well behaved and opengl32.dll genuinely
+// uses thread notifications to drop each thread's current context, so leave
+// those alone. Everything else that appears while we are bringing GL up is a
+// vendor ICD or one of its dependencies.
+static bool IsSystemGLModule(const wchar_t* aLeafName) {
+  static const wchar_t* const kSkip[] = {L"opengl32.dll", L"glu32.dll"};
+  for (const wchar_t* skip : kSkip) {
+    if (_wcsicmp(aLeafName, skip) == 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+static void DisableThreadCallbacksForNewModules(
+    const nsTArray<HMODULE>& aBefore) {
+  if (PR_GetEnv("MOZ_GL_KEEP_ICD_THREAD_CALLBACKS")) {
+    return;
+  }
+
+  if (aBefore.IsEmpty()) {
+    // The baseline snapshot failed. Without it every module in the process
+    // looks newly loaded and we would suppress thread callbacks process-wide,
+    // including for the CRT, which relies on them to release per-thread state.
+    // Doing nothing is strictly safer than doing that.
+    printf_stderr(
+        "GL: no module baseline; skipping ICD thread-callback workaround.\n");
+    return;
+  }
+
+  nsTArray<HMODULE> after;
+  SnapshotLoadedModules(after);
+
+  for (const HMODULE mod : after) {
+    if (aBefore.Contains(mod)) {
+      continue;
+    }
+
+    wchar_t path[MAX_PATH] = {0};
+    if (!::GetModuleFileNameW(mod, path, MAX_PATH)) {
+      continue;
+    }
+
+    const wchar_t* leaf = wcsrchr(path, L'\\');
+    leaf = leaf ? leaf + 1 : path;
+    if (IsSystemGLModule(leaf)) {
+      continue;
+    }
+
+    if (::DisableThreadLibraryCalls(mod)) {
+      printf_stderr("GL: disabled DllMain thread callbacks for '%S'.\n", path);
+    } else {
+      // Most likely the module has static TLS, which the loader refuses to
+      // suppress notifications for. Nothing else we can safely do here.
+      printf_stderr(
+          "GL: DisableThreadLibraryCalls failed for '%S' (error %lu).\n", path,
+          ::GetLastError());
+    }
+  }
+}
 using namespace mozilla::widget;
 
 WGLLibrary sWGLLib;
@@ -103,6 +221,15 @@ bool WGLLibrary::EnsureInitialized() {
 
   mozilla::ScopedGfxFeatureReporter reporter("WGL");
 
+  // Snapshot the module list before we touch OpenGL at all. The vendor ICD is
+  // loaded by opengl32 during pixel format enumeration -- i.e. inside
+  // ChoosePixelFormat/SetPixelFormat in CreateDummyWindow below -- and not, as
+  // the comment further down claims, when the context is created. Taking the
+  // baseline here is the only way to be sure the ICD lands in the diff
+  // regardless of which call actually triggers the load.
+  nsTArray<HMODULE> modulesBeforeGL;
+  SnapshotLoadedModules(modulesBeforeGL);
+
   std::wstring libGLFilename = L"Opengl32.dll";
   // SU_SPIES_DIRECTORY is for AMD CodeXL/gDEBugger
   if (_wgetenv(L"SU_SPIES_DIRECTORY")) {
@@ -145,7 +272,17 @@ bool WGLLibrary::EnsureInitialized() {
 
   // This is ridiculous -- we have to actually create a context to
   // get the OpenGL ICD to load.
+  // (In practice the ICD is already resident by the time this returns: the
+  // pixel format calls inside CreateDummyWindow load it. See the snapshot
+  // taken at the top of this function.)
   mWindow = CreateDummyWindow(&mWindowDC);
+
+  // The ICD is resident from here on and is never unloaded, so neutralise its
+  // thread callbacks before any thread has a chance to exit. This has to run on
+  // every exit path below: a driver we went on to reject is still loaded, and
+  // is still able to deadlock the process on the loader lock.
+  DisableThreadCallbacksForNewModules(modulesBeforeGL);
+
   NS_ENSURE_TRUE(mWindow, false);
 
   // create rendering context

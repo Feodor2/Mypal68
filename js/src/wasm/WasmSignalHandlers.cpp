@@ -18,6 +18,8 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/ThreadLocal.h"
 
+#include <type_traits>
+
 #include "threading/Thread.h"
 #include "vm/JitActivation.h"  // js::jit::JitActivation
 #include "vm/Realm.h"
@@ -542,13 +544,57 @@ struct AutoHandlingTrap {
 // =============================================================================
 
 #  if defined(XP_WIN)
+// A vectored exception handler runs on whichever thread raised the exception,
+// possibly very early in that thread's (or the process's) life. Before the
+// handler reads sAlreadyHandlingTrap or TlsContext it has to know that doing
+// so cannot itself fault, because a fault inside the handler re-enters the
+// handler and, without the sAlreadyHandlingTrap recursion guard being
+// readable, would recurse until the stack is exhausted. How to test that
+// depends on how MOZ_THREAD_LOCAL is implemented (see mfbt/ThreadLocal.h).
+#    if defined(MOZ_THREAD_LOCAL_USES_KEY_STORAGE)
+static_assert(
+    std::is_base_of_v<mozilla::detail::ThreadLocalKeyStorage<bool>,
+                      std::remove_cv_t<decltype(sAlreadyHandlingTrap)>>,
+    "MOZ_THREAD_LOCAL_USES_KEY_STORAGE is defined but sAlreadyHandlingTrap "
+    "is not backed by ThreadLocalKeyStorage; the TLS readiness test below "
+    "would be wrong");
+
+static bool ThreadLocalStorageIsUsable() {
+  // MOZ_THREAD_LOCAL is implemented with TlsAlloc/TlsGetValue/TlsSetValue.
+  // Those only touch the TEB's TlsSlots/TlsExpansionSlots, which every
+  // thread has from creation, so the sole precondition is that the
+  // process-wide TLS keys have been allocated. sAlreadyHandlingTrap's key is
+  // allocated in EnsureEagerProcessSignalHandlers() strictly before the
+  // handler is registered, and TlsContext's in JS_Init() before that, so
+  // this only ever fails if the handler were somehow invoked before then.
+  //
+  // Do NOT test TEB->ThreadLocalStoragePointer (TEB+0x2C on x86, TEB+0x58 on
+  // x64) here, as upstream does for native thread_local storage. That
+  // pointer is only used by compiler-generated thread_local accesses. On
+  // Windows XP the loader only allocates it when a module present at process
+  // start has a .tls section and never sets up implicit TLS for a DLL loaded
+  // later with LoadLibrary (i.e. xul.dll), so it is null on every thread of
+  // the XP build. Testing it here made the handler return
+  // EXCEPTION_CONTINUE_SEARCH for every valid wasm trap and turned
+  // recoverable out-of-bounds/unreachable traps into tab crashes.
+  return sAlreadyHandlingTrap.initialized() && TlsContext.initialized();
+}
+#    else
 // Obtained empirically from thread_local codegen on x86/x64/arm64.
 // Compiled in all user binaries, so should be stable over time.
 static const unsigned sThreadLocalArrayPointerIndex = 11;
 
+static bool ThreadLocalStorageIsUsable() {
+  // sAlreadyHandlingTrap is a native thread_local: reading it dereferences
+  // the implicit-TLS array pointer stored in the TEB, which is null until the
+  // loader has set up this thread's TLS.
+  return !!NtCurrentTeb()->Reserved1[sThreadLocalArrayPointerIndex];
+}
+#    endif
+
 static LONG WINAPI WasmTrapHandler(LPEXCEPTION_POINTERS exception) {
-  // Make sure TLS is initialized before reading sAlreadyHandlingTrap.
-  if (!NtCurrentTeb()->Reserved1[sThreadLocalArrayPointerIndex]) {
+  // Make sure TLS is usable before reading sAlreadyHandlingTrap.
+  if (!ThreadLocalStorageIsUsable()) {
     return EXCEPTION_CONTINUE_SEARCH;
   }
 

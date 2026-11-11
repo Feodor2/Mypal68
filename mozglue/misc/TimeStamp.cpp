@@ -122,7 +122,7 @@ MFBT_API TimeStamp TimeStamp::NowFuzzy(TimeStampValue aValue) {
   }
   // When we disable Fuzzyfox, time may goes backwards, so we need to make sure
   // we don't do that.
-  else if (MOZ_UNLIKELY(canonicalNow > aValue)) {
+  else if (MOZ_UNLIKELY(!canonicalNow.IsNull() && canonicalNow > aValue)) {
     return TimeStamp(canonicalNow);
   }
 

@@ -109,18 +109,12 @@ struct cubeb_stream {
 
 static uint32_t output_debug_count;
 
-/* The injected DLL logs unconditionally to the debugger, independently of
-   cubeb's normal logging callback.  This non-static function is also used by
-   the reconstructed cubeb.c wrapper. */
+/* Debug logging is disabled.  Keep this non-static no-op because the
+   reconstructed cubeb.c wrapper and the WinMM backend reference it. */
 void
 cubeb_winmm_patch_log(char const * fmt, ...)
 {
-  char buffer[512];
-  va_list args;
-  va_start(args, fmt);
-  wvsprintfA(buffer, fmt, args);
-  va_end(args);
-  OutputDebugStringA(buffer);
+  (void) fmt;
 }
 
 /* Source-build counterpart of the injected section's one-time import setup.
@@ -908,8 +902,6 @@ winmm_stream_destroy_internal(cubeb_stream * stm)
   int i;
   int retries;
 
-  stm->magic = 0;
-
   if (stm->waveout) {
     EnterCriticalSection(&stm->lock);
     stm->shutdown = 1;
@@ -931,6 +923,13 @@ winmm_stream_destroy_internal(cubeb_stream * stm)
     waveOutClose(stm->waveout);
     LeaveCriticalSection(&stm->lock);
   }
+
+  /* Invalidate the stream only after the waveOut reset completions have been
+     accounted for.  winmm_buffer_callback() and winmm_buffer_thread() both drop
+     work while magic is invalid, so clearing it before waveOutReset() stops the
+     completions from ever being counted and the wait loop above burns its full
+     10 x 50 ms budget on every stream destruction. */
+  stm->magic = 0;
 
   if (stm->wavein) {
     EnterCriticalSection(&stm->lock);

@@ -54,6 +54,7 @@ var ExtensionsUI = {
     Services.obs.addObserver(this, "webextension-permission-prompt");
     Services.obs.addObserver(this, "webextension-update-permissions");
     Services.obs.addObserver(this, "webextension-install-notify");
+    Services.obs.addObserver(this, "webextension-install-postponed-notify");
     Services.obs.addObserver(this, "webextension-optional-permission-prompt");
     Services.obs.addObserver(this, "webextension-defaultsearch-prompt");
 
@@ -263,6 +264,9 @@ var ExtensionsUI = {
           callback();
         }
       });
+    } else if (topic == "webextension-install-postponed-notify") {
+      let { target, addon, install } = subject.wrappedJSObject;
+      this.showPostponedNotification(target, addon, install);
     } else if (topic == "webextension-optional-permission-prompt") {
       let {
         browser,
@@ -536,6 +540,64 @@ var ExtensionsUI = {
         options
       );
     });
+  },
+
+  showPostponedNotification(target, addon, install) {
+    let { window } = getTabBrowser(target);
+
+    let brandBundle = window.document.getElementById("bundle_brand");
+    let appName = brandBundle.getString("brandShortName");
+    let bundle = window.gNavigatorBundle;
+
+    let message = bundle.getFormattedString(
+      "addonPostInstall.postponedMessage1",
+      ["<>", appName]
+    );
+
+    // Never use the add-on's own icon here: at this point its icon URL
+    // resolves to a jar: URL inside the staged (or still-temporary) XPI,
+    // and rendering that in the doorhanger keeps a zip reader - and on
+    // Windows a file lock - on those files. The "Force update" resume
+    // then fails with ACCESS_DENIED when it needs to remove and re-stage
+    // the staged XPI. A static chrome icon avoids opening the archive.
+    let icon = addon.isWebExtension
+      ? DEFAULT_EXTENSION_ICON
+      : "chrome://browser/skin/addons/addon-install-installed.svg";
+
+    let mainAction = {
+      // "Okay, Got It": dismiss the doorhanger; the postponed install will
+      // be applied at the next restart.
+      callback() {},
+    };
+
+    let secondaryAction = {
+      // "Force update": resume the postponed install right away, without
+      // waiting for a restart. When it completes, the regular
+      // "has been added" doorhanger is shown through onInstallEnded.
+      callback() {
+        // The install may have been resumed or cancelled between the
+        // doorhanger appearing and this click; continuePostponedInstall()
+        // throws when the install is no longer in the postponed state.
+        if (install && install.state == AddonManager.STATE_POSTPONED) {
+          install.continuePostponedInstall();
+        }
+      },
+    };
+
+    let options = {
+      name: addon.name,
+      message,
+      popupIconURL: icon,
+      onDismissed: () => {
+        AppMenuNotifications.removeNotification("addon-install-postponed");
+      },
+    };
+    AppMenuNotifications.showNotification(
+      "addon-install-postponed",
+      mainAction,
+      secondaryAction,
+      options
+    );
   },
 };
 

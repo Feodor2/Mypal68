@@ -112,8 +112,21 @@ struct Helper<S*> {
 template <typename T>
 class ThreadLocalKeyStorage {
  public:
-  ThreadLocalKeyStorage() : mKey(0xFFFFFFFFUL) {}
+  // constexpr so that static-storage MOZ_THREAD_LOCAL objects are
+  // constant-initialized: mKey is TLS_OUT_OF_INDEXES (0xFFFFFFFF) from the
+  // moment the image is mapped, with no dynamic-initializer window in which
+  // mKey would read as 0 and initialized() would wrongly report true. Code
+  // that may run on an arbitrary thread before/independently of normal
+  // startup (e.g. the wasm vectored exception handler) relies on
+  // initialized() being trustworthy at all times.
+  constexpr ThreadLocalKeyStorage() : mKey(0xFFFFFFFFUL) {}
 
+  // True once init() has allocated a process-wide TLS index. This is a
+  // process-wide property, not a per-thread one: on Windows every thread's
+  // TEB has a TlsSlots array, and TlsGetValue() on a freshly allocated (or
+  // never-set) slot returns 0 on every thread, so once initialized() is true
+  // get()/set() are usable from any thread, including threads for which the
+  // loader never set up implicit (.tls-section) TLS.
   inline bool initialized() const { return mKey != 0xFFFFFFFFUL; }
 
   inline void init() { mKey = TlsAlloc(); }
@@ -258,6 +271,21 @@ inline void ThreadLocal<T, Storage>::set(const T aValue) {
     __thread ::mozilla::detail::ThreadLocal< \
         TYPE, ::mozilla::detail::ThreadLocalNativeStorage>
 #else*/
+// MOZ_THREAD_LOCAL is always backed by ThreadLocalKeyStorage, i.e. dynamic TLS
+// (TlsAlloc/TlsGetValue/TlsSetValue on Windows, pthread keys elsewhere), and
+// never by compiler-native thread_local/__thread storage. The native variants
+// above are disabled because Windows XP does not set up implicit (.tls
+// section) TLS for DLLs loaded with LoadLibrary, which is how xul.dll is
+// loaded.
+//
+// MOZ_THREAD_LOCAL_USES_KEY_STORAGE advertises this to code that has to
+// reason about the mechanism itself. In particular, the wasm trap handler
+// (js/src/wasm/WasmSignalHandlers.cpp) must decide whether TLS is usable on
+// the faulting thread before touching a MOZ_THREAD_LOCAL; with key storage
+// that test must NOT be "is TEB->ThreadLocalStoragePointer non-null", because
+// that pointer is only meaningful for native thread_local codegen and is null
+// on every thread on XP when no statically loaded module has a .tls section.
+#  define MOZ_THREAD_LOCAL_USES_KEY_STORAGE 1
 #  define MOZ_THREAD_LOCAL(TYPE)         \
     ::mozilla::detail::ThreadLocal<TYPE, \
                                    ::mozilla::detail::ThreadLocalKeyStorage>

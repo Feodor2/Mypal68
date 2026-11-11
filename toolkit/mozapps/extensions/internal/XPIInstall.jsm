@@ -46,6 +46,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   OS: "resource://gre/modules/osfile.jsm",
   ProductAddonChecker: "resource://gre/modules/addons/ProductAddonChecker.jsm",
   UpdateUtils: "resource://gre/modules/UpdateUtils.jsm",
+  setTimeout: "resource://gre/modules/Timer.jsm",
 
   AddonInternal: "resource://gre/modules/addons/XPIDatabase.jsm",
   XPIDatabase: "resource://gre/modules/addons/XPIDatabase.jsm",
@@ -749,6 +750,38 @@ async function removeAsync(aFile) {
 }
 
 /**
+ * Removes a file like removeAsync(), but retries a few times if the
+ * removal fails because something still holds a lock on the file. On
+ * Windows, freshly written or recently read XPIs can stay locked
+ * briefly (zip reader cache, antivirus scans, ...), which would
+ * otherwise fail staging operations with ERROR_FILE_ACCESS_DENIED.
+ *
+ * @param {nsIFile} aFile
+ *        The file to remove.
+ * @param {number} [attempts = 4]
+ *        Total number of removal attempts.
+ * @param {number} [delayMs = 400]
+ *        Delay between attempts, in milliseconds.
+ */
+async function removeAsyncRetry(aFile, attempts = 4, delayMs = 400) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await removeAsync(aFile);
+      return;
+    } catch (e) {
+      if (attempt >= attempts) {
+        throw e;
+      }
+      logger.warn(
+        `Failed to remove ${aFile.path} (attempt ${attempt}/${attempts}), ` +
+          `retrying: ${e}`
+      );
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
+/**
  * Recursively removes a directory or file fixing permissions when necessary.
  *
  * @param {nsIFile} aFile
@@ -1249,6 +1282,7 @@ class AddonInstall {
         `removeTemporaryFile: ${this.sourceURI.spec} removing temp file ` +
           this.file.path
       );
+      flushJarCache(this.file);
       this.file.remove(true);
       this.ownsTempFile = false;
     } catch (e) {
@@ -1620,9 +1654,21 @@ class AddonInstall {
   async unstageInstall(stagingDir) {
     this.location.unstageAddon(this.addon.id);
 
-    await removeAsync(getFile(this.addon.id, stagingDir));
+    let stagedDir = getFile(this.addon.id, stagingDir);
+    let stagedXpi = getFile(`${this.addon.id}.xpi`, stagingDir);
 
-    await removeAsync(getFile(`${this.addon.id}.xpi`, stagingDir));
+    // Drop any cached zip readers for these paths first: an open reader
+    // keeps a Windows file lock on the file (seen when an add-on icon was
+    // rendered from a jar: URL inside the staged XPI), which made the
+    // removals below fail with ACCESS_DENIED and broke postponed-install
+    // resume. Retry the removals too, to ride out transient locks such as
+    // antivirus scans of freshly staged files.
+    flushJarCache(stagedDir);
+    flushJarCache(stagedXpi);
+
+    await removeAsyncRetry(stagedDir);
+
+    await removeAsyncRetry(stagedXpi);
   }
 
   /**

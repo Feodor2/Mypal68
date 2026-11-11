@@ -843,8 +843,19 @@ class PluginChild extends JSWindowActorChild {
     this.haveShownNotification = true;
 
     let msg = "PluginContent:ShowClickToPlayNotification";
+    // The actor IPC channel uses strict structured cloning: strip the
+    // XPCOM pluginTag objects and expose the plain numeric id the parent
+    // needs for PluginManager.getPluginTagById (upstream ESR78 sends
+    // {id, fallbackType} only).
     this.sendAsyncMessage(msg, {
-      plugins: [...this.pluginData.values()],
+      plugins: [...this.pluginData.values()].map(p => ({
+        pluginName: p.pluginName,
+        fallbackType: p.fallbackType,
+        permissionString: p.permissionString,
+        pluginPermissionPrePath: p.pluginPermissionPrePath,
+        pluginPermissionType: p.pluginPermissionType,
+        id: p.pluginTag ? p.pluginTag.id : undefined,
+      })),
       showNow,
       location,
     });

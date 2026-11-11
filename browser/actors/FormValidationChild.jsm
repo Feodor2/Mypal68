@@ -20,7 +20,14 @@ class FormValidationChild extends JSWindowActorChild {
     super();
     this._validationMessage = "";
     this._element = null;
-    this._addedPageShowListener = false;
+  }
+
+  actorCreated() {
+    // Listening to ‘pageshow’ event is only relevant
+    // if an invalid form popup was open. So we add
+    // a listener here and not during registration to
+    // avoid a premature instantiation of the actor.
+    this.contentWindow.addEventListener("pageshow", this);
   }
 
   /*
@@ -28,15 +35,6 @@ class FormValidationChild extends JSWindowActorChild {
    */
 
   handleEvent(aEvent) {
-    if (!this._addedPageShowListener) {
-      // Listening to ‘pageshow’ event is only relevant
-      // if an invalid form popup was open. So we add
-      // a listener here and not during registration to
-      // avoid a premature instantiation of the actor.
-      this.contentWindow.addEventListener("pageshow", this);
-      this._addedPageShowListener = true;
-    }
-
     switch (aEvent.type) {
       case "MozInvalidForm":
         aEvent.preventDefault();
@@ -46,6 +44,11 @@ class FormValidationChild extends JSWindowActorChild {
         if (this._isRootDocumentEvent(aEvent)) {
           this._hidePopup();
         }
+        break;
+      case "pagehide":
+        // Act as if the element is being blurred. This will remove any
+        // listeners and hide the popup.
+        this._onBlur();
         break;
       case "input":
         this._onInput(aEvent);
@@ -146,10 +149,12 @@ class FormValidationChild extends JSWindowActorChild {
    * hide the popup.
    */
   _onBlur(aEvent) {
-    aEvent.originalTarget.removeEventListener("input", this);
-    aEvent.originalTarget.removeEventListener("blur", this);
-    this._element = null;
+    if (this._element) {
+      this._element.removeEventListener("input", this);
+      this._element.removeEventListener("blur", this);
+    }
     this._hidePopup();
+    this._element = null;
   }
 
   /*
@@ -163,37 +168,30 @@ class FormValidationChild extends JSWindowActorChild {
 
     panelData.message = this._validationMessage;
 
-    // Note, this is relative to the browser and needs to be translated
-    // in chrome.
-    panelData.contentRect = BrowserUtils.getElementBoundingRect(aElement);
+    panelData.screenRect = BrowserUtils.getElementBoundingScreenRect(aElement);
 
     // We want to show the popup at the middle of checkbox and radio buttons
     // and where the content begin for the other elements.
-    let offset = 0;
-
     if (
       aElement.tagName == "INPUT" &&
       (aElement.type == "radio" || aElement.type == "checkbox")
     ) {
       panelData.position = "bottomcenter topleft";
     } else {
-      let win = aElement.ownerGlobal;
-      let style = win.getComputedStyle(aElement);
-      if (style.direction == "rtl") {
-        offset =
-          parseInt(style.paddingRight) + parseInt(style.borderRightWidth);
-      } else {
-        offset = parseInt(style.paddingLeft) + parseInt(style.borderLeftWidth);
-      }
-      let zoomFactor = this.contentWindow.windowUtils.fullZoom;
-      panelData.offset = Math.round(offset * zoomFactor);
       panelData.position = "after_start";
     }
     this.sendAsyncMessage("FormValidation:ShowPopup", panelData);
+
+    aElement.ownerGlobal.addEventListener("pagehide", this, {
+      mozSystemGroup: true,
+    });
   }
 
   _hidePopup() {
     this.sendAsyncMessage("FormValidation:HidePopup", {});
+    this._element.ownerGlobal.removeEventListener("pagehide", this, {
+      mozSystemGroup: true,
+    });
   }
 
   _isRootDocumentEvent(aEvent) {

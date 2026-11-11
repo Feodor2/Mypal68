@@ -37,7 +37,6 @@ const whitelist = {
 
     // Session store
     "resource:///modules/sessionstore/ContentSessionStore.jsm",
-    "resource://gre/modules/sessionstore/SessionHistory.jsm",
 
     // Browser front-end
     "resource:///actors/AboutReaderChild.jsm",
@@ -66,9 +65,6 @@ const whitelist = {
     // Browser front-end
     "chrome://global/content/browser-content.js",
 
-    // Forms
-    "chrome://formautofill/content/FormAutofillFrameScript.js",
-
     // Extensions
     "resource://gre/modules/addons/Content.js",
   ]),
@@ -88,6 +84,9 @@ const intermittently_loaded_whitelist = {
     "resource://gre/modules/nsAsyncShutdown.jsm",
     "resource://gre/modules/sessionstore/Utils.jsm",
 
+    // Session store.
+    "resource://gre/modules/sessionstore/SessionHistory.jsm",
+
     "resource://specialpowers/SpecialPowersChild.jsm",
     "resource://specialpowers/WrapPrivileged.jsm",
 
@@ -97,6 +96,7 @@ const intermittently_loaded_whitelist = {
 
     // Test related
     "resource://testing-common/BrowserTestUtilsChild.jsm",
+    "resource://testing-common/ContentEventListenerChild.jsm",
   ]),
   frameScripts: new Set([]),
   processScripts: new Set([

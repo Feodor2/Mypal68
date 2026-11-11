@@ -79,6 +79,8 @@ add_task(async function test_realHistoryCheck() {
           inIsolatedMozBrowser: false,
           privateBrowsingId: 0,
           userContextId: 0,
+          geckoViewSessionContextId: "",
+          partitionKey: "",
         },
       },
     },
@@ -93,6 +95,8 @@ add_task(async function test_realHistoryCheck() {
           inIsolatedMozBrowser: false,
           privateBrowsingId: 0,
           userContextId: 0,
+          geckoViewSessionContextId: "",
+          partitionKey: "",
         },
       },
     },
@@ -105,6 +109,8 @@ add_task(async function test_realHistoryCheck() {
           inIsolatedMozBrowser: false,
           privateBrowsingId: 0,
           userContextId: 0,
+          geckoViewSessionContextId: "",
+          partitionKey: "",
         },
       },
     },
@@ -118,6 +124,8 @@ add_task(async function test_realHistoryCheck() {
           inIsolatedMozBrowser: false,
           privateBrowsingId: 0,
           userContextId: 0,
+          geckoViewSessionContextId: "",
+          partitionKey: "",
         },
       },
     },
@@ -136,7 +144,7 @@ add_task(async function test_realHistoryCheck() {
 
     if ("URI" in test.output && test.output.URI === false) {
       is(
-        principal.isCodebasePrincipal,
+        principal.isContentPrincipal,
         false,
         "Should have not have a URI for system"
       );

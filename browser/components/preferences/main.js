@@ -855,7 +855,7 @@ var gMainPane = {
    * changes.
    */
   async initDefaultZoomValues() {
-    let win = window.docShell.rootTreeItem.domWindow;
+    let win = window.browsingContext.topChromeWindow;
     let selected = await win.ZoomUI.getGlobalValue();
     let menulist = document.getElementById("defaultZoom");
 
@@ -1071,7 +1071,7 @@ var gMainPane = {
      * to set the property, regardless of our actual context.
      */
 
-    let win = window.docShell.rootTreeItem.domWindow;
+    let win = window.browsingContext.topChromeWindow;
     cps2.setGlobal(win.FullZoom.name, newZoom, nonPrivateLoadContext);
   },
 

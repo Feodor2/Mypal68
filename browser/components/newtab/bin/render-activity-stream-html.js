@@ -21,12 +21,11 @@ const DEFAULT_OPTIONS = {
  * @return {str}         An HTML document as a string
  */
 function templateHTML(options) {
-  const debugString = options.debug ? "-dev" : "";
   const scripts = [
     "chrome://browser/content/contentSearchUI.js",
     "chrome://browser/content/contentTheme.js",
-    `${options.baseUrl}vendor/react${debugString}.js`,
-    `${options.baseUrl}vendor/react-dom${debugString}.js`,
+    `${options.baseUrl}vendor/react.js`,
+    `${options.baseUrl}vendor/react-dom.js`,
     `${options.baseUrl}vendor/prop-types.js`,
     `${options.baseUrl}vendor/redux.js`,
     `${options.baseUrl}vendor/react-redux.js`,

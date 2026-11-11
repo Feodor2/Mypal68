@@ -66,11 +66,6 @@ function loadTestSubscript(filePath) {
   Services.scriptloader.loadSubScript(new URL(filePath, gTestPath).href, this);
 }
 
-// Don't try to create screenshots of sites we load during tests.
-Services.prefs
-  .getDefaultBranch("browser.newtabpage.activity-stream.")
-  .setBoolPref("feeds.topsites", false);
-
 {
   // Touch the recipeParentPromise lazy getter so we don't get
   // `this._recipeManager is undefined` errors during tests.

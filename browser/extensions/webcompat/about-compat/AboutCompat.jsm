@@ -32,7 +32,7 @@ AboutCompat.prototype = {
 
     channel.owner = (
       Services.scriptSecurityManager.createContentPrincipal ||
-      Services.scriptSecurityManager.createCodebasePrincipal
+      Services.scriptSecurityManager.createContentPrincipal
     )(uri, aLoadInfo.originAttributes);
     return channel;
   },

@@ -276,10 +276,6 @@
       "properties": {
         "InvalidCertificate": {
           "type": "boolean"
-        },
-
-        "SafeBrowsing": {
-          "type": "boolean"
         }
       }
     },
@@ -790,15 +786,6 @@
           "type": "boolean"
         },
         "browser.fixup.dns_first_for_single_words": {
-          "type": "boolean"
-        },
-        "browser.newtabpage.activity-stream.default.sites": {
-          "type": "string"
-        },
-        "browser.safebrowsing.phishing.enabled": {
-          "type": "boolean"
-        },
-        "browser.safebrowsing.malware.enabled": {
           "type": "boolean"
         },
         "browser.tabs.warnOnClose": {

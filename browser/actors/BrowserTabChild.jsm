@@ -105,7 +105,6 @@ class BrowserTabChild extends JSWindowActorChild {
 
       case "UpdateCharacterSet":
         docShell.charset = message.data.value;
-        docShell.gatherCharsetMenuTelemetry();
         break;
     }
   }

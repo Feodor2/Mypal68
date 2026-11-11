@@ -38,13 +38,6 @@ var gHomePane = {
   HOME_MODE_CUSTOM: "2",
   HOMEPAGE_PREF: "browser.startup.homepage",
   NEWTAB_ENABLED_PREF: "browser.newtabpage.enabled",
-  ACTIVITY_STREAM_PREF_BRANCH: "browser.newtabpage.activity-stream.",
-
-  get homePanePrefs() {
-    return Preferences.getAll().filter(pref =>
-      pref.id.includes(this.ACTIVITY_STREAM_PREF_BRANCH)
-    );
-  },
 
   /**
    * _handleNewTabOverrides: disables new tab settings UI. Called by
@@ -80,12 +73,10 @@ var gHomePane = {
    */
   watchHomeTabPrefChange() {
     const observer = () => this.toggleRestoreDefaultsBtn();
-    Services.prefs.addObserver(this.ACTIVITY_STREAM_PREF_BRANCH, observer);
     Services.prefs.addObserver(this.HOMEPAGE_PREF, observer);
     Services.prefs.addObserver(this.NEWTAB_ENABLED_PREF, observer);
 
     window.addEventListener("unload", () => {
-      Services.prefs.removeObserver(this.ACTIVITY_STREAM_PREF_BRANCH, observer);
       Services.prefs.removeObserver(this.HOMEPAGE_PREF, observer);
       Services.prefs.removeObserver(this.NEWTAB_ENABLED_PREF, observer);
     });
@@ -399,12 +390,9 @@ var gHomePane = {
    * Check all Home Tab preferences for user set values.
    */
   _changedHomeTabDefaultPrefs() {
-    // If Discovery Stream is enabled Firefox Home Content preference options are hidden
-    const homeContentChanged =
-      this.homePanePrefs.some(pref => pref.hasUserValue);
     const newtabPref = Preferences.get(this.NEWTAB_ENABLED_PREF);
 
-    return homeContentChanged || HomePage.overridden || newtabPref.hasUserValue;
+    return HomePage.overridden || newtabPref.hasUserValue;
   },
 
   /**
@@ -422,7 +410,6 @@ var gHomePane = {
    */
   restoreDefaultPrefsForHome() {
     this.restoreDefaultHomePage();
-    this.homePanePrefs.forEach(pref => Services.prefs.clearUserPref(pref.id));
   },
 
   init() {

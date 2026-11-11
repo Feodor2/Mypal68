@@ -15,12 +15,8 @@ const http_base = chrome_base.replace(
   "https://example.com"
 );
 
-/**
- * Verify that the 'view image' context menu in a new tab for a canvas works,
- * when opened in a new tab, a new window, or in the same tab.
- */
-add_task(async function test_view_image_works() {
-  let mainURL = http_base + "subtst_contextmenu.html";
+async function test_view_image_works({ page, selector }) {
+  let mainURL = http_base + page;
   let accel = AppConstants.platform == "macosx" ? "metaKey" : "ctrlKey";
   let tests = {
     tab: {
@@ -74,6 +70,11 @@ add_task(async function test_view_image_works() {
     // the test document.
   };
   await BrowserTestUtils.withNewTab(mainURL, async browser => {
+    await SpecialPowers.spawn(browser, [], () => {
+      return ContentTaskUtils.waitForCondition(
+        () => !content.document.documentElement.classList.contains("wait")
+      );
+    });
     for (let [testLabel, test] of Object.entries(tests)) {
       let contextMenu = document.getElementById("contentAreaContextMenu");
       is(
@@ -86,7 +87,7 @@ add_task(async function test_view_image_works() {
         "popupshown"
       );
       await BrowserTestUtils.synthesizeMouse(
-        "#test-canvas",
+        selector,
         2,
         2,
         { type: "contextmenu", button: 2 },
@@ -122,5 +123,26 @@ add_task(async function test_view_image_works() {
       });
       await test.cleanup(newBrowser);
     }
+  });
+}
+
+/**
+ * Verify that the 'view image' context menu in a new tab for a canvas works,
+ * when opened in a new tab, a new window, or in the same tab.
+ */
+add_task(async function test_view_image_canvas_works() {
+  await test_view_image_works({
+    page: "subtst_contextmenu.html",
+    selector: "#test-canvas",
+  });
+});
+
+/**
+ * Test for https://bugzilla.mozilla.org/show_bug.cgi?id=1625786
+ */
+add_task(async function test_view_image_revoked_cached_blob() {
+  await test_view_image_works({
+    page: "test_view_image_revoked_cached_blob.html",
+    selector: "#second",
   });
 });

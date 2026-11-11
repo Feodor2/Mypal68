@@ -117,7 +117,7 @@ function init_all() {
         // Ignore right clicks.
         return;
       }
-      let mainWindow = window.docShell.rootTreeItem.domWindow;
+      let mainWindow = window.browsingContext.topChromeWindow;
       mainWindow.BrowserOpenAddonsMgr();
     });
 

@@ -256,3 +256,23 @@ async function dragAndDrop(tab1, tab2, copy, destWindow = window) {
 function getUrl(tab) {
   return tab.linkedBrowser.currentURI.spec;
 }
+
+/*
+ * Get a file URL for the local file name.
+ */
+function fileURL(filename) {
+  let ifile = getChromeDir(getResolvedURI(gTestPath));
+  ifile.append(filename);
+  return Services.io.newFileURI(ifile).spec;
+}
+
+/*
+ * Get a http URL for the local file name.
+ */
+function httpURL(filename, host = "https://example.com/") {
+  let root = getRootDirectory(gTestPath).replace(
+    "chrome://mochitests/content/",
+    host
+  );
+  return root + filename;
+}

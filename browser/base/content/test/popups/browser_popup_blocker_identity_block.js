@@ -17,7 +17,7 @@ const baseURL = getRootDirectory(gTestPath).replace(
 );
 const URL = baseURL + "popup_blocker2.html";
 const URI = Services.io.newURI(URL);
-const PRINCIPAL = Services.scriptSecurityManager.createCodebasePrincipal(
+const PRINCIPAL = Services.scriptSecurityManager.createContentPrincipal(
   URI,
   {}
 );

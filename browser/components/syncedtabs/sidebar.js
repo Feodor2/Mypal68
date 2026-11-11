@@ -43,7 +43,7 @@ let onLoaded = () => {
     "pageshow",
     e => {
       window
-        .getWindowGlobalChild()
+        .windowGlobalChild
         .getActor("LightweightTheme")
         .handleEvent(e);
     },

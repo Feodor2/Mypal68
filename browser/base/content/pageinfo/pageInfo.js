@@ -430,7 +430,7 @@ async function onNonMediaPageInfoLoad(browser, args, imageInfo) {
     uri.spec.startsWith("about:certerror")
   ) {
     uri = browser.currentURI;
-    principal = Services.scriptSecurityManager.createCodebasePrincipal(
+    principal = Services.scriptSecurityManager.createContentPrincipal(
       uri,
       browser.contentPrincipal.originAttributes
     );

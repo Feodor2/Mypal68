@@ -805,6 +805,7 @@ class PluginChild extends JSWindowActorChild {
 
     let pluginData = this.pluginData;
     let location = this.document.location.href;
+    let principal = this.document.nodePrincipal;
 
     for (let p of plugins) {
       let pluginInfo;

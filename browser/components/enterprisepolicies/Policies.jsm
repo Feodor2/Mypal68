@@ -528,18 +528,6 @@ var Policies = {
     },
   },
 
-  DisableProfileImport: {
-    onBeforeUIStartup(manager, param) {
-      if (param) {
-        manager.disallowFeature("profileImport");
-        setAndLockPref(
-          "browser.newtabpage.activity-stream.migrationExpired",
-          true
-        );
-      }
-    },
-  },
-
   DisableProfileRefresh: {
     onBeforeUIStartup(manager, param) {
       if (param) {
@@ -868,40 +856,6 @@ var Policies = {
     onBeforeAddons(manager, param) {
       if (!param) {
         setAndLockPref("extensions.update.enabled", param);
-      }
-    },
-  },
-
-  FirefoxHome: {
-    onBeforeAddons(manager, param) {
-      let locked = param.Locked || false;
-      if ("Search" in param) {
-        setDefaultPref(
-          "browser.newtabpage.activity-stream.showSearch",
-          param.Search,
-          locked
-        );
-      }
-      if ("TopSites" in param) {
-        setDefaultPref(
-          "browser.newtabpage.activity-stream.feeds.topsites",
-          param.TopSites,
-          locked
-        );
-      }
-      if ("Highlights" in param) {
-        setDefaultPref(
-          "browser.newtabpage.activity-stream.feeds.section.highlights",
-          param.Highlights,
-          locked
-        );
-      }
-      if ("Snippets" in param) {
-        setDefaultPref(
-          "browser.newtabpage.activity-stream.feeds.snippets",
-          param.Snippets,
-          locked
-        );
       }
     },
   },
@@ -1643,7 +1597,7 @@ function addAllowDenyPermissions(permissionName, allowList, blockList) {
   for (let origin of allowList) {
     try {
       Services.perms.addFromPrincipal(
-        Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(origin),
+        Services.scriptSecurityManager.createContentPrincipalFromOrigin(origin),
         permissionName,
         Ci.nsIPermissionManager.ALLOW_ACTION,
         Ci.nsIPermissionManager.EXPIRE_POLICY
@@ -1656,7 +1610,7 @@ function addAllowDenyPermissions(permissionName, allowList, blockList) {
 
   for (let origin of blockList) {
     Services.perms.addFromPrincipal(
-      Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(origin),
+      Services.scriptSecurityManager.createContentPrincipalFromOrigin(origin),
       permissionName,
       Ci.nsIPermissionManager.DENY_ACTION,
       Ci.nsIPermissionManager.EXPIRE_POLICY

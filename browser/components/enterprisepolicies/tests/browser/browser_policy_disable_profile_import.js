@@ -38,8 +38,6 @@ add_task(async function test_disable_profile_import() {
   await promisePopupHidden;
 
   await BrowserTestUtils.closeWindow(library);
-
-  checkLockedPref("browser.newtabpage.activity-stream.migrationExpired", true);
 });
 
 add_task(async function test_file_menu() {

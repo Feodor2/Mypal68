@@ -2,6 +2,10 @@
  * Bug 1277803 - A test caes for testing favicon loading across different userContextId.
  */
 
+if (SpecialPowers.useRemoteSubframes) {
+  requestLongerTimeout(2);
+}
+
 let EventUtils = {};
 Services.scriptloader.loadSubScript(
   "chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
@@ -139,7 +143,7 @@ FaviconObserver.prototype = {
   reset(aUserContextId, aExpectedCookie, aPageURI, aFaviconURL) {
     this._curUserContextId = aUserContextId;
     this._expectedCookie = aExpectedCookie;
-    this._expectedPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+    this._expectedPrincipal = Services.scriptSecurityManager.createContentPrincipal(
       aPageURI,
       { userContextId: aUserContextId }
     );

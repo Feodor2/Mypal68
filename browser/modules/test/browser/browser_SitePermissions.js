@@ -11,7 +11,7 @@ const { SitePermissions } = ChromeUtils.import(
 // This asserts that SitePermissions.set can not save ALLOW permissions
 // temporarily on a tab.
 add_task(async function testTempAllowThrows() {
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "https://example.com"
   );
   let id = "notifications";
@@ -31,7 +31,7 @@ add_task(async function testTempAllowThrows() {
 
 // This tests the SitePermissions.getAllPermissionDetailsForBrowser function.
 add_task(async function testGetAllPermissionDetailsForBrowser() {
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "https://example.com"
   );
 

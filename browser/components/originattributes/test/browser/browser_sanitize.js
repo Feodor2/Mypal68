@@ -2,6 +2,10 @@
  * Bug 1270338 - Add a mochitest to ensure Sanitizer clears data for all containers
  */
 
+if (SpecialPowers.useRemoteSubframes) {
+  requestLongerTimeout(4);
+}
+
 const CC = Components.Constructor;
 
 const TEST_DOMAIN = "http://example.net/";

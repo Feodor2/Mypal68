@@ -758,7 +758,7 @@ class PrincipalsCollector {
 
         let list = [];
         for (const origin of request.result) {
-          let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+          let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
             origin
           );
           if (isSupportedPrincipal(principal)) {
@@ -801,7 +801,7 @@ class PrincipalsCollector {
       // Cookies and permissions are handled by origin/host. Doesn't matter if we
       // use http: or https: schema here.
       principals.push(
-        Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+        Services.scriptSecurityManager.createContentPrincipalFromOrigin(
           "https://" + host
         )
       );

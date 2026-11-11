@@ -15,7 +15,6 @@ class FormValidationParent extends JSWindowActorParent {
     super();
 
     this._panel = null;
-    this._anchor = null;
   }
 
   /*
@@ -24,7 +23,6 @@ class FormValidationParent extends JSWindowActorParent {
 
   uninit() {
     this._panel = null;
-    this._anchor = null;
   }
 
   hidePopup() {
@@ -49,7 +47,7 @@ class FormValidationParent extends JSWindowActorParent {
           return;
         }
 
-        this._showPopup(window, data);
+        this._showPopup(data);
         break;
       case "FormValidation:HidePopup":
         this._hidePopup();
@@ -65,12 +63,11 @@ class FormValidationParent extends JSWindowActorParent {
     switch (aEvent.type) {
       case "FullZoomChange":
       case "TextZoomChange":
-      case "ZoomChangeUsingMouseWheel":
       case "scroll":
         this._hidePopup();
         break;
-      case "popuphiding":
-        this._onPopupHiding(aEvent);
+      case "popuphidden":
+        this._onPopupHidden(aEvent);
         break;
     }
   }
@@ -79,67 +76,59 @@ class FormValidationParent extends JSWindowActorParent {
    * Internal
    */
 
-  _onPopupHiding(aEvent) {
-    aEvent.originalTarget.removeEventListener("popuphiding", this, true);
+  _onPopupHidden(aEvent) {
+    aEvent.originalTarget.removeEventListener("popuphidden", this, true);
     let tabBrowser = aEvent.originalTarget.ownerGlobal.gBrowser;
     tabBrowser.selectedBrowser.removeEventListener("scroll", this, true);
     tabBrowser.selectedBrowser.removeEventListener("FullZoomChange", this);
     tabBrowser.selectedBrowser.removeEventListener("TextZoomChange", this);
-    tabBrowser.selectedBrowser.removeEventListener(
-      "ZoomChangeUsingMouseWheel",
-      this
-    );
 
-    this._panel.hidden = true;
     this._panel = null;
-    this._anchor.hidden = true;
-    this._anchor = null;
   }
 
   /*
    * Shows the form validation popup at a specified position or updates the
    * messaging and position if the popup is already displayed.
    *
-   * @aWindow - the chrome window
    * @aPanelData - Object that contains popup information
    *  aPanelData stucture detail:
-   *   contentRect - the bounding client rect of the target element. If
-   *    content is remote, this is relative to the browser, otherwise its
-   *    relative to the window.
+   *   screenRect - the screen rect of the target element.
    *   position - popup positional string constants.
    *   message - the form element validation message text.
    */
-  _showPopup(aWindow, aPanelData) {
+  _showPopup(aPanelData) {
     let previouslyShown = !!this._panel;
-    this._panel = aWindow.document.getElementById("invalid-form-popup");
+    this._panel = this._getAndMaybeCreatePanel();
     this._panel.firstChild.textContent = aPanelData.message;
-    this._panel.hidden = false;
 
-    let tabBrowser = aWindow.gBrowser;
-    this._anchor = tabBrowser.selectedBrowser.popupAnchor;
-    this._anchor.style.left = aPanelData.contentRect.left + "px";
-    this._anchor.style.top = aPanelData.contentRect.top + "px";
-    this._anchor.style.width = aPanelData.contentRect.width + "px";
-    this._anchor.style.height = aPanelData.contentRect.height + "px";
-    this._anchor.hidden = false;
+    let browser = this.browsingContext.top.embedderElement;
+    let window = browser.ownerGlobal;
+
+    let tabBrowser = window.gBrowser;
 
     // Display the panel if it isn't already visible.
-    if (!previouslyShown) {
-      // Cleanup after the popup is hidden
-      this._panel.addEventListener("popuphiding", this, true);
-
-      // Hide if the user scrolls the page
-      tabBrowser.selectedBrowser.addEventListener("scroll", this, true);
-      tabBrowser.selectedBrowser.addEventListener("FullZoomChange", this);
-      tabBrowser.selectedBrowser.addEventListener("TextZoomChange", this);
-      tabBrowser.selectedBrowser.addEventListener(
-        "ZoomChangeUsingMouseWheel",
-        this
-      );
-
-      // Open the popup
-      this._panel.openPopup(this._anchor, aPanelData.position, 0, 0, false);
+    if (previouslyShown) {
+      return;
     }
+    // Cleanup after the popup is hidden
+    this._panel.addEventListener("popuphidden", this, true);
+
+    // Hide if the user scrolls the page
+    tabBrowser.selectedBrowser.addEventListener("scroll", this, true);
+    tabBrowser.selectedBrowser.addEventListener("FullZoomChange", this);
+    tabBrowser.selectedBrowser.addEventListener("TextZoomChange", this);
+
+    // Open the popup
+    let rect = aPanelData.screenRect;
+    this._panel.openPopupAtScreenRect(
+      aPanelData.position,
+      rect.left,
+      rect.top,
+      rect.width,
+      rect.height,
+      false,
+      false
+    );
   }
 
   /*
@@ -147,8 +136,21 @@ class FormValidationParent extends JSWindowActorParent {
    * above if visible.
    */
   _hidePopup() {
-    if (this._panel) {
-      this._panel.hidePopup();
+    this._panel?.hidePopup();
+  }
+
+  _getAndMaybeCreatePanel() {
+    // Lazy load the invalid form popup the first time we need to display it.
+    if (!this._panel) {
+      let browser = this.browsingContext.top.embedderElement;
+      let window = browser.ownerGlobal;
+      let template = window.document.getElementById("invalidFormTemplate");
+      if (template) {
+        template.replaceWith(template.content);
+      }
+      this._panel = window.document.getElementById("invalid-form-popup");
     }
+
+    return this._panel;
   }
 }

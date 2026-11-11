@@ -26,14 +26,10 @@ const IS_PRIVILEGED_PROCESS = Services.appinfo.remoteType === E10SUtils.PRIVILEG
 const IS_RELEASE_OR_BETA = AppConstants.RELEASE_OR_BETA;
 
 const PREF_SEPARATE_PRIVILEGED_CONTENT_PROCESS = "browser.tabs.remote.separatePrivilegedContentProcess";
-const PREF_ACTIVITY_STREAM_DEBUG = "browser.newtabpage.activity-stream.debug";
 
 function AboutNewTabService() {
   Services.obs.addObserver(this, TOPIC_APP_QUIT);
   Services.prefs.addObserver(PREF_SEPARATE_PRIVILEGED_CONTENT_PROCESS, this);
-  if (!IS_RELEASE_OR_BETA) {
-    Services.prefs.addObserver(PREF_ACTIVITY_STREAM_DEBUG, this);
-  }
 
   // More initialization happens here
   this.toggleActivityStream(true);
@@ -82,7 +78,6 @@ AboutNewTabService.prototype = {
 
   _newTabURL: ABOUT_URL,
   _activityStreamEnabled: false,
-  _activityStreamDebug: false,
   _privilegedContentProcess: false,
   _overridden: false,
   willNotifyUser: false,
@@ -98,9 +93,6 @@ AboutNewTabService.prototype = {
       case "nsPref:changed":
         if (data === PREF_SEPARATE_PRIVILEGED_CONTENT_PROCESS) {
           this._privilegedContentProcess = Services.prefs.getBoolPref(PREF_SEPARATE_PRIVILEGED_CONTENT_PROCESS);
-          this.notifyChange();
-        } else if (!IS_RELEASE_OR_BETA && data === PREF_ACTIVITY_STREAM_DEBUG) {
-          this._activityStreamDebug = Services.prefs.getBoolPref(PREF_ACTIVITY_STREAM_DEBUG, false);
           this.notifyChange();
         }
         break;
@@ -127,14 +119,12 @@ AboutNewTabService.prototype = {
         }
 
         const onLoaded = () => {
-          const debugString = this._activityStreamDebug ? "-dev" : "";
-
           // This list must match any similar ones in render-activity-stream-html.js.
           const scripts = [
             "chrome://browser/content/contentSearchUI.js",
             "chrome://browser/content/contentTheme.js",
-            `${BASE_URL}vendor/react${debugString}.js`,
-            `${BASE_URL}vendor/react-dom${debugString}.js`,
+            `${BASE_URL}vendor/react.js`,
+            `${BASE_URL}vendor/react-dom.js`,
             `${BASE_URL}vendor/prop-types.js`,
             `${BASE_URL}vendor/redux.js`,
             `${BASE_URL}vendor/react-redux.js`,
@@ -192,9 +182,6 @@ AboutNewTabService.prototype = {
       this._activityStreamEnabled = false;
     }
     this._privilegedContentProcess = Services.prefs.getBoolPref(PREF_SEPARATE_PRIVILEGED_CONTENT_PROCESS);
-    if (!IS_RELEASE_OR_BETA) {
-      this._activityStreamDebug = Services.prefs.getBoolPref(PREF_ACTIVITY_STREAM_DEBUG, false);
-    }
     this._newtabURL = ABOUT_URL;
     return true;
   },
@@ -214,7 +201,6 @@ AboutNewTabService.prototype = {
       "resource://activity-stream/prerendered/",
       "activity-stream",
       // Debug version loads dev scripts but noscripts separately loads scripts
-      this._activityStreamDebug && !this._privilegedContentProcess ? "-debug" : "",
       this._privilegedContentProcess ? "-noscripts" : "",
       ".html",
     ].join("");
@@ -257,10 +243,6 @@ AboutNewTabService.prototype = {
     return this._activityStreamEnabled;
   },
 
-  get activityStreamDebug() {
-    return this._activityStreamDebug;
-  },
-
   resetNewTabURL() {
     this._overridden = false;
     this._newTabURL = ABOUT_URL;
@@ -288,9 +270,6 @@ AboutNewTabService.prototype = {
     }
     Services.obs.removeObserver(this, TOPIC_APP_QUIT);
     Services.prefs.removeObserver(PREF_SEPARATE_PRIVILEGED_CONTENT_PROCESS, this);
-    if (!IS_RELEASE_OR_BETA) {
-      Services.prefs.removeObserver(PREF_ACTIVITY_STREAM_DEBUG, this);
-    }
     this.initialized = false;
   },
 };

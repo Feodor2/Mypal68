@@ -18,7 +18,7 @@ add_task(async function testTemporaryPermissionExpiry() {
     set: [["privacy.temporary_permission_expire_time_ms", EXPIRE_TIME_MS]],
   });
 
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "https://example.com"
   );
   let id = "camera";

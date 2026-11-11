@@ -436,7 +436,7 @@ class PluginParent extends JSWindowActorParent {
       browser
     );
 
-    if (!plugin) {
+    if (!plugins) {
       this.removeNotification(browser);
       return;
     }

@@ -5,6 +5,10 @@
 
 var EXPORTED_SYMBOLS = ["BrowserTabParent"];
 
+const { BrowserWindowTracker } = ChromeUtils.import(
+  "resource:///modules/BrowserWindowTracker.jsm"
+);
+
 class BrowserTabParent extends JSWindowActorParent {
   receiveMessage(message) {
     let browser = this.manager.browsingContext.embedderElement;
@@ -18,17 +22,10 @@ class BrowserTabParent extends JSWindowActorParent {
 
     let gBrowser = browser.ownerGlobal.gBrowser;
 
-    if (!gBrowser) {
-      return;
-    }
-
-    if (!gBrowser.tabpanels || !gBrowser.tabpanels.contains(browser)) {
-      return;
-    }
-
     switch (message.name) {
       case "Browser:WindowCreated": {
         gBrowser.announceWindowCreated(browser, message.data.userContextId);
+        BrowserWindowTracker.windowCreated(browser);
         break;
       }
 

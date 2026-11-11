@@ -9,7 +9,7 @@ const { SitePermissions } = ChromeUtils.import(
 );
 
 function newPrincipal(origin) {
-  return Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  return Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     origin
   );
 }

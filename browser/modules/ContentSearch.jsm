@@ -366,7 +366,7 @@ var ContentSearch = {
       currentEngine: await this._currentEngineObj(),
     };
 
-    let pref = Services.prefs.getCharPref("browser.search.hiddenOneOffs");
+    let pref = Services.prefs.getStringPref("browser.search.hiddenOneOffs");
     let hiddenList = pref ? pref.split(",") : [];
     for (let engine of await Services.search.getVisibleEngines()) {
       let uri = engine.getIconURLBySize(16, 16);

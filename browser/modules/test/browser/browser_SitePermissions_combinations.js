@@ -11,7 +11,7 @@ const { SitePermissions } = ChromeUtils.import(
 // This function applies combinations of different permissions and
 // checks how they override each other.
 async function checkPermissionCombinations(combinations) {
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "https://example.com"
   );
 

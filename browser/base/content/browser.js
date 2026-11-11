@@ -987,7 +987,7 @@ var gPopupBlockerObserver = {
     //          nsGlobalWindow::CheckOpenAllow() was changed to also
     //          check if the top window's location is whitelisted.
     let browser = gBrowser.selectedBrowser;
-    var uriOrPrincipal = browser.contentPrincipal.isCodebasePrincipal
+    var uriOrPrincipal = browser.contentPrincipal.isContentPrincipal
       ? browser.contentPrincipal
       : browser.currentURI;
     var blockedPopupAllowSite = document.getElementById(
@@ -1306,11 +1306,12 @@ var gKeywordURIFixup = {
   observe(fixupInfo, topic, data) {
     fixupInfo.QueryInterface(Ci.nsIURIFixupInfo);
 
-    if (!fixupInfo.consumer || fixupInfo.consumer.ownerGlobal != window) {
+    let browser = fixupInfo.consumer?.top?.embedderElement;
+    if (!browser || browser.ownerGlobal != window) {
       return;
     }
 
-    this.check(fixupInfo.consumer, fixupInfo);
+    this.check(browser, fixupInfo);
   },
 
   receiveMessage({ target: browser, data: fixupInfo }) {
@@ -1393,15 +1394,12 @@ function _loadURI(browser, uri, params = {}) {
     uri = "about:blank";
   }
 
-  let {
-    triggeringPrincipal,
-    referrerInfo,
-    postData,
-    userContextId,
-    csp,
-  } = params || {};
-  let loadFlags = params.loadFlags || params.flags ||
-                  Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
+  let { triggeringPrincipal, referrerInfo, postData, userContextId, csp } =
+    params || {};
+  let loadFlags =
+    params.loadFlags || params.flags || Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
+  let hasValidUserGestureActivation =
+    document.hasValidTransientUserGestureActivation;
 
   if (!triggeringPrincipal) {
     throw new Error("Must load with a triggering Principal");
@@ -1443,6 +1441,7 @@ function _loadURI(browser, uri, params = {}) {
     loadFlags,
     referrerInfo,
     postData,
+    hasValidUserGestureActivation,
   };
   try {
     if (!mustChangeProcess) {
@@ -1475,6 +1474,13 @@ function _loadURI(browser, uri, params = {}) {
         loadParams.userContextId = userContextId;
       }
 
+      if (browser.webNavigation.maybeCancelContentJSExecution) {
+        let cancelContentJSEpoch = browser.webNavigation.maybeCancelContentJSExecution(
+          Ci.nsIRemoteTab.NAVIGATE_URL,
+          { uri: uriObject }
+        );
+        loadParams.cancelContentJSEpoch = cancelContentJSEpoch;
+      }
       LoadInOtherProcess(browser, loadParams);
     }
   } catch (e) {
@@ -1511,21 +1517,6 @@ function RedirectLoad(browser, data) {
   if (browser.getAttribute("preloadedState") === "consumed") {
     browser.removeAttribute("preloadedState");
     data.loadOptions.newFrameloader = true;
-  }
-
-  if (data.loadOptions.reloadInFreshProcess) {
-    // Convert the fresh process load option into a large allocation remote type
-    // to use common processing from this point.
-    data.loadOptions.remoteType = E10SUtils.LARGE_ALLOCATION_REMOTE_TYPE;
-    data.loadOptions.newFrameloader = true;
-  } else if (browser.remoteType == E10SUtils.LARGE_ALLOCATION_REMOTE_TYPE) {
-    // If we're in a Large-Allocation process, we prefer switching back into a
-    // normal content process, as that way we can clean up the L-A process.
-    data.loadOptions.remoteType = E10SUtils.getRemoteTypeForURI(
-      data.loadOptions.uri,
-      gMultiProcessBrowser,
-      gFissionBrowser
-    );
   }
 
   // We should only start the redirection if the browser window has finished
@@ -2069,6 +2060,7 @@ var gBrowserInit = {
         //                 [8]: triggeringPrincipal (nsIPrincipal)
         //                 [9]: allowInheritPrincipal (bool)
         //                 [10]: csp (nsIContentSecurityPolicy)
+        //                 [11]: nsOpenWindowInfo
         let userContextId =
           window.arguments[5] != undefined
             ? window.arguments[5]
@@ -3345,96 +3337,6 @@ var BrowserOnClick = {
         break;
     }
   },
-
-  ignoreWarningLink(reason, blockedInfo) {
-    let triggeringPrincipal = E10SUtils.deserializePrincipal(
-      blockedInfo.triggeringPrincipal,
-      _createNullPrincipalFromTabUserContextId()
-    );
-    // Allow users to override and continue through to the site,
-    // but add a notify bar as a reminder, so that they don't lose
-    // track after, e.g., tab switching.
-    gBrowser.loadURI(gBrowser.currentURI.spec, {
-      triggeringPrincipal,
-      flags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CLASSIFIER,
-    });
-
-    // We can't use gBrowser.contentPrincipal which is principal of about:blocked
-    // Create one from uri with current principal origin attributes
-    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
-      gBrowser.currentURI,
-      gBrowser.contentPrincipal.originAttributes
-    );
-    Services.perms.addFromPrincipal(
-      principal,
-      "safe-browsing",
-      Ci.nsIPermissionManager.ALLOW_ACTION,
-      Ci.nsIPermissionManager.EXPIRE_SESSION
-    );
-
-    let buttons = [
-      {
-        label: gNavigatorBundle.getString(
-          "safebrowsing.getMeOutOfHereButton.label"
-        ),
-        accessKey: gNavigatorBundle.getString(
-          "safebrowsing.getMeOutOfHereButton.accessKey"
-        ),
-        callback() {
-          getMeOutOfHere();
-        },
-      },
-    ];
-
-    let title;
-    if (reason === "malware") {
-      let reportUrl = gSafeBrowsing.getReportURL("MalwareMistake", blockedInfo);
-      title = gNavigatorBundle.getString("safebrowsing.reportedAttackSite");
-      // There's no button if we can not get report url, for example if the provider
-      // of blockedInfo is not Google
-      if (reportUrl) {
-        buttons[1] = {
-          label: gNavigatorBundle.getString(
-            "safebrowsing.notAnAttackButton.label"
-          ),
-          accessKey: gNavigatorBundle.getString(
-            "safebrowsing.notAnAttackButton.accessKey"
-          ),
-          callback() {
-            openTrustedLinkIn(reportUrl, "tab");
-          },
-        };
-      }
-    } else if (reason === "phishing") {
-      let reportUrl = gSafeBrowsing.getReportURL("PhishMistake", blockedInfo);
-      title = gNavigatorBundle.getString("safebrowsing.deceptiveSite");
-      // There's no button if we can not get report url, for example if the provider
-      // of blockedInfo is not Google
-      if (reportUrl) {
-        buttons[1] = {
-          label: gNavigatorBundle.getString(
-            "safebrowsing.notADeceptiveSiteButton.label"
-          ),
-          accessKey: gNavigatorBundle.getString(
-            "safebrowsing.notADeceptiveSiteButton.accessKey"
-          ),
-          callback() {
-            openTrustedLinkIn(reportUrl, "tab");
-          },
-        };
-      }
-    } else if (reason === "unwanted") {
-      title = gNavigatorBundle.getString("safebrowsing.reportedUnwantedSite");
-      // There is no button for reporting errors since Google doesn't currently
-      // provide a URL endpoint for these reports.
-    } else if (reason === "harmful") {
-      title = gNavigatorBundle.getString("safebrowsing.reportedHarmfulSite");
-      // There is no button for reporting errors since Google doesn't currently
-      // provide a URL endpoint for these reports.
-    }
-
-    SafeBrowsingNotificationBox.show(title, buttons);
-  },
 };
 
 /**
@@ -4483,6 +4385,17 @@ function FillHistoryMenu(aParent) {
 
     for (let j = end - 1; j >= start; j--) {
       let entry = sessionHistory.entries[j];
+      // Explicitly check for "false" to stay backwards-compatible with session histories
+      // from before the hasUserInteraction was implemented.
+      if (
+        BrowserUtils.navigationRequireUserInteraction &&
+        entry.hasUserInteraction === false &&
+        // Always allow going to the first and last navigation points.
+        j != end - 1 &&
+        j != start
+      ) {
+        continue;
+      }
       let uri = entry.url;
 
       let item =
@@ -5036,7 +4949,6 @@ var XULBrowserWindow = {
         aURI,
         aReferrerInfo,
         aTriggeringPrincipal,
-        false,
         null,
         aCsp
       );
@@ -5314,7 +5226,6 @@ var XULBrowserWindow = {
     if (this._event == aEvent && this._lastLocationForEvent == spec) {
       return;
     }
-    this._event = aEvent;
     this._lastLocationForEvent = spec;
 
     if (
@@ -5327,14 +5238,15 @@ var XULBrowserWindow = {
     }
 
     ContentBlocking.onContentBlockingEvent(
-      this._event,
+      aEvent,
       aWebProgress,
-      aIsSimulated
+      aIsSimulated,
+      this._event // previous content blocking event
     );
-    // Because this function will only receive content blocking event updates
-    // for the currently selected tab, we handle updates to background tabs in
-    // TabsProgressListener.onContentBlockingEvent.
-    gBrowser.selectedBrowser.updateSecurityUIForContentBlockingEvent(aEvent);
+
+    // We need the state of the previous content blocking event, so update
+    // event after onContentBlockingEvent is called.
+    this._event = aEvent;
   },
 
   // This is called in multiple ways:
@@ -5404,22 +5316,6 @@ var XULBrowserWindow = {
       return;
     }
     this.onStatusChange(gBrowser.webProgress, null, 0, aMessage);
-  },
-
-  navigateAndRestoreByIndex: function XWB_navigateAndRestoreByIndex(
-    aBrowser,
-    aIndex
-  ) {
-    let tab = gBrowser.getTabForBrowser(aBrowser);
-    if (tab) {
-      SessionStore.navigateAndRestore(tab, {}, aIndex);
-      return;
-    }
-
-    throw new Error(
-      "Trying to navigateAndRestore a browser which was " +
-        "not attached to this tabbrowser is unsupported"
-    );
   },
 };
 
@@ -5762,14 +5658,6 @@ const AccessibilityRefreshBlocker = {
 };
 
 var TabsProgressListener = {
-  onContentBlockingEvent(aBrowser, aWebProgress, aRequest, aEvent) {
-    // Handle content blocking events for background (=non-selected) tabs.
-    // This event is processed for the selected tab in XULBrowserWindow.onContentBlockingEvent.
-    if (aBrowser != gBrowser.selectedBrowser) {
-      aBrowser.updateSecurityUIForContentBlockingEvent(aEvent);
-    }
-  },
-
   onLocationChange(aBrowser, aWebProgress, aRequest, aLocationURI, aFlags) {
     // Filter out location changes caused by anchor navigation
     // or history.push/pop/replaceState.
@@ -5982,7 +5870,7 @@ nsBrowserAccess.prototype = {
       case Ci.nsIBrowserDOMWindow.OPEN_NEWWINDOW:
         // FIXME: Bug 408379. So how come this doesn't send the
         // referrer like the other loads do?
-        var url = aURI ? aURI.spec : "about:blank";
+        var url = aURI && aURI.spec;
         let features = "all,dialog=no";
         if (isPrivate) {
           features += ",private";
@@ -6005,8 +5893,14 @@ nsBrowserAccess.prototype = {
             null,
             aTriggeringPrincipal,
             null,
-            aCsp
+            aCsp,
+            aOpenWindowInfo
           );
+          // At this point, the new browser window is just starting to load, and
+          // hasn't created the content <browser> that we should return.
+          // If the caller of this function is originating in C++, they can pass a
+          // callback in nsOpenWindowInfo and it will be invoked when the browsing
+          // context for a newly opened window is ready.
           browsingContext = null;
         } catch (ex) {
           Cu.reportError(ex);
@@ -6019,7 +5913,7 @@ nsBrowserAccess.prototype = {
         // we can hand back the nsIDOMWindow. The XULBrowserWindow.shouldLoadURI
         // will do the job of shuttling off the newly opened browser to run in
         // the right process once it starts loading a URI.
-        let forceNotRemote = aOpenWindowInfo && !aOpenWindowInfo.remote;
+        let forceNotRemote = aOpenWindowInfo && !aOpenWindowInfo.isRemote;
         let userContextId = aOpenWindowInfo
           ? aOpenWindowInfo.originAttributes.userContextId
           : Ci.nsIScriptSecurityManager.DEFAULT_USER_CONTEXT_ID;
@@ -6043,16 +5937,20 @@ nsBrowserAccess.prototype = {
         break;
       default:
         // OPEN_CURRENTWINDOW or an illegal value
-        browsingContext =
-          window.content && BrowsingContext.getFromWindow(window.content);
+        browsingContext = window.gBrowser.selectedBrowser.browsingContext;
         if (aURI) {
-          let loadflags = isExternal
-            ? Ci.nsIWebNavigation.LOAD_FLAGS_FROM_EXTERNAL
-            : Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
+          let loadFlags = Ci.nsIWebNavigation.LOAD_FLAGS_NONE;
+          if (isExternal) {
+            loadFlags |= Ci.nsIWebNavigation.LOAD_FLAGS_FROM_EXTERNAL;
+          } else if (!aTriggeringPrincipal.isSystemPrincipal) {
+            // XXX this code must be reviewed and changed when bug 1616353
+            // lands.
+            loadFlags |= Ci.nsIWebNavigation.LOAD_FLAGS_FIRST_LOAD;
+          }
           gBrowser.loadURI(aURI.spec, {
             triggeringPrincipal: aTriggeringPrincipal,
             csp: aCsp,
-            flags: loadflags,
+            loadFlags,
             referrerInfo,
           });
         }
@@ -7396,7 +7294,7 @@ var CanvasPermissionPromptHelper = {
       1
     );
 
-    let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+    let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
       aData
     );
 
@@ -7792,7 +7690,7 @@ function BrowserOpenAddonsMgr(aView) {
     let browserWindow;
 
     var receivePong = function(aSubject, aTopic, aData) {
-      let browserWin = aSubject.docShell.rootTreeItem.domWindow;
+      let browserWin = aSubject.browsingContext.topChromeWindow;
       if (!emWindow || browserWin == window /* favor the current window */) {
         emWindow = aSubject;
         browserWindow = browserWin;

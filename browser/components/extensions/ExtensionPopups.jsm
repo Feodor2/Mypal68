@@ -171,14 +171,14 @@ class BasePopup {
     // popup was closed externally, there will be no message manager here, so
     // just replace our receiveMessage method with a stub.
     if (mm) {
-      mm.removeMessageListener("DOMTitleChanged", this);
       mm.removeMessageListener("Extension:BrowserBackgroundChanged", this);
       mm.removeMessageListener("Extension:BrowserContentLoaded", this);
       mm.removeMessageListener("Extension:BrowserResized", this);
-      mm.removeMessageListener("Extension:DOMWindowClose", this);
     } else if (finalize) {
       this.receiveMessage = () => {};
     }
+    browser.removeEventListener("pagetitlechanged", this);
+    browser.removeEventListener("DOMWindowClose", this);
   }
 
   // Returns the name of the event fired on `viewNode` when the popup is being
@@ -210,10 +210,6 @@ class BasePopup {
 
   receiveMessage({ name, data }) {
     switch (name) {
-      case "DOMTitleChanged":
-        this.viewNode.setAttribute("aria-label", this.browser.contentTitle);
-        break;
-
       case "Extension:BrowserBackgroundChanged":
         this.setBackground(data.background);
         break;
@@ -229,10 +225,6 @@ class BasePopup {
         } else {
           this.resizeBrowser(data);
         }
-        break;
-
-      case "Extension:DOMWindowClose":
-        this.closePopup();
         break;
     }
   }
@@ -261,6 +253,14 @@ class BasePopup {
               // If the panel closes too fast an exception is raised here and tests will fail.
             });
         }
+        break;
+
+      case "pagetitlechanged":
+        this.viewNode.setAttribute("aria-label", this.browser.contentTitle);
+        break;
+
+      case "DOMWindowClose":
+        this.closePopup();
         break;
     }
   }
@@ -323,11 +323,11 @@ class BasePopup {
 
     let setupBrowser = browser => {
       let mm = browser.messageManager;
-      mm.addMessageListener("DOMTitleChanged", this);
       mm.addMessageListener("Extension:BrowserBackgroundChanged", this);
       mm.addMessageListener("Extension:BrowserContentLoaded", this);
       mm.addMessageListener("Extension:BrowserResized", this);
-      mm.addMessageListener("Extension:DOMWindowClose", this, true);
+      browser.addEventListener("pagetitlechanged", this);
+      browser.addEventListener("DOMWindowClose", this);
       return browser;
     };
 

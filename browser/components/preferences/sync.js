@@ -541,7 +541,7 @@ var gSyncPane = {
   },
 
   unlinkFirefoxAccount(confirm) {
-    window.docShell.rootTreeItem.domWindow.gSync.disconnect({ confirm });
+    window.browsingContext.topChromeWindow.gSync.disconnect({ confirm });
   },
 
   pairAnotherDevice() {

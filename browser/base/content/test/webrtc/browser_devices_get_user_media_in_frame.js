@@ -5,7 +5,7 @@
 // This test has been seen timing out locally in non-opt debug builds.
 requestLongerTimeout(2);
 
-let gShouldObserveSubframes;
+let gShouldObserveSubframes = false;
 
 var gTests = [
   {
@@ -578,7 +578,8 @@ add_task(async function test_inprocess() {
 add_task(async function test_outofprocess() {
   // When the frames are in different processes, add observers to each frame,
   // to ensure that the notifications don't get sent in the wrong process.
-  gShouldObserveSubframes = Services.prefs.getBoolPref("fission.autostart");
+  gShouldObserveSubframes = SpecialPowers.useRemoteSubframes;
+
   let observeSubFrameIds = gShouldObserveSubframes ? ["frame1", "frame2"] : [];
   await runTests(gTests, {
     relativeURI: "get_user_media_in_oop_frame.html",

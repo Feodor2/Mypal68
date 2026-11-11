@@ -51,12 +51,12 @@ add_task(async function testPermissionsListing() {
 add_task(async function testGetAllByPrincipal() {
   // check that it returns an empty array on an invalid principal
   // like a principal with a file URI, which doesn't support site permissions
-  let wrongPrincipal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let wrongPrincipal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "file:///example.js"
   );
   Assert.deepEqual(SitePermissions.getAllByPrincipal(wrongPrincipal), []);
 
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "https://example.com"
   );
   Assert.deepEqual(SitePermissions.getAllByPrincipal(principal), []);
@@ -171,10 +171,10 @@ add_task(async function testGetAvailableStates() {
 });
 
 add_task(async function testExactHostMatch() {
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "https://example.com"
   );
-  let subPrincipal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let subPrincipal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "https://test1.example.com"
   );
 
@@ -260,7 +260,7 @@ add_task(async function testExactHostMatch() {
 });
 
 add_task(async function testDefaultPrefs() {
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "https://example.com"
   );
 
@@ -323,7 +323,7 @@ add_task(async function testCanvasPermission() {
     "privacy.resistFingerprinting",
     false
   );
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "https://example.com"
   );
 

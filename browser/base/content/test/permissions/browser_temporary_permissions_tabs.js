@@ -6,7 +6,7 @@
 // Test that temp permissions are persisted through moving tabs to new windows.
 add_task(async function testTempPermissionOnTabMove() {
   let origin = "https://example.com/";
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     origin
   );
   let id = "geo";
@@ -49,7 +49,7 @@ add_task(async function testTempPermissionOnTabMove() {
 // Test that temp permissions don't affect other tabs of the same URI.
 add_task(async function testTempPermissionMultipleTabs() {
   let origin = "https://example.com/";
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     origin
   );
   let id = "geo";

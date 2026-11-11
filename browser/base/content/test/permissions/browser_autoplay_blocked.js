@@ -145,7 +145,7 @@ add_task(async function testMainViewVisible() {
 add_task(async function testGloballyBlockedOnNewWindow() {
   Services.prefs.setIntPref(AUTOPLAY_PREF, Ci.nsIAutoplay.BLOCKED);
 
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     AUTOPLAY_PAGE
   );
 

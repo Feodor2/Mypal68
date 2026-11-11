@@ -525,10 +525,6 @@ const POLICIES_TESTS = [
         Locked: true,
       },
     },
-    lockedPrefs: {
-      "browser.newtabpage.activity-stream.feeds.snippets": false,
-      "browser.newtabpage.activity-stream.feeds.section.topstories": false,
-    },
   },
 
   // POLICY: OfferToSaveLoginsDefault

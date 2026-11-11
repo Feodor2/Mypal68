@@ -12,7 +12,7 @@ add_task(async function setup() {
 });
 
 add_task(async function test_open_import() {
-  let promiseImportWindow = BrowserTestUtils.domWindowOpened();
+  let promiseImportWindow = BrowserTestUtils.domWindowOpenedAndLoaded();
 
   let browser = gBrowser.selectedBrowser;
   await BrowserTestUtils.synthesizeMouseAtCenter("menu-button", {}, browser);

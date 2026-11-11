@@ -93,18 +93,6 @@ const PanelUI = {
       window.addEventListener("MozDOMFullscreen:Exited", this);
     }
 
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "libraryRecentHighlightsEnabled",
-      "browser.library.activity-stream.enabled",
-      false,
-      (pref, previousValue, newValue) => {
-        if (!newValue) {
-          this.clearLibraryRecentHighlights();
-        }
-      }
-    );
-
     window.addEventListener("activate", this);
     CustomizableUI.addListener(this);
 

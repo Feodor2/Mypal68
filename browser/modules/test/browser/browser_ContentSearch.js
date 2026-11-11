@@ -120,6 +120,23 @@ add_task(async function modifyEngine() {
   });
 });
 
+add_task(async function test_hideEngine() {
+  let { mm } = await addTab();
+  let engine = await Services.search.getEngineByName("Foo \u2661");
+  Services.prefs.setStringPref("browser.search.hiddenOneOffs", engine.name);
+  let msg = await waitForTestMsg(mm, "CurrentState");
+  checkMsg(msg, {
+    type: "CurrentState",
+    data: await currentStateObj(undefined, "Foo \u2661"),
+  });
+  Services.prefs.clearUserPref("browser.search.hiddenOneOffs");
+  msg = await waitForTestMsg(mm, "CurrentState");
+  checkMsg(msg, {
+    type: "CurrentState",
+    data: await currentStateObj(),
+  });
+});
+
 add_task(async function search() {
   let { browser } = await addTab();
   let engine = await Services.search.getDefault();
@@ -387,7 +404,7 @@ async function addTab() {
   return { browser: tab.linkedBrowser, mm };
 }
 
-var currentStateObj = async function() {
+var currentStateObj = async function(hiddenEngine = "") {
   let state = {
     engines: [],
     currentEngine: await defaultEngineObj(),
@@ -397,7 +414,7 @@ var currentStateObj = async function() {
     state.engines.push({
       name: engine.name,
       iconData: await iconDataFromURI(uri),
-      hidden: false,
+      hidden: engine.name == hiddenEngine,
       identifier: engine.identifier,
     });
   }

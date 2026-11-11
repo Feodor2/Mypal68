@@ -394,7 +394,7 @@ class UrlbarValueFormatter {
     // them, which we can do by passing "currentColor".  See
     // nsTextPaintStyle::GetHighlightColors for details.
     if (
-      this.document.documentElement.querySelector(":-moz-lwtheme") ||
+      this.document.documentElement.hasAttribute("lwtheme") ||
       (AppConstants.platform == "win" &&
         this.window.matchMedia("(-moz-windows-default-theme: 0)").matches)
     ) {

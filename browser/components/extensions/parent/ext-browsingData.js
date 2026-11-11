@@ -98,7 +98,7 @@ const clearIndexedDB = async function(options) {
       }
 
       for (let item of request.result) {
-        let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+        let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
           item.origin
         );
         if (
@@ -173,7 +173,7 @@ const clearLocalStorage = async function(options) {
         }
 
         for (let item of request.result) {
-          let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+          let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
             item.origin
           );
           // Consistently to removeIndexedDB and the API documentation for

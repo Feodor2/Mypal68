@@ -701,7 +701,7 @@ this.tabs = class extends ExtensionAPI {
               // and instead always get a NullPrincipal.
               options.allowInheritPrincipal = false;
               // Falling back to codebase here as about: requires it, however is safe.
-              principal = Services.scriptSecurityManager.createCodebasePrincipal(
+              principal = Services.scriptSecurityManager.createContentPrincipal(
                 Services.io.newURI(url),
                 {
                   userContextId: options.userContextId,
@@ -1626,6 +1626,16 @@ this.tabs = class extends ExtensionAPI {
             return tab;
           });
           return windowManager.convert(window, { populate });
+        },
+
+        goForward(tabId) {
+          let nativeTab = getTabOrActive(tabId);
+          nativeTab.linkedBrowser.goForward();
+        },
+
+        goBack(tabId) {
+          let nativeTab = getTabOrActive(tabId);
+          nativeTab.linkedBrowser.goBack();
         },
       },
     };

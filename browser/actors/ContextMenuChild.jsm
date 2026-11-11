@@ -558,6 +558,7 @@ class ContextMenuChild extends JSWindowActorChild {
     } = doc;
     docLocation = docLocation && docLocation.spec;
     let frameOuterWindowID = WebNavigationFrames.getFrameId(doc.defaultView);
+    let frameBrowsingContextID = doc.defaultView.docShell.browsingContext.id;
     let loginFillInfo = LoginManagerChild.forWindow(
       doc.defaultView
     ).getFieldContext(aEvent.composedTarget);
@@ -674,6 +675,7 @@ class ContextMenuChild extends JSWindowActorChild {
       customMenuItems,
       contentDisposition,
       frameOuterWindowID,
+      frameBrowsingContextID,
       disableSetDesktopBackground,
       parentAllowsMixedContent,
     };
@@ -697,16 +699,10 @@ class ContextMenuChild extends JSWindowActorChild {
       "on-prepare-contextmenu"
     );
 
-    // For now, JS Window Actors don't serialize Principals automatically, so we
-    // have to do it ourselves. See bug 1557852.
-    data.principal = E10SUtils.serializePrincipal(doc.nodePrincipal);
-    data.context.principal = E10SUtils.serializePrincipal(context.principal);
-    data.storagePrincipal = E10SUtils.serializePrincipal(
-      doc.effectiveStoragePrincipal
-    );
-    data.context.storagePrincipal = E10SUtils.serializePrincipal(
-      context.storagePrincipal
-    );
+    data.principal = doc.nodePrincipal;
+    data.context.principal = context.principal;
+    data.storagePrincipal = doc.effectiveStoragePrincipal;
+    data.context.storagePrincipal = context.storagePrincipal;
 
     // In the event that the content is running in the parent process, we don't
     // actually want the contextmenu events to reach the parent - we'll dispatch
@@ -851,6 +847,7 @@ class ContextMenuChild extends JSWindowActorChild {
     context.hasMultipleBGImages = false;
     context.isDesignMode = false;
     context.inFrame = false;
+    context.inPDFViewer = false;
     context.inSrcdocFrame = false;
     context.inSyntheticDoc = false;
     context.inTabBrowser = true;
@@ -899,6 +896,13 @@ class ContextMenuChild extends JSWindowActorChild {
     context.frameOuterWindowID = WebNavigationFrames.getFrameId(
       context.target.ownerGlobal
     );
+
+    context.frameBrowsingContextID =
+      context.target.ownerGlobal.docShell.browsingContext.id;
+
+    // Check if we are in the PDF Viewer.
+    context.inPDFViewer =
+      context.target.ownerDocument.nodePrincipal.origin == "resource://pdf.js";
 
     // Check if we are in a synthetic document (stand alone image, video, etc.).
     context.inSyntheticDoc = context.target.ownerDocument.mozSyntheticDocument;
@@ -1208,5 +1212,21 @@ class ContextMenuChild extends JSWindowActorChild {
         context.shouldInitInlineSpellCheckerUIWithChildren = true;
       }
     }
+  }
+
+  _destructionObservers = new Set();
+  registerDestructionObserver(obj) {
+    this._destructionObservers.add(obj);
+  }
+
+  unregisterDestructionObserver(obj) {
+    this._destructionObservers.delete(obj);
+  }
+
+  didDestroy() {
+    for (let obs of this._destructionObservers) {
+      obs.actorDestroyed(this);
+    }
+    this._destructionObservers = null;
   }
 }

@@ -2,6 +2,10 @@
  * Bug 1277803 - A test case for testing favicon loading across different first party domains.
  */
 
+if (SpecialPowers.useRemoteSubframes) {
+  requestLongerTimeout(2);
+}
+
 const CC = Components.Constructor;
 
 const { PlacesUtils } = ChromeUtils.import(
@@ -71,7 +75,7 @@ function clearAllPlacesFavicons() {
 }
 
 function observeFavicon(aFirstPartyDomain, aExpectedCookie, aPageURI) {
-  let expectedPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+  let expectedPrincipal = Services.scriptSecurityManager.createContentPrincipal(
     aPageURI,
     { firstPartyDomain: aFirstPartyDomain }
   );

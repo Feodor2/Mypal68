@@ -406,7 +406,7 @@ function prompt(aActor, aBrowser, aRequest) {
     requestTypes,
   } = aRequest;
 
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     aRequest.origin
   );
 

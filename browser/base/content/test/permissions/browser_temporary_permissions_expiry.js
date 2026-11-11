@@ -28,7 +28,7 @@ add_task(async function testTempPermissionRequestAfterExpiry() {
     ],
   });
 
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     ORIGIN
   );
   let ids = ["geo", "camera"];

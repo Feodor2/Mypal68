@@ -1143,29 +1143,6 @@ pref("prompts.tab_modal.enabled", true);
 // Activates preloading of the new tab url.
 pref("browser.newtab.preload", true);
 
-// Indicates if about:newtab shows content (enabled) or just blank
-pref("browser.newtabpage.enabled", true);
-
-// Activity Stream prefs that control to which page to redirect
-pref("browser.newtabpage.activity-stream.prerender", false);
-#ifndef RELEASE_OR_BETA
-  pref("browser.newtabpage.activity-stream.debug", false);
-#endif
-
-pref("browser.library.activity-stream.enabled", false);
-
-// The pref that controls if the search shortcuts experiment is on
-pref("browser.newtabpage.activity-stream.improvesearch.topSiteSearchShortcuts", false);
-
-// The pref controls if search hand-off is enabled for Activity Stream.
-#ifdef NIGHTLY_BUILD
-  pref("browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar", true);
-#else
-  pref("browser.newtabpage.activity-stream.improvesearch.handoffToAwesomebar", false);
-#endif
-
-pref("trailhead.firstrun.branches", "join-privacy");
-
 // Enable the DOM fullscreen API.
 pref("full-screen-api.enabled", true);
 
@@ -1320,8 +1297,6 @@ pref("media.gmp.trial-create.enabled", true);
 pref("media.gmp-gmpopenh264.visible", true);
 pref("media.gmp-gmpopenh264.enabled", true);
 
-// Switch block autoplay logic to v2, and enable UI.
-pref("media.autoplay.enabled.user-gestures-needed", true);
 // Set Firefox to block autoplay, asking for permission by default.
 pref("media.autoplay.default", 1); // 0=Allowed, 1=Blocked, 5=All Blocked
 
@@ -1579,6 +1554,24 @@ pref("devtools.toolbox.splitconsoleEnabled", false);
 pref("devtools.toolbox.splitconsoleHeight", 100);
 pref("devtools.toolbox.tabsOrder", "");
 
+// The fission pref for enabling the "Omniscient Browser Toolbox", which will
+// make it possible to debug anything in Firefox (See Bug 1570639 for more
+// information).
+// ⚠ This is a work in progress. Expect weirdness when the pref is enabled. ⚠
+pref("devtools.browsertoolbox.fission", false);
+
+// The fission pref for enabling Fission frame debugging directly from the
+// regular web/content toolbox.
+// ⚠ This is a work in progress. Expect weirdness when the pref is enabled. ⚠
+pref("devtools.contenttoolbox.fission", false);
+
+// This pref is also related to fission, but not only. It allows the toolbox
+// to stay open even if the debugged tab switches to another process.
+// It can happen between two documents, one running in the parent process like
+// about:sessionrestore and another one running in the content process like
+// any web page. Or between two distinct domain when running with fission turned
+// on. See bug 1565263.
+// ⚠ This is a work in progress. Expect weirdness when the pref is flipped on ⚠
 pref("devtools.target-switching.enabled", false);
 
 // Toolbox Button preferences

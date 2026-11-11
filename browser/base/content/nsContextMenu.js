@@ -29,18 +29,6 @@ function openContextMenu(aMessage, aBrowser, aActor) {
     linkReferrerInfo = E10SUtils.deserializeReferrerInfo(linkReferrerInfo);
   }
 
-  // For now, JS Window Actors don't deserialize Principals automatically, so we
-  // have to do it ourselves. See bug 1557852.
-  if (principal) {
-    principal = E10SUtils.deserializePrincipal(principal);
-  }
-
-  if (data.context.principal) {
-    data.context.principal = E10SUtils.deserializePrincipal(
-      data.context.principal
-    );
-  }
-
   nsContextMenu.contentData = {
     context: data.context,
     browser,
@@ -58,6 +46,7 @@ function openContextMenu(aMessage, aBrowser, aActor) {
     contentType: data.contentType,
     contentDisposition: data.contentDisposition,
     frameOuterWindowID: data.frameOuterWindowID,
+    frameBrowsingContext: BrowsingContext.get(data.frameBrowsingContextID),
     selectionInfo: data.selectionInfo,
     disableSetDesktopBackground: data.disableSetDesktopBackground,
     loginFillInfo: data.loginFillInfo,
@@ -197,6 +186,7 @@ class nsContextMenu {
     this.hasMultipleBGImages = context.hasMultipleBGImages;
     this.isDesignMode = context.isDesignMode;
     this.inFrame = context.inFrame;
+    this.inPDFViewer = context.inPDFViewer;
     this.inSrcdocFrame = context.inSrcdocFrame;
     this.inSyntheticDoc = context.inSyntheticDoc;
     this.inTabBrowser = context.inTabBrowser;
@@ -234,7 +224,11 @@ class nsContextMenu {
     this.targetIdentifier = context.targetIdentifier;
 
     this.principal = context.principal;
+    this.storagePrincipal = context.storagePrincipal;
     this.frameOuterWindowID = context.frameOuterWindowID;
+    this.frameBrowsingContext = BrowsingContext.get(
+      context.frameBrowsingContextID
+    );
 
     this.inSyntheticDoc = context.inSyntheticDoc;
     this.inAboutDevtoolsToolbox = context.inAboutDevtoolsToolbox;
@@ -577,11 +571,17 @@ class nsContextMenu {
     // background images of a stand-alone media document available.
     this.showItem(
       "context-viewbgimage",
-      shouldShow && !this.hasMultipleBGImages && !this.inSyntheticDoc
+      shouldShow &&
+        !this.hasMultipleBGImages &&
+        !this.inSyntheticDoc &&
+        !this.inPDFViewer
     );
     this.showItem(
       "context-sep-viewbgimage",
-      shouldShow && !this.hasMultipleBGImages && !this.inSyntheticDoc
+      shouldShow &&
+        !this.hasMultipleBGImages &&
+        !this.inSyntheticDoc &&
+        !this.inPDFViewer
     );
     document.getElementById("context-viewbgimage").disabled = !this.hasBGImage;
 
@@ -966,12 +966,6 @@ class nsContextMenu {
     this.showItem("fill-login-generated-password", canFillGeneratedPassword);
     this.showItem("generated-password-separator", canFillGeneratedPassword);
 
-    this.setItemAttr(
-      "fill-login-generated-password",
-      "disabled",
-      PrivateBrowsingUtils.isWindowPrivate(window)
-    );
-
     if (!fragment) {
       return;
     }
@@ -991,8 +985,8 @@ class nsContextMenu {
     });
   }
 
-  fillGeneratedPassword() {
-    nsContextMenu.LoginManagerContextMenu.fillGeneratedPassword(
+  useGeneratedPassword() {
+    nsContextMenu.LoginManagerContextMenu.useGeneratedPassword(
       this.targetIdentifier,
       this.contentData.documentURIObject,
       this.browser
@@ -1374,7 +1368,7 @@ class nsContextMenu {
 
   // Save URL of clicked-on frame.
   saveFrame() {
-    saveBrowser(this.browser, false, this.frameOuterWindowID);
+    saveBrowser(this.browser, false, this.frameBrowsingContext);
   }
 
   // Helper function to wait for appropriate MIME-type headers and

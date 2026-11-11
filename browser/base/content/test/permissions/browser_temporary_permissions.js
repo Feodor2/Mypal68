@@ -13,7 +13,7 @@ const SUBFRAME_PAGE =
 
 // Test that setting temp permissions triggers a change in the identity block.
 add_task(async function testTempPermissionChangeEvents() {
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     ORIGIN
   );
   let id = "geo";
@@ -55,7 +55,7 @@ add_task(async function testTempPermissionChangeEvents() {
 // Test that temp blocked permissions requested by subframes (with a different URI) affect the whole page.
 add_task(async function testTempPermissionSubframes() {
   let uri = NetUtil.newURI(ORIGIN);
-  let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+  let principal = Services.scriptSecurityManager.createContentPrincipal(
     uri,
     {}
   );

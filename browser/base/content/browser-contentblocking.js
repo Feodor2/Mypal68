@@ -109,8 +109,8 @@ var ThirdPartyCookies = {
     return (state & Ci.nsIWebProgressListener.STATE_COOKIES_LOADED) != 0;
   },
 
-  async updateSubView() {
-    let contentBlockingLog = await gBrowser.selectedBrowser.getContentBlockingLog();
+  updateSubView() {
+    let contentBlockingLog = gBrowser.selectedBrowser.getContentBlockingLog();
     contentBlockingLog = JSON.parse(contentBlockingLog);
 
     let categories = this._processContentBlockingLog(contentBlockingLog);
@@ -156,7 +156,7 @@ var ThirdPartyCookies = {
       }
     }
 
-    let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+    let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
       origin
     );
     // Cookie exceptions get "inherited" from parent- to sub-domain, so we need to
@@ -498,8 +498,7 @@ var ContentBlocking = {
     this.identityPopupMultiView.showSubView("identity-popup-cookiesView");
   },
 
-  onContentBlockingEvent(event, webProgress, isSimulated) {
-    let previousState = gBrowser.securityUI.contentBlockingEvent;
+  onContentBlockingEvent(event, webProgress, isSimulated, previousState) {
     let baseURI = this._baseURIForChannelClassifier;
 
     // Don't deal with about:, file: etc.
@@ -531,7 +530,7 @@ var ContentBlocking = {
     );
 
     // Check whether the user has added an exception for this site.
-    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+    let principal = Services.scriptSecurityManager.createContentPrincipal(
       baseURI,
       {}
     );

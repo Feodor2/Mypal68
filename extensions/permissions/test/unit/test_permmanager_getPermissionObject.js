@@ -4,7 +4,7 @@
 function getPrincipalFromURI(aURI) {
   let ssm = Services.scriptSecurityManager;
   let uri = NetUtil.newURI(aURI);
-  return ssm.createCodebasePrincipal(uri, {});
+  return ssm.createContentPrincipal(uri, {});
 }
 
 function getSystemPrincipal() {

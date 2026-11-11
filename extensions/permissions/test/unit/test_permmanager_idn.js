@@ -4,7 +4,7 @@
 function getPrincipalFromDomain(aDomain) {
   let ssm = Services.scriptSecurityManager;
   let uri = NetUtil.newURI("http://" + aDomain);
-  return ssm.createCodebasePrincipal(uri, {});
+  return ssm.createContentPrincipal(uri, {});
 }
 
 function run_test() {

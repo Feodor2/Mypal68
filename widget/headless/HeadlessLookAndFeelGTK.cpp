@@ -86,11 +86,7 @@ nsresult HeadlessLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       aColor = NS_RGB(0xaa, 0xaa, 0xaa);
       break;
     case ColorID::TextSelectForeground:
-      GetColor(ColorID::TextSelectBackground, aColor);
-      if (aColor == 0x000000)
-        aColor = NS_RGB(0xff, 0xff, 0xff);
-      else
-        aColor = NS_DONT_CHANGE_COLOR;
+      aColor = NS_DONT_CHANGE_COLOR;
       break;
     case ColorID::Widget3DHighlight:
       aColor = NS_RGB(0xa0, 0xa0, 0xa0);
@@ -201,21 +197,10 @@ nsresult HeadlessLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
     case IntID::ChosenMenuItemsShouldBlink:
       aResult = 1;
       break;
-    case IntID::WindowsAccentColorInTitlebar:
-    case IntID::WindowsDefaultTheme:
-    case IntID::DWMCompositor:
-      aResult = 0;
-      res = NS_ERROR_NOT_IMPLEMENTED;
-      break;
     case IntID::WindowsClassic:
     case IntID::WindowsGlass:
       aResult = 0;
       res = NS_ERROR_FAILURE;
-      break;
-    case IntID::MacGraphiteTheme:
-    case IntID::MacYosemiteTheme:
-      aResult = 0;
-      res = NS_ERROR_NOT_IMPLEMENTED;
       break;
     case IntID::AlertNotificationOrigin:
       aResult = NS_ALERT_TOP;

@@ -207,14 +207,14 @@ NullPrincipal::Deserializer::Read(nsIObjectInputStream* aStream) {
 }
 
 nsresult NullPrincipal::PopulateJSONObject(Json::Value& aObject) {
-  nsAutoCString codebase;
-  nsresult rv = mURI->GetSpec(codebase);
+  nsAutoCString principalURI;
+  nsresult rv = mURI->GetSpec(principalURI);
   NS_ENSURE_SUCCESS(rv, rv);
-  MOZ_ASSERT(codebase.Length() ==
+  MOZ_ASSERT(principalURI.Length() ==
                  nsLiteralCString(NS_NULLPRINCIPAL_SCHEME ":").Length() +
                      NSID_LENGTH - 1,
              "Length of the URI should be: (scheme, uuid, - nullptr)");
-  aObject[std::to_string(eSpec)] = codebase.get();
+  aObject[std::to_string(eSpec)] = principalURI.get();
 
   nsAutoCString suffix;
   OriginAttributesRef().CreateSuffix(suffix);

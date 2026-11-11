@@ -14,6 +14,7 @@
 
 #include "nsDocLoader.h"
 #include "nsDocShell.h"
+#include "nsLoadGroup.h"
 #include "nsNetUtil.h"
 #include "nsIHttpChannel.h"
 #include "nsIWebNavigation.h"
@@ -137,6 +138,27 @@ nsresult nsDocLoader::Init() {
   return NS_OK;
 }
 
+nsresult nsDocLoader::InitWithBrowsingContext(
+    BrowsingContext* aBrowsingContext) {
+  RefPtr<net::nsLoadGroup> loadGroup = new net::nsLoadGroup();
+  if (!aBrowsingContext->GetRequestContextId()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  nsresult rv = loadGroup->InitWithRequestContextId(
+      aBrowsingContext->GetRequestContextId());
+  if (NS_FAILED(rv)) return rv;
+
+  rv = loadGroup->SetGroupObserver(this);
+  if (NS_FAILED(rv)) return rv;
+
+  mLoadGroup = loadGroup;
+
+  MOZ_LOG(gDocLoaderLog, LogLevel::Debug,
+          ("DocLoader:%p: load group %p.\n", this, mLoadGroup.get()));
+
+  return NS_OK;
+}
+
 nsDocLoader::~nsDocLoader() {
   /*
           |ClearWeakReferences()| here is intended to prevent people holding
@@ -232,8 +254,8 @@ nsDocLoader::Stop(void) {
   // Stop call.
   mIsFlushingLayout = false;
 
-  // Clear out mChildrenInOnload.  We want to make sure to fire our
-  // onload at this point, and there's no issue with mChildrenInOnload
+  // Clear out mChildrenInOnload.  We're not going to fire our onload
+  // anyway at this point, and there's no issue with mChildrenInOnload
   // after this, since mDocumentRequest will be null after the
   // DocLoaderIsEmpty() call.
   mChildrenInOnload.Clear();
@@ -250,7 +272,12 @@ nsDocLoader::Stop(void) {
   // we wouldn't need the call here....
 
   NS_ASSERTION(!IsBusy(), "Shouldn't be busy here");
-  DocLoaderIsEmpty(false);
+
+  // If Cancelling the load group only had pending subresource requests, then
+  // the group status will still be success, and we would fire the load event.
+  // We want to avoid that when we're aborting the load, so override the status
+  // with an explicit NS_BINDING_ABORTED value.
+  DocLoaderIsEmpty(false, Some(NS_BINDING_ABORTED));
 
   return rv;
 }
@@ -640,7 +667,8 @@ NS_IMETHODIMP nsDocLoader::GetDocumentChannel(nsIChannel** aChannel) {
   return CallQueryInterface(mDocumentRequest, aChannel);
 }
 
-void nsDocLoader::DocLoaderIsEmpty(bool aFlushLayout) {
+void nsDocLoader::DocLoaderIsEmpty(bool aFlushLayout,
+                                   const Maybe<nsresult>& aOverrideStatus) {
   if (IsBlockingLoadEvent()) {
     /* In the unimagineably rude circumstance that onload event handlers
        triggered by this function actually kill the window ... ok, it's
@@ -704,7 +732,11 @@ void nsDocLoader::DocLoaderIsEmpty(bool aFlushLayout) {
       mProgressStateFlags = nsIWebProgressListener::STATE_STOP;
 
       nsresult loadGroupStatus = NS_OK;
-      mLoadGroup->GetStatus(&loadGroupStatus);
+      if (aOverrideStatus) {
+        loadGroupStatus = *aOverrideStatus;
+      } else {
+        mLoadGroup->GetStatus(&loadGroupStatus);
+      }
 
       //
       // New code to break the circular reference between
@@ -808,7 +840,7 @@ void nsDocLoader::NotifyDoneWithOnload(nsDocLoader* aParent) {
   if (bc->IsContentSubframe() && !bc->GetParent()->IsInProcess()) {
     if (BrowserChild* browserChild = BrowserChild::GetFrom(docShell)) {
       mozilla::Unused << browserChild->SendMaybeFireEmbedderLoadEvents(
-          /*aIsTrusted*/ true, /*aFireLoadAtEmbeddingElement*/ false);
+          dom::EmbedderElementEventType::NoEvent);
     }
   }
 }
@@ -951,55 +983,9 @@ nsDocLoader::GetDOMWindow(mozIDOMWindowProxy** aResult) {
 }
 
 NS_IMETHODIMP
-nsDocLoader::GetDOMWindowID(uint64_t* aResult) {
-  *aResult = 0;
-
-  nsCOMPtr<mozIDOMWindowProxy> window;
-  nsresult rv = GetDOMWindow(getter_AddRefs(window));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsPIDOMWindowOuter> piwindow = nsPIDOMWindowOuter::From(window);
-  NS_ENSURE_STATE(piwindow);
-
-  *aResult = piwindow->WindowID();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDocLoader::GetInnerDOMWindowID(uint64_t* aResult) {
-  *aResult = 0;
-
-  nsCOMPtr<mozIDOMWindowProxy> window;
-  nsresult rv = GetDOMWindow(getter_AddRefs(window));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsPIDOMWindowOuter> outer = nsPIDOMWindowOuter::From(window);
-  NS_ENSURE_STATE(outer);
-
-  nsPIDOMWindowInner* inner = outer->GetCurrentInnerWindow();
-  if (!inner) {
-    // If we don't have an inner window, return 0.
-    return NS_OK;
-  }
-
-  *aResult = inner->WindowID();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsDocLoader::GetIsTopLevel(bool* aResult) {
-  *aResult = false;
-
-  nsCOMPtr<mozIDOMWindowProxy> window;
-  GetDOMWindow(getter_AddRefs(window));
-  if (window) {
-    nsCOMPtr<nsPIDOMWindowOuter> piwindow = nsPIDOMWindowOuter::From(window);
-    NS_ENSURE_STATE(piwindow);
-
-    nsCOMPtr<nsPIDOMWindowOuter> topWindow = piwindow->GetInProcessTop();
-    *aResult = piwindow == topWindow;
-  }
-
+  nsCOMPtr<nsIDocShell> docShell = do_QueryInterface(this);
+  *aResult = docShell && docShell->GetBrowsingContext()->IsTop();
   return NS_OK;
 }
 
@@ -1486,25 +1472,6 @@ void nsDocLoader::OnSecurityChange(nsISupports* aContext, uint32_t aState) {
   // Pass the notification up to the parent...
   if (mParent) {
     mParent->OnSecurityChange(aContext, aState);
-  }
-}
-
-void nsDocLoader::OnContentBlockingEvent(nsISupports* aContext,
-                                         uint32_t aEvent) {
-  //
-  // Fire progress notifications out to any registered nsIWebProgressListeners.
-  //
-
-  nsCOMPtr<nsIRequest> request = do_QueryInterface(aContext);
-  nsIWebProgress* webProgress = static_cast<nsIWebProgress*>(this);
-
-  NOTIFY_LISTENERS(
-      nsIWebProgress::NOTIFY_CONTENT_BLOCKING,
-      listener->OnContentBlockingEvent(webProgress, request, aEvent););
-
-  // Pass the notification up to the parent...
-  if (mParent) {
-    mParent->OnContentBlockingEvent(aContext, aEvent);
   }
 }
 

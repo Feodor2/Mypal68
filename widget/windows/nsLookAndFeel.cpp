@@ -201,6 +201,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       idx = COLOR_GRAYTEXT;
       break;
     case ColorID::Highlight:
+    case ColorID::MozAccentColor:
     case ColorID::MozHtmlCellhighlight:
     case ColorID::MozMenuhover:
       idx = COLOR_HIGHLIGHT;
@@ -218,6 +219,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       }
       [[fallthrough]];
     case ColorID::Highlighttext:
+    case ColorID::MozAccentColorForeground:
     case ColorID::MozHtmlCellhighlighttext:
       idx = COLOR_HIGHLIGHTTEXT;
       break;
@@ -446,10 +448,6 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       } else {
         aResult = nsUXThemeData::GetNativeThemeId();
       }
-      break;
-    case IntID::MacGraphiteTheme:
-      aResult = 0;
-      res = NS_ERROR_NOT_IMPLEMENTED;
       break;
     case IntID::DWMCompositor:
       aResult = nsUXThemeData::CheckForCompositor();

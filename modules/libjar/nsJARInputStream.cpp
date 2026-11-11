@@ -6,9 +6,6 @@
 
 #include "nsJARInputStream.h"
 #include "zipstruct.h"  // defines ZIP compression codes
-#ifdef MOZ_JAR_BROTLI
-#  include "brotli/decode.h"  // brotli
-#endif
 #include "nsZipArchive.h"
 #include "mozilla/MmapFaultHandler.h"
 
@@ -50,15 +47,6 @@ nsresult nsJARInputStream::InitFile(nsJAR* aJar, nsZipItem* item) {
       mInCrc = item->CRC32();
       mOutCrc = crc32(0L, Z_NULL, 0);
       break;
-
-#ifdef MOZ_JAR_BROTLI
-    case MOZ_JAR_BROTLI:
-      mBrotliState = BrotliDecoderCreateInstance(nullptr, nullptr, nullptr);
-      mMode = MODE_BROTLI;
-      mInCrc = item->CRC32();
-      mOutCrc = crc32(0L, Z_NULL, 0);
-      break;
-#endif
 
     default:
       return NS_ERROR_NOT_IMPLEMENTED;
@@ -172,9 +160,6 @@ nsJARInputStream::Available(uint64_t* _retval) {
       break;
 
     case MODE_INFLATE:
-#ifdef MOZ_JAR_BROTLI
-    case MODE_BROTLI:
-#endif
     case MODE_COPY:
       *_retval = mOutSize - mZs.total_out;
       break;
@@ -203,9 +188,6 @@ nsJARInputStream::Read(char* aBuffer, uint32_t aCount, uint32_t* aBytesRead) {
       return ReadDirectory(aBuffer, aCount, aBytesRead);
 
     case MODE_INFLATE:
-#ifdef MOZ_JAR_BROTLI
-    case MODE_BROTLI:
-#endif
       if (mZs.total_out < mOutSize) {
         rv = ContinueInflate(aBuffer, aCount, aBytesRead);
       }
@@ -255,11 +237,6 @@ nsJARInputStream::Close() {
   if (mMode == MODE_INFLATE) {
     inflateEnd(&mZs);
   }
-#ifdef MOZ_JAR_BROTLI
-  if (mMode == MODE_BROTLI) {
-    BrotliDecoderDestroyInstance(mBrotliState);
-  }
-#endif
   mMode = MODE_CLOSED;
   mFd = nullptr;
   return NS_OK;
@@ -280,9 +257,6 @@ nsresult nsJARInputStream::ContinueInflate(char* aBuffer, uint32_t aCount,
   mZs.avail_out = std::min(aCount, (mOutSize - oldTotalOut));
   mZs.next_out = (unsigned char*)aBuffer;
 
-#ifndef MOZ_JAR_BROTLI
-  MOZ_ASSERT(mMode == MODE_INFLATE);
-#endif
   if (mMode == MODE_INFLATE) {
     // now inflate
     int zerr = inflate(&mZs, Z_SYNC_FLUSH);
@@ -290,28 +264,6 @@ nsresult nsJARInputStream::ContinueInflate(char* aBuffer, uint32_t aCount,
       return NS_ERROR_FILE_CORRUPTED;
     }
     finished = (zerr == Z_STREAM_END);
-#ifdef MOZ_JAR_BROTLI
-  } else {
-    MOZ_ASSERT(mMode == MODE_BROTLI);
-    /* The brotli library wants size_t, but z_stream only contains
-     * unsigned int for avail_* and unsigned long for total_*.
-     * So use temporary stack values. */
-    size_t avail_in = mZs.avail_in;
-    size_t avail_out = mZs.avail_out;
-    size_t total_out = mZs.total_out;
-    BrotliDecoderResult result = BrotliDecoderDecompressStream(
-        mBrotliState, &avail_in,
-        const_cast<const unsigned char**>(&mZs.next_in), &avail_out,
-        &mZs.next_out, &total_out);
-    /* We don't need to update avail_out, it's not used outside this
-     * function. */
-    mZs.total_out = total_out;
-    mZs.avail_in = avail_in;
-    if (result == BROTLI_DECODER_RESULT_ERROR) {
-      return NS_ERROR_FILE_CORRUPTED;
-    }
-    finished = (result == BROTLI_DECODER_RESULT_SUCCESS);
-#endif
   }
 
   *aBytesRead = (mZs.total_out - oldTotalOut);

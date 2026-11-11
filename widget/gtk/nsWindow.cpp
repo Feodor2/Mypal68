@@ -42,6 +42,7 @@
 #include "SystemTimeConverter.h"
 #include "nsViewManager.h"
 #include "nsMenuPopupFrame.h"
+#include "nsXPLookAndFeel.h"
 
 #include "nsGtkKeyUtils.h"
 #include "nsGtkCursors.h"
@@ -7940,6 +7941,22 @@ void nsWindow::LockAspectRatio(bool aShouldLock) {
   }
 
   ApplySizeConstraints();
+}
+
+nsresult nsWindow::SetPrefersReducedMotionOverrideForTest(bool aValue) {
+  LookAndFeel::SetPrefersReducedMotionOverrideForTest(aValue);
+
+  // Notify as if the corresponding setting changed.
+  g_object_notify(G_OBJECT(gtk_settings_get_default()),
+                  "gtk-enable-animations");
+
+  return NS_OK;
+}
+
+nsresult nsWindow::ResetPrefersReducedMotionOverrideForTest() {
+  LookAndFeel::ResetPrefersReducedMotionOverrideForTest();
+
+  return NS_OK;
 }
 
 #ifdef MOZ_WAYLAND

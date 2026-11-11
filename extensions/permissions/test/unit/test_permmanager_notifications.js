@@ -22,7 +22,7 @@ function* do_run_test() {
   let permType = "test/expiration-perm";
   let ssm = Services.scriptSecurityManager;
   let uri = NetUtil.newURI("http://example.com");
-  let principal = ssm.createCodebasePrincipal(uri, {});
+  let principal = ssm.createContentPrincipal(uri, {});
 
   let observer = new permission_observer(test_generator, now, permType);
   Services.obs.addObserver(observer, "perm-changed");

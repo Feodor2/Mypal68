@@ -210,8 +210,6 @@ pref("browser.bookmarks.max_backups",       5);
 pref("browser.cache.disk.capacity",         256000);
 
 pref("browser.cache.disk_cache_ssl",        true);
-// 0 = once-per-session, 1 = each-time, 2 = never, 3 = when-appropriate/automatically
-pref("browser.cache.check_doc_frequency",   3);
 // The half life used to re-compute cache entries frecency in hours.
 pref("browser.cache.frecency_half_life_hours", 6);
 
@@ -562,6 +560,8 @@ pref("media.audiograph.single_thread.enabled", true);
 pref("apz.overscroll.stop_velocity_threshold", "0.01");
 pref("apz.overscroll.stretch_factor", "0.35");
 
+pref("apz.zoom-to-focused-input.enabled", true);
+
 #ifdef XP_MACOSX
   // Whether to run in native HiDPI mode on machines with "Retina"/HiDPI
   // display.
@@ -837,6 +837,7 @@ pref("nglayout.enable_drag_images", true);
 pref("browser.fixup.alternate.enabled", true);
 pref("browser.fixup.alternate.prefix", "www.");
 pref("browser.fixup.alternate.suffix", ".com");
+pref("browser.fixup.fallback-to-https", true);
 
 // Print header customization
 // Use the following codes:
@@ -2074,24 +2075,6 @@ pref("security.directory",              "");
 pref("security.dialog_enable_delay", 1000);
 pref("security.notification_enable_delay", 500);
 
-#if defined(DEBUG)
-  // For testing purposes only: Flipping this pref to true allows
-  // to skip the assertion that every about page ships with a CSP.
-  pref("csp.skip_about_page_has_csp_assert", false);
-  // For testing purposes only: Flipping this pref to true allows
-  // to skip the allowlist for about: pages and do not ship with a
-  // CSP and NS_ASSERT right away.
-  pref("csp.skip_about_page_csp_allowlist_and_assert", false);
-  // For testing purposes only: Flipping this pref to true allows
-  // to skip the assertion that HTML fragments (e.g. innerHTML) can
-  // not be used within chrome code or about: pages.
-  pref("domsecurity.skip_html_fragment_assertion", false);
-  // For testing purposes only; Flipping this pref to true allows
-  // to skip the assertion that remote scripts can not be loaded
-  // in system privileged contexts.
-  pref("domsecurity.skip_remote_script_assertion_in_system_priv_context", false);
-#endif
-
 #ifdef EARLY_BETA_OR_EARLIER
   // Disallow web documents loaded with the SystemPrincipal
   pref("security.disallow_non_local_systemprincipal_in_tests", false);
@@ -2427,15 +2410,16 @@ pref("svg.disabled", false);
 // Override default dom.ipc.processCount for some remote content process types.
 pref("dom.ipc.processCount.webLargeAllocation", 10);
 
-// Enable the Large-Allocation header
-pref("dom.largeAllocationHeader.enabled", true);
-
 // Disable e10s for Gecko by default. This is overridden in firefox.js.
 pref("browser.tabs.remote.autostart", false);
 
 // Disable fission for Gecko by default. Lock it on release and beta because
 // it is not ready for use and can leak URIs to telemetry until bug 1561653 is
 // fixed.
+// IMPORTANT: This preference should *almost never* be checked directly, since
+// any session can contain a mix of Fission and non-Fission windows. Instead,
+// callers should check whether the relevant nsILoadContext has the
+// `useRemoteSubframes` flag set.
 #ifdef RELEASE_OR_BETA
   pref("fission.autostart", false, locked);
 #else
@@ -2449,15 +2433,6 @@ pref("browser.tabs.remote.separateFileUriProcess", true);
 // Pref to control whether we put all data: uri's in the default
 // web process when running with fission.
 pref("browser.tabs.remote.dataUriInDefaultWebProcess", false);
-
-// Pref that enables top level web content pages that are opened from file://
-// URI pages to run in the file content process.
-// This has been added in case breaking any window references between these
-// sorts of pages, which we have to do when we run them in the normal web
-// content process, causes compatibility issues.
-//
-// This is going away and for now is disabled.
-pref("browser.tabs.remote.allowLinkedWebInFileUriProcess", false);
 
 // This pref will cause assertions when a remoteType triggers a process switch
 // to a new remoteType it should not be able to trigger.
@@ -3803,7 +3778,6 @@ pref("alerts.showFavicons", false);
 // DOM full-screen API.
 // whether to prevent the top level widget from going fullscreen
 pref("full-screen-api.ignore-widgets", false);
-pref("full-screen-api.pointer-lock.enabled", true);
 // transition duration of fade-to-black and fade-from-black, unit: ms
 #ifndef MOZ_WIDGET_GTK
   pref("full-screen-api.transition-duration.enter", "0 0");
@@ -4246,13 +4220,6 @@ pref("dom.clients.openwindow_favors_same_process", true);
 #else
   pref("layers.omtp.enabled", false);
 #endif
-
-// Limits the depth of recursive conversion of data when opening
-// a content to view.  This is mostly intended to prevent infinite
-// loops with faulty converters involved.
-pref("general.document_open_conversion_depth_limit", 20);
-
-pref("fission.rebuild_frameloaders_on_remoteness_change", true);
 
 // Support for legacy customizations that rely on checking the
 // user profile directory for these stylesheets:

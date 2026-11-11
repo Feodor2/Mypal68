@@ -33,8 +33,7 @@ interface nsIExternalHelperAppService : nsISupports
    * @param aMimeContentType The content type of the incoming data
    * @param aRequest The request corresponding to the incoming data
    * @param aContentContext Used in processing content document refresh
-   *  headers after target content is downloaded. Note in e10s land
-   *  this is likely a CPOW that points to a window in the child process.
+   *  headers after target content is downloaded.
    * @param aForceSave True to always save this content to disk, regardless of
    *  nsIMIMEInfo and other such influences.
    * @param aWindowContext Used in parenting helper app dialogs, usually
@@ -129,21 +128,16 @@ interface nsIHelperAppLauncher : nsICancelable
   readonly attribute AString suggestedFileName;
 
   /**
-   * Saves the final destination of the file. Does not actually perform the
-   * save.
-   * NOTE: This will release the reference to the
-   * nsIHelperAppLauncherDialog.
+   * Saves the final destination of the file.
+   * NOTE: This will release the reference to the nsIHelperAppLauncherDialog.
    */
-  void saveToDisk(in nsIFile aNewFileLocation, in boolean aRememberThisPreference);
+  void promptForSaveDestination();
 
   /**
-   * Remembers that aApplication should be used to launch this content. Does
-   * not actually launch the application.
+   * Tell the launcher that we will want to open the file.
    * NOTE: This will release the reference to the nsIHelperAppLauncherDialog.
-   * @param aApplication nsIFile corresponding to the location of the application to use.
-   * @param aRememberThisPreference TRUE if we should remember this choice.
    */
-  void launchWithApplication(in nsIFile aApplication, in boolean aRememberThisPreference);
+  void launchWithApplication();
 
   /**
    * Callback invoked by nsIHelperAppLauncherDialog::promptForSaveToFileAsync

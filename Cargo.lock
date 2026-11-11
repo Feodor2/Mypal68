@@ -210,9 +210,9 @@ dependencies = [
 
 [[package]]
 name = "bitflags"
-version = "1.2.0"
+version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a606a02debe2813760609f57a64a2ffd27d9fdf5b2f133eaca0b248dd92cdd2"
+checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "bitreader"
@@ -874,14 +874,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e88a8acf291dafb59c2d96e8f59828f3838bb1a70398823ade51a84de6a6deed"
 
 [[package]]
-name = "fallible"
-version = "0.0.1"
-dependencies = [
- "hashglobe",
- "smallvec",
-]
-
-[[package]]
 name = "fallible_collections"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1344,13 +1336,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hashglobe"
-version = "0.1.0"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "httparse"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1703,7 +1688,6 @@ dependencies = [
  "app_units",
  "cssparser",
  "euclid",
- "hashglobe",
  "selectors",
  "servo_arc",
  "smallbitvec",
@@ -2637,6 +2621,7 @@ dependencies = [
  "fxhash",
  "log",
  "matches",
+ "new_debug_unreachable",
  "phf",
  "phf_codegen",
  "precomputed-hash",
@@ -2772,10 +2757,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83da420ee8d1a89e640d0948c646c1c088758d3a3c538f943bfa97bdac17929d"
 
 [[package]]
-name = "size_of_test"
-version = "0.0.1"
-
-[[package]]
 name = "slab"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2858,9 +2839,7 @@ dependencies = [
  "cssparser",
  "derive_more",
  "euclid",
- "fallible",
  "fxhash",
- "hashglobe",
  "indexmap",
  "itertools",
  "itoa",
@@ -2885,6 +2864,7 @@ dependencies = [
  "servo_arc",
  "smallbitvec",
  "smallvec",
+ "static_assertions",
  "static_prefs",
  "style_derive",
  "style_traits",
@@ -2934,21 +2914,7 @@ dependencies = [
 name = "stylo_tests"
 version = "0.0.1"
 dependencies = [
- "atomic_refcell",
- "cssparser",
- "cstr",
- "env_logger",
- "geckoservo",
- "libc",
- "log",
- "malloc_size_of",
- "num-traits",
- "selectors",
- "size_of_test",
- "smallvec",
  "style",
- "style_traits",
- "to_shmem",
 ]
 
 [[package]]
@@ -3296,9 +3262,9 @@ checksum = "612d636f949607bdf9b123b4a6f6d966dedf3ff669f7f045890d3a4a73948169"
 
 [[package]]
 name = "uluru"
-version = "0.4.0"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d7b39d0c32eba57d52d334e4bdd150df6e755264eefaa1ae2e7cd125f35e1ca"
+checksum = "b6ee6f45294ecb6e220e76b8afddb50a8b69d433f31ad9eb2d16fb44029ef5db"
 dependencies = [
  "arrayvec",
 ]

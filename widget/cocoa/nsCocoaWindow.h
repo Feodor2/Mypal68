@@ -47,8 +47,8 @@ typedef struct _nsCocoaWindowList {
 
   BOOL mBeingShown;
   BOOL mDrawTitle;
-  BOOL mBrightTitlebarForeground;
   BOOL mUseMenuStyle;
+  BOOL mIsAnimationSuppressed;
 
   nsTouchBar* mTouchBar;
 }
@@ -78,6 +78,9 @@ typedef struct _nsCocoaWindowList {
 - (BOOL)isBeingShown;
 - (BOOL)isVisibleOrBeingShown;
 
+- (void)setIsAnimationSuppressed:(BOOL)aValue;
+- (BOOL)isAnimationSuppressed;
+
 // Returns an autoreleased NSArray containing the NSViews that we consider the
 // "contents" of this window. All views in the returned array are subviews of
 // this window's content view. However, the array may not include all of the
@@ -93,9 +96,6 @@ typedef struct _nsCocoaWindowList {
 
 - (void)setWantsTitleDrawn:(BOOL)aDrawTitle;
 - (BOOL)wantsTitleDrawn;
-
-- (void)setUseBrightTitlebarForeground:(BOOL)aBrightForeground;
-- (BOOL)useBrightTitlebarForeground;
 
 - (void)disableSetNeedsDisplay;
 - (void)enableSetNeedsDisplay;
@@ -298,7 +298,6 @@ class nsCocoaWindow final : public nsBaseWidget, public nsPIWidgetCocoa {
   virtual void SetShowsFullScreenButton(bool aShow) override;
   virtual void SetWindowAnimationType(WindowAnimationType aType) override;
   virtual void SetDrawsTitle(bool aDrawTitle) override;
-  virtual void SetUseBrightTitlebarForeground(bool aBrightForeground) override;
   virtual nsresult SetNonClientMargins(LayoutDeviceIntMargin& aMargins) override;
   virtual void SetDrawsInTitlebar(bool aState) override;
   virtual void UpdateThemeGeometries(const nsTArray<ThemeGeometry>& aThemeGeometries) override;

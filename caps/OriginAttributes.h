@@ -27,12 +27,17 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
   void SetFirstPartyDomain(const bool aIsTopLevelDocument,
                            const nsACString& aDomain);
   void SetFirstPartyDomain(const bool aIsTopLevelDocument,
-                           const nsAString& aDomain);
+                           const nsAString& aDomain, bool aForced = false);
+
+  void SetPartitionKey(nsIURI* aURI);
+  void SetPartitionKey(const nsACString& aDomain);
+  void SetPartitionKey(const nsAString& aDomain);
 
   enum {
     STRIP_FIRST_PARTY_DOMAIN = 0x01,
     STRIP_USER_CONTEXT_ID = 0x02,
     STRIP_PRIVATE_BROWSING_ID = 0x04,
+    STRIP_PARITION_KEY = 0x08,
   };
 
   inline void StripAttributes(uint32_t aFlags) {
@@ -48,13 +53,21 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
       mPrivateBrowsingId =
           nsIScriptSecurityManager::DEFAULT_PRIVATE_BROWSING_ID;
     }
+
+    if (aFlags & STRIP_PARITION_KEY) {
+      mPartitionKey.Truncate();
+    }
   }
 
   bool operator==(const OriginAttributes& aOther) const {
     return mInIsolatedMozBrowser == aOther.mInIsolatedMozBrowser &&
            mUserContextId == aOther.mUserContextId &&
            mPrivateBrowsingId == aOther.mPrivateBrowsingId &&
-           mFirstPartyDomain == aOther.mFirstPartyDomain;
+           mFirstPartyDomain == aOther.mFirstPartyDomain &&
+#ifdef MOZ_WIDGET_ANDROID
+           mGeckoViewSessionContextId == aOther.mGeckoViewSessionContextId &&
+#endif
+           mPartitionKey == aOther.mPartitionKey;
   }
 
   bool operator!=(const OriginAttributes& aOther) const {
@@ -64,7 +77,11 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
   MOZ_MUST_USE bool EqualsIgnoringFPD(const OriginAttributes& aOther) const {
     return mInIsolatedMozBrowser == aOther.mInIsolatedMozBrowser &&
            mUserContextId == aOther.mUserContextId &&
-           mPrivateBrowsingId == aOther.mPrivateBrowsingId;
+           mPrivateBrowsingId == aOther.mPrivateBrowsingId
+#ifdef MOZ_WIDGET_ANDROID
+           && mGeckoViewSessionContextId == aOther.mGeckoViewSessionContextId
+#endif
+;
   }
 
   // Serializes/Deserializes non-default values into the suffix format, i.e.
@@ -159,6 +176,19 @@ class OriginAttributesPattern : public dom::OriginAttributesPatternDictionary {
       return false;
     }
 
+#ifdef MOZ_WIDGET_ANDROID
+    if (mGeckoViewSessionContextId.WasPassed() &&
+        mGeckoViewSessionContextId.Value() !=
+          aAttrs.mGeckoViewSessionContextId) {
+      return false;
+    }
+#endif
+
+    if (mPartitionKey.WasPassed() &&
+        mPartitionKey.Value() != aAttrs.mPartitionKey) {
+      return false;
+    }
+
     return true;
   }
 
@@ -182,6 +212,20 @@ class OriginAttributesPattern : public dom::OriginAttributesPatternDictionary {
 
     if (mFirstPartyDomain.WasPassed() && aOther.mFirstPartyDomain.WasPassed() &&
         mFirstPartyDomain.Value() != aOther.mFirstPartyDomain.Value()) {
+      return false;
+    }
+
+#ifdef MOZ_WIDGET_ANDROID
+    if (mGeckoViewSessionContextId.WasPassed() &&
+        aOther.mGeckoViewSessionContextId.WasPassed() &&
+        mGeckoViewSessionContextId.Value() !=
+          aOther.mGeckoViewSessionContextId.Value()) {
+      return false;
+    }
+#endif
+
+    if (mPartitionKey.WasPassed() && aOther.mPartitionKey.WasPassed() &&
+        mPartitionKey.Value() != aOther.mPartitionKey.Value()) {
       return false;
     }
 

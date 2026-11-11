@@ -1193,8 +1193,10 @@ void nsCocoaWindow::SetSizeMode(nsSizeMode aMode) {
 void nsCocoaWindow::SuppressAnimation(bool aSuppress) {
   if ([mWindow respondsToSelector:@selector(setAnimationBehavior:)]) {
     if (aSuppress) {
+      [mWindow setIsAnimationSuppressed:YES];
       [mWindow setAnimationBehavior:NSWindowAnimationBehaviorNone];
     } else {
+      [mWindow setIsAnimationSuppressed:NO];
       [mWindow setAnimationBehavior:mWindowAnimationBehavior];
     }
   }
@@ -2144,14 +2146,6 @@ void nsCocoaWindow::SetDrawsTitle(bool aDrawTitle) {
   NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
-void nsCocoaWindow::SetUseBrightTitlebarForeground(bool aBrightForeground) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
-
-  [mWindow setUseBrightTitlebarForeground:aBrightForeground];
-
-  NS_OBJC_END_TRY_ABORT_BLOCK;
-}
-
 nsresult nsCocoaWindow::SetNonClientMargins(LayoutDeviceIntMargin& margins) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
@@ -2770,9 +2764,9 @@ static NSMutableSet* gSwizzledFrameViewClasses = nil;
   mDirtyRect = NSZeroRect;
   mBeingShown = NO;
   mDrawTitle = NO;
-  mBrightTitlebarForeground = NO;
   mUseMenuStyle = NO;
   mTouchBar = nil;
+  mIsAnimationSuppressed = NO;
   [self updateTrackingArea];
 
   return self;
@@ -2847,6 +2841,14 @@ static NSImage* GetMenuMaskImage() {
 
 - (BOOL)isVisibleOrBeingShown {
   return [super isVisible] || mBeingShown;
+}
+
+- (void)setIsAnimationSuppressed:(BOOL)aValue {
+  mIsAnimationSuppressed = aValue;
+}
+
+- (BOOL)isAnimationSuppressed {
+  return mIsAnimationSuppressed;
 }
 
 - (void)disableSetNeedsDisplay {
@@ -2924,6 +2926,15 @@ static const NSString* kStateWantsTitleDrawn = @"wantsTitleDrawn";
   return [NSWindow frameRectForContentRect:aChildViewRect styleMask:styleMask];
 }
 
+- (NSTimeInterval)animationResizeTime:(NSRect)newFrame {
+  if (mIsAnimationSuppressed) {
+    // Should not animate the initial session-restore size change
+    return 0.0;
+  }
+
+  return [super animationResizeTime:newFrame];
+}
+
 - (void)setWantsTitleDrawn:(BOOL)aDrawTitle {
   mDrawTitle = aDrawTitle;
   if ([self respondsToSelector:@selector(setTitleVisibility:)]) {
@@ -2933,15 +2944,6 @@ static const NSString* kStateWantsTitleDrawn = @"wantsTitleDrawn";
 
 - (BOOL)wantsTitleDrawn {
   return mDrawTitle;
-}
-
-- (void)setUseBrightTitlebarForeground:(BOOL)aBrightForeground {
-  mBrightTitlebarForeground = aBrightForeground;
-  [[self standardWindowButton:NSWindowFullScreenButton] setNeedsDisplay:YES];
-}
-
-- (BOOL)useBrightTitlebarForeground {
-  return mBrightTitlebarForeground;
 }
 
 - (NSView*)trackingAreaView {

@@ -76,11 +76,6 @@ class PreloadService {
                      const nsAString& aReferrerPolicy,
                      const nsAString& aIntegrity, bool aScriptFromHead);
 
-  void PreloadStyle(nsIURI* aURI, const nsAString& aCharset,
-                    const nsAString& aCrossOrigin,
-                    const nsAString& aReferrerPolicy,
-                    const nsAString& aIntegrity);
-
   void PreloadImage(nsIURI* aURI, const nsAString& aCrossOrigin,
                     const nsAString& aImageReferrerPolicy, bool aIsImgSet);
 

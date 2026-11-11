@@ -290,6 +290,9 @@ void nsLookAndFeel::SetIntCacheImpl(
       case IntID::SystemUsesDarkTheme:
         mSystemUsesDarkTheme = entry.value;
         break;
+      case IntID::PrefersReducedMotion:
+        mPrefersReducedMotion = entry.value;
+        break;
       case IntID::UseAccessibilityTheme:
         mHighContrast = entry.value;
         break;
@@ -338,6 +341,12 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
     case ColorID::MozHtmlCellhighlight:
     case ColorID::Highlight:  // preference selected item,
       aColor = mTextSelectedBackground;
+      break;
+    case ColorID::MozAccentColor:
+      aColor = mAccentColor;
+      break;
+    case ColorID::MozAccentColorForeground:
+      aColor = mAccentColorForeground;
       break;
     case ColorID::WidgetSelectForeground:
     case ColorID::TextSelectForeground:
@@ -646,17 +655,6 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       break;
     case IntID::TreeScrollLinesMax:
       aResult = 3;
-      break;
-    case IntID::DWMCompositor:
-    case IntID::WindowsClassic:
-    case IntID::WindowsDefaultTheme:
-    case IntID::WindowsThemeIdentifier:
-      aResult = 0;
-      res = NS_ERROR_NOT_IMPLEMENTED;
-      break;
-    case IntID::MacGraphiteTheme:
-      aResult = 0;
-      res = NS_ERROR_NOT_IMPLEMENTED;
       break;
     case IntID::AlertNotificationOrigin:
       aResult = NS_ALERT_TOP;
@@ -1104,18 +1102,38 @@ void nsLookAndFeel::EnsureInit() {
   mFieldText = GDK_RGBA_TO_NS_RGBA(color);
 
   // Selected text and background
-  gtk_style_context_get_background_color(
-      style,
-      static_cast<GtkStateFlags>(GTK_STATE_FLAG_FOCUSED |
-                                 GTK_STATE_FLAG_SELECTED),
-      &color);
-  mTextSelectedBackground = GDK_RGBA_TO_NS_RGBA(color);
-  gtk_style_context_get_color(
-      style,
-      static_cast<GtkStateFlags>(GTK_STATE_FLAG_FOCUSED |
-                                 GTK_STATE_FLAG_SELECTED),
-      &color);
-  mTextSelectedText = GDK_RGBA_TO_NS_RGBA(color);
+  {
+    GtkStyleContext* selectionStyle =
+        GetStyleContext(MOZ_GTK_TEXT_VIEW_TEXT_SELECTION);
+    auto GrabSelectionColors = [&](GtkStyleContext* style) {
+      gtk_style_context_get_background_color(
+          style,
+          static_cast<GtkStateFlags>(GTK_STATE_FLAG_FOCUSED |
+                                     GTK_STATE_FLAG_SELECTED),
+          &color);
+      mTextSelectedBackground = GDK_RGBA_TO_NS_RGBA(color);
+      gtk_style_context_get_color(
+          style,
+          static_cast<GtkStateFlags>(GTK_STATE_FLAG_FOCUSED |
+                                     GTK_STATE_FLAG_SELECTED),
+          &color);
+      mTextSelectedText = GDK_RGBA_TO_NS_RGBA(color);
+    };
+    GrabSelectionColors(selectionStyle);
+    if (mTextSelectedBackground == mTextSelectedText) {
+      // Some old distros/themes don't properly use the .selection style, so
+      // fall back to the regular text view style.
+      GrabSelectionColors(style);
+    }
+
+    // Accent is the darker of the selection background / foreground.
+    mAccentColor = mTextSelectedBackground;
+    mAccentColorForeground = mTextSelectedText;
+    if (RelativeLuminanceUtils::Compute(mAccentColor) >
+        RelativeLuminanceUtils::Compute(mAccentColorForeground)) {
+      std::exchange(mAccentColor, mAccentColorForeground);
+    }
+  }
 
   // Button text color
   style = GetStyleContext(MOZ_GTK_BUTTON);

@@ -10,12 +10,16 @@
 #include "nsIURI.h"
 #include "nsURLHelper.h"
 
+static const char kSourceChar = ':';
+static const char kSanitizedChar = '+';
+
 namespace mozilla {
 
-void MakeFirstPartyDomain(const nsACString& aScheme, const nsACString& aHost,
-                          int32_t aPort, nsAString& aFirstPartyDomain) {
-  if (!OriginAttributes::UseSiteForFirstPartyDomain()) {
-    aFirstPartyDomain.Assign(NS_ConvertUTF8toUTF16(aHost));
+static void MakeTopLevelInfo(const nsACString& aScheme, const nsACString& aHost,
+                             int32_t aPort, bool aUseSite,
+                             nsAString& aTopLevelInfo) {
+  if (!aUseSite) {
+    aTopLevelInfo.Assign(NS_ConvertUTF8toUTF16(aHost));
     return;
   }
 
@@ -30,16 +34,19 @@ void MakeFirstPartyDomain(const nsACString& aScheme, const nsACString& aHost,
   }
   site.AppendLiteral(")");
 
-  aFirstPartyDomain.Assign(NS_ConvertUTF8toUTF16(site));
+  aTopLevelInfo.Assign(NS_ConvertUTF8toUTF16(site));
 }
 
-void MakeFirstPartyDomain(const nsACString& aScheme, const nsACString& aHost,
-                          nsAString& aFirstPartyDomain) {
-  MakeFirstPartyDomain(aScheme, aHost, -1, aFirstPartyDomain);
+static void MakeTopLevelInfo(const nsACString& aScheme, const nsACString& aHost,
+                             bool aUseSite, nsAString& aTopLevelInfo) {
+  MakeTopLevelInfo(aScheme, aHost, -1, aUseSite, aTopLevelInfo);
 }
 
-void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
-                                           nsIURI* aURI, bool aForced) {
+static void PopulateTopLevelInfoFromURI(const bool aIsTopLevelDocument,
+                                        nsIURI* aURI, bool aIsFirstPartyEnabled,
+                                        bool aForced, bool aUseSite,
+                                        nsString OriginAttributes::*aTarget,
+                                        OriginAttributes& aOriginAttributes) {
   nsresult rv;
 
   if (!aURI) {
@@ -47,18 +54,19 @@ void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
   }
 
   // If the prefs are off or this is not a top level load, bail out.
-  if ((!IsFirstPartyEnabled() || !aIsTopLevelDocument) && !aForced) {
+  if ((!aIsFirstPartyEnabled || !aIsTopLevelDocument) && !aForced) {
     return;
   }
+
+  nsAString& topLevelInfo = aOriginAttributes.*aTarget;
 
   nsAutoCString scheme;
   rv = aURI->GetScheme(scheme);
   NS_ENSURE_SUCCESS_VOID(rv);
 
   if (scheme.EqualsLiteral("about")) {
-    MakeFirstPartyDomain(scheme,
-                         NS_LITERAL_CSTRING(ABOUT_URI_FIRST_PARTY_DOMAIN),
-                         mFirstPartyDomain);
+    MakeTopLevelInfo(scheme, NS_LITERAL_CSTRING(ABOUT_URI_FIRST_PARTY_DOMAIN),
+                     aUseSite, topLevelInfo);
     return;
   }
 
@@ -73,7 +81,7 @@ void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
   if (dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
           aURI, getter_AddRefs(blobPrincipal))) {
     MOZ_ASSERT(blobPrincipal);
-    mFirstPartyDomain = blobPrincipal->OriginAttributesRef().mFirstPartyDomain;
+    topLevelInfo = blobPrincipal->OriginAttributesRef().*aTarget;
     return;
   }
 
@@ -85,7 +93,7 @@ void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
   nsAutoCString baseDomain;
   rv = tldService->GetBaseDomain(aURI, 0, baseDomain);
   if (NS_SUCCEEDED(rv)) {
-    MakeFirstPartyDomain(scheme, baseDomain, mFirstPartyDomain);
+    MakeTopLevelInfo(scheme, baseDomain, aUseSite, topLevelInfo);
     return;
   }
 
@@ -103,7 +111,7 @@ void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
 
   if (isIpAddress) {
     // If the host is an IPv4/IPv6 address, we still accept it as a
-    // valid firstPartyDomain.
+    // valid topLevelInfo.
     nsAutoCString ipAddr;
 
     if (net_IsValidIPv6Addr(host)) {
@@ -117,12 +125,12 @@ void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
       ipAddr = host;
     }
 
-    MakeFirstPartyDomain(scheme, ipAddr, port, mFirstPartyDomain);
+    MakeTopLevelInfo(scheme, ipAddr, port, aUseSite, topLevelInfo);
     return;
   }
 
-  if (OriginAttributes::UseSiteForFirstPartyDomain()) {
-    MakeFirstPartyDomain(scheme, host, port, mFirstPartyDomain);
+  if (aUseSite) {
+    MakeTopLevelInfo(scheme, host, port, aUseSite, topLevelInfo);
     return;
   }
 
@@ -130,10 +138,18 @@ void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
     nsAutoCString publicSuffix;
     rv = tldService->GetPublicSuffix(aURI, publicSuffix);
     if (NS_SUCCEEDED(rv)) {
-      MakeFirstPartyDomain(scheme, publicSuffix, port, mFirstPartyDomain);
+      MakeTopLevelInfo(scheme, publicSuffix, port, aUseSite, topLevelInfo);
       return;
     }
   }
+}
+
+void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
+                                           nsIURI* aURI, bool aForced) {
+  PopulateTopLevelInfoFromURI(
+      aIsTopLevelDocument, aURI, IsFirstPartyEnabled(), aForced,
+      StaticPrefs::privacy_firstparty_isolate_use_site(),
+      &OriginAttributes::mFirstPartyDomain, *this);
 }
 
 void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
@@ -142,15 +158,29 @@ void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
 }
 
 void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
-                                           const nsAString& aDomain) {
-  bool isFirstPartyEnabled = IsFirstPartyEnabled();
-
+                                           const nsAString& aDomain,
+                                           bool aForced) {
   // If the pref is off or this is not a top level load, bail out.
-  if (!isFirstPartyEnabled || !aIsTopLevelDocument) {
+  if ((!IsFirstPartyEnabled() || !aIsTopLevelDocument) && !aForced) {
     return;
   }
 
   mFirstPartyDomain = aDomain;
+}
+
+void OriginAttributes::SetPartitionKey(nsIURI* aURI) {
+  PopulateTopLevelInfoFromURI(
+      false /* aIsTopLevelDocument */, aURI, IsFirstPartyEnabled(),
+      true /* aForced */, StaticPrefs::privacy_dynamic_firstparty_use_site(),
+      &OriginAttributes::mPartitionKey, *this);
+}
+
+void OriginAttributes::SetPartitionKey(const nsACString& aDomain) {
+  SetPartitionKey(NS_ConvertUTF8toUTF16(aDomain));
+}
+
+void OriginAttributes::SetPartitionKey(const nsAString& aDomain) {
+  mPartitionKey = aDomain;
 }
 
 void OriginAttributes::CreateSuffix(nsACString& aStr) const {
@@ -165,28 +195,43 @@ void OriginAttributes::CreateSuffix(nsACString& aStr) const {
   //
 
   if (mInIsolatedMozBrowser) {
-    params.Set(NS_LITERAL_STRING("inBrowser"), NS_LITERAL_STRING("1"));
+    params.Set(u"inBrowser"_ns, u"1"_ns);
   }
 
   if (mUserContextId != nsIScriptSecurityManager::DEFAULT_USER_CONTEXT_ID) {
     value.Truncate();
     value.AppendInt(mUserContextId);
-    params.Set(NS_LITERAL_STRING("userContextId"), value);
+    params.Set(u"userContextId"_ns, value);
   }
 
   if (mPrivateBrowsingId) {
     value.Truncate();
     value.AppendInt(mPrivateBrowsingId);
-    params.Set(NS_LITERAL_STRING("privateBrowsingId"), value);
+    params.Set(u"privateBrowsingId"_ns, value);
   }
 
   if (!mFirstPartyDomain.IsEmpty()) {
     nsAutoString sanitizedFirstPartyDomain(mFirstPartyDomain);
-    sanitizedFirstPartyDomain.ReplaceChar(
-        dom::quota::QuotaManager::kReplaceChars, '+');
+    sanitizedFirstPartyDomain.ReplaceChar(kSourceChar, kSanitizedChar);
 
-    params.Set(NS_LITERAL_STRING("firstPartyDomain"),
-               sanitizedFirstPartyDomain);
+    params.Set(u"firstPartyDomain"_ns, sanitizedFirstPartyDomain);
+  }
+
+#ifdef MOZ_WIDGET_ANDROID
+  if (!mGeckoViewSessionContextId.IsEmpty()) {
+    nsAutoString sanitizedGeckoViewUserContextId(mGeckoViewSessionContextId);
+    sanitizedGeckoViewUserContextId.ReplaceChar(
+        dom::quota::QuotaManager::kReplaceChars, kSanitizedChar);
+
+    params.Set(u"geckoViewUserContextId"_ns, sanitizedGeckoViewUserContextId);
+  }
+#endif
+
+  if (!mPartitionKey.IsEmpty()) {
+    nsAutoString sanitizedPartitionKey(mPartitionKey);
+    sanitizedPartitionKey.ReplaceChar(kSourceChar, kSanitizedChar);
+
+    params.Set(NS_LITERAL_STRING("partitionKey"), sanitizedPartitionKey);
   }
 
   aStr.Truncate();
@@ -218,6 +263,10 @@ void OriginAttributes::CreateAnonymizedSuffix(nsACString& aStr) const {
 
   if (!attrs.mFirstPartyDomain.IsEmpty()) {
     attrs.mFirstPartyDomain.AssignLiteral("_anonymizedFirstPartyDomain_");
+  }
+
+  if (!attrs.mPartitionKey.IsEmpty()) {
+    attrs.mPartitionKey.AssignLiteral("_anonymizedPartitionKey_");
   }
 
   attrs.CreateSuffix(aStr);
@@ -277,7 +326,26 @@ bool OriginAttributes::PopulateFromSuffix(const nsACString& aStr) {
 
         if (aName.EqualsLiteral("firstPartyDomain")) {
           MOZ_RELEASE_ASSERT(mFirstPartyDomain.IsEmpty());
-          mFirstPartyDomain.Assign(aValue);
+          nsAutoString firstPartyDomain(aValue);
+          firstPartyDomain.ReplaceChar(kSanitizedChar, kSourceChar);
+          mFirstPartyDomain.Assign(firstPartyDomain);
+          return true;
+        }
+
+#ifdef MOZ_WIDGET_ANDROID
+        if (aName.EqualsLiteral("geckoViewUserContextId")) {
+          MOZ_RELEASE_ASSERT(
+              mOriginAttributes->mGeckoViewSessionContextId.IsEmpty());
+          mOriginAttributes->mGeckoViewSessionContextId.Assign(aValue);
+          return true;
+        }
+#endif
+
+        if (aName.EqualsLiteral("partitionKey")) {
+          MOZ_RELEASE_ASSERT(mPartitionKey.IsEmpty());
+          nsAutoString partitionKey(aValue);
+          partitionKey.ReplaceChar(kSanitizedChar, kSourceChar);
+          mPartitionKey.Assign(partitionKey);
           return true;
         }
 

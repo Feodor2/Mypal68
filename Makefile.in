@@ -241,7 +241,7 @@ endif
 
 ifdef REBASE_DIR
 default all::
-	$(REBASE_DIR)\Rebase.Exe -b 61d60000 $(DIST)/bin/mozglue.dll $(DIST)/bin/lgpllibs.dll $(DIST)/bin/nss3.dll $(DIST)/bin/xul.dll $(DIST)/bin/softokn3.dll $(DIST)/bin/freebl3.dll $(DIST)/bin/nssckbi.dll $(DIST)/bin/mozavutil.dll $(DIST)/bin/mozavcodec.dll $(DIST)/bin/libEGL.dll $(DIST)/bin/libGLESv2.dll $(DIST)/bin/qipcap.dll
+	$(REBASE_DIR)\Rebase.Exe -b 61d30000 $(DIST)/bin/mozglue.dll $(DIST)/bin/lgpllibs.dll $(DIST)/bin/nss3.dll $(DIST)/bin/xul.dll $(DIST)/bin/softokn3.dll $(DIST)/bin/freebl3.dll $(DIST)/bin/nssckbi.dll $(DIST)/bin/mozavutil.dll $(DIST)/bin/mozavcodec.dll $(DIST)/bin/libEGL.dll $(DIST)/bin/libGLESv2.dll $(DIST)/bin/qipcap.dll
 endif
 
 # There used to be build interdependencies here. They are now in config/recurse.mk

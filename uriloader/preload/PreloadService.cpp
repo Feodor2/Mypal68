@@ -168,7 +168,6 @@ already_AddRefed<PreloaderBase> PreloadService::PreloadOrCoalesce(
     PreloadScript(uri, aType, aCharset, aCORS, aReferrerPolicyAttr, aIntegrity,
                   true /* isInHead - TODO */);
   } else if (aAs.LowerCaseEqualsASCII("style")) {
-    PreloadStyle(uri, aCharset, aCORS, aReferrerPolicyAttr, aIntegrity);
   } else if (aAs.LowerCaseEqualsASCII("image")) {
     PreloadImage(uri, aCORS, aReferrerPolicyAttr, isImgSet);
   } else if (aAs.LowerCaseEqualsASCII("font")) {
@@ -189,15 +188,6 @@ void PreloadService::PreloadScript(nsIURI* aURI, const nsAString& aType,
   mDocument->ScriptLoader()->PreloadURI(
       aURI, aCharset, aType, aCrossOrigin, aIntegrity, aScriptFromHead, false,
       false, false, true, PreloadReferrerPolicy(aReferrerPolicy));
-}
-
-void PreloadService::PreloadStyle(nsIURI* aURI, const nsAString& aCharset,
-                                  const nsAString& aCrossOrigin,
-                                  const nsAString& aReferrerPolicy,
-                                  const nsAString& aIntegrity) {
-  mDocument->PreloadStyle(aURI, Encoding::ForLabel(aCharset), aCrossOrigin,
-                          PreloadReferrerPolicy(aReferrerPolicy), aIntegrity,
-                          true);
 }
 
 void PreloadService::PreloadImage(nsIURI* aURI, const nsAString& aCrossOrigin,

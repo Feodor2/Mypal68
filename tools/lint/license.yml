@@ -96,8 +96,6 @@ license:
         - security/mac/hardenedruntime/plugin-container.production.entitlements.xml
         - security/mac/hardenedruntime/production.entitlements.xml
         - services/sync/modules-testing/fxa_utils.js
-        - servo/components/hashglobe/src/alloc.rs
-        - servo/components/hashglobe/src/shim.rs
         - taskcluster/docker/firefox-snap/extract_locales_from_l10n_json.py
         - taskcluster/docker/index-task/insert-indexes.js
         - taskcluster/scripts/misc/android-gradle-dependencies/nexus.xml

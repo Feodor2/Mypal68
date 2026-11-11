@@ -41,7 +41,7 @@ class WebExtensionPolicy;
 
 class BasePrincipal;
 
-// Codebase principals (and codebase principals embedded within expanded
+// Content principals (and content principals embedded within expanded
 // principals) stored in SiteIdentifier are guaranteed to contain only the
 // eTLD+1 part of the original domain. This is used to determine whether two
 // origins are same-site: if it's possible for two origins to access each other
@@ -82,7 +82,7 @@ class BasePrincipal : public nsJSPrincipals {
   // Only update if you know exactly what you are doing
   enum PrincipalKind {
     eNullPrincipal = 0,
-    eCodebasePrincipal,
+    eContentPrincipal,
     eExpandedPrincipal,
     eSystemPrincipal,
     eKindMax = eSystemPrincipal
@@ -123,7 +123,7 @@ class BasePrincipal : public nsJSPrincipals {
                                        uint64_t innerWindowID) final;
   NS_IMETHOD GetAddonPolicy(nsISupports** aResult) final;
   NS_IMETHOD GetIsNullPrincipal(bool* aResult) override;
-  NS_IMETHOD GetIsCodebasePrincipal(bool* aResult) override;
+  NS_IMETHOD GetIsContentPrincipal(bool* aResult) override;
   NS_IMETHOD GetIsExpandedPrincipal(bool* aResult) override;
   NS_IMETHOD GetIsSystemPrincipal(bool* aResult) override;
   NS_IMETHOD GetScheme(nsACString& aScheme) override;
@@ -181,7 +181,7 @@ class BasePrincipal : public nsJSPrincipals {
 
   virtual bool AddonHasPermission(const nsAtom* aPerm);
 
-  virtual bool IsCodebasePrincipal() const { return false; };
+  virtual bool IsContentPrincipal() const { return false; };
 
   static BasePrincipal* Cast(nsIPrincipal* aPrin) {
     return static_cast<BasePrincipal*>(aPrin);
@@ -199,14 +199,14 @@ class BasePrincipal : public nsJSPrincipals {
     return *static_cast<const BasePrincipal*>(&aPrin);
   }
 
-  static already_AddRefed<BasePrincipal> CreateCodebasePrincipal(
+  static already_AddRefed<BasePrincipal> CreateContentPrincipal(
       const nsACString& aOrigin);
 
-  // These following method may not create a codebase principal in case it's
+  // These following method may not create a content principal in case it's
   // not possible to generate a correct origin from the passed URI. If this
   // happens, a NullPrincipal is returned.
 
-  static already_AddRefed<BasePrincipal> CreateCodebasePrincipal(
+  static already_AddRefed<BasePrincipal> CreateContentPrincipal(
       nsIURI* aURI, const OriginAttributes& aAttrs);
 
   const OriginAttributes& OriginAttributesRef() final {
@@ -256,7 +256,7 @@ class BasePrincipal : public nsJSPrincipals {
 
   /* Returns true if this principal's CSP should override a document's CSP for
    * loads that it triggers. Currently true for expanded principals which
-   * subsume the document principal, and add-on codebase principals regardless
+   * subsume the document principal, and add-on content principals regardless
    * of whether they subsume the document principal.
    */
   bool OverridesCSP(nsIPrincipal* aDocumentPrincipal) {
@@ -329,7 +329,7 @@ class BasePrincipal : public nsJSPrincipals {
   };
 
  private:
-  static already_AddRefed<BasePrincipal> CreateCodebasePrincipal(
+  static already_AddRefed<BasePrincipal> CreateContentPrincipal(
       nsIURI* aURI, const OriginAttributes& aAttrs,
       const nsACString& aOriginNoSuffix);
 
@@ -354,13 +354,13 @@ inline bool BasePrincipal::FastEquals(nsIPrincipal* aOther) {
   }
 
   // Two principals are considered to be equal if their origins are the same.
-  // If the two principals are codebase principals, their origin attributes
+  // If the two principals are content principals, their origin attributes
   // (aka the origin suffix) must also match.
   if (Kind() == eSystemPrincipal) {
     return this == other;
   }
 
-  if (Kind() == eCodebasePrincipal || Kind() == eNullPrincipal) {
+  if (Kind() == eContentPrincipal || Kind() == eNullPrincipal) {
     return mOriginNoSuffix == other->mOriginNoSuffix &&
            mOriginSuffix == other->mOriginSuffix;
   }

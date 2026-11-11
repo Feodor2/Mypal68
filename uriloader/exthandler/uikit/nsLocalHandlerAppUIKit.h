@@ -19,7 +19,7 @@ class nsLocalHandlerAppUIKit final : public nsLocalHandlerApp {
       : nsLocalHandlerApp(aName, aExecutable) {}
 
   NS_IMETHOD LaunchWithURI(nsIURI* aURI,
-                           nsIInterfaceRequestor* aWindowContext) override;
+                           BrowsingContext* aBrowsingContext) override;
 };
 
 #endif /* nslocalhandlerappuikit_h_ */

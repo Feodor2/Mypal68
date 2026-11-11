@@ -27,10 +27,10 @@ function convertToPrincipal(subject) {
     return subject;
   }
   if (typeof subject === "string") {
-    return secMan.createCodebasePrincipalFromOrigin(subject);
+    return secMan.createContentPrincipalFromOrigin(subject);
   }
   if (subject == null || subject instanceof Ci.nsIURI) {
-    return secMan.createCodebasePrincipal(subject, {});
+    return secMan.createContentPrincipal(subject, {});
   }
   throw new Error(
     "subject parameter must be an nsIURI an origin string or a principal."

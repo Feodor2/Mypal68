@@ -45,25 +45,17 @@ nsLookAndFeel::nsLookAndFeel()
       mColorTextSelectBackgroundDisabled(0),
       mColorHighlight(0),
       mColorMenuHover(0),
-      mColorTextSelectForeground(0),
-      mColorMenuHoverText(0),
-      mColorButtonText(0),
-      mHasColorButtonText(false),
-      mColorButtonHoverText(0),
+      mColorAlternateSelectedControlText(0),
+      mColorControlText(0),
       mColorText(0),
       mColorWindowText(0),
-      mColorActiveCaption(0),
+      mColorGrid(0),
       mColorActiveBorder(0),
       mColorGrayText(0),
-      mColorInactiveBorder(0),
-      mColorInactiveCaption(0),
+      mColorControlBackground(0),
       mColorScrollbar(0),
       mColorThreeDHighlight(0),
-      mColorMenu(0),
-      mColorWindowFrame(0),
-      mColorFieldText(0),
       mColorDialog(0),
-      mColorDialogText(0),
       mColorDragTargetZone(0),
       mColorChromeActive(0),
       mColorChromeInactive(0),
@@ -158,6 +150,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       aColor = NS_RGB(0x00, 0x00, 0x00);
       break;
     case ColorID::WidgetBackground:
+    case ColorID::Infobackground:
       aColor = NS_RGB(0xdd, 0xdd, 0xdd);
       break;
     case ColorID::WidgetForeground:
@@ -190,17 +183,19 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       aColor = ProcessSelectionBackground(mColorTextSelectBackgroundDisabled);
       break;
     case ColorID::Highlight:  // CSS2 color
+    case ColorID::MozAccentColor:
       aColor = mColorHighlight;
       break;
     case ColorID::MozMenuhover:
       aColor = mColorMenuHover;
       break;
     case ColorID::TextSelectForeground:
-      aColor = mColorTextSelectForeground;
+      aColor = NS_DONT_CHANGE_COLOR;
       break;
     case ColorID::Highlighttext:  // CSS2 color
+    case ColorID::MozAccentColorForeground:
     case ColorID::MozMenuhovertext:
-      aColor = mColorMenuHoverText;
+      aColor = mColorAlternateSelectedControlText;
       break;
     case ColorID::IMESelectedRawTextBackground:
     case ColorID::IMESelectedConvertedTextBackground:
@@ -239,15 +234,11 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       //
     case ColorID::MozMacButtonactivetext:
     case ColorID::MozMacDefaultbuttontext:
-      if (mHasColorButtonText) {
-        aColor = mColorButtonText;
-        break;
-      }
-      // Otherwise fall through and return the regular button text:
-      [[fallthrough]];
+      aColor = NS_RGB(0xFF, 0xFF, 0xFF);
+      break;
     case ColorID::Buttontext:
     case ColorID::MozButtonhovertext:
-      aColor = mColorButtonHoverText;
+      aColor = mColorControlText;
       break;
     case ColorID::Captiontext:
     case ColorID::Menutext:
@@ -259,7 +250,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       aColor = mColorWindowText;
       break;
     case ColorID::Activecaption:
-      aColor = mColorActiveCaption;
+      aColor = mColorGrid;
       break;
     case ColorID::Activeborder:
       aColor = mColorActiveBorder;
@@ -284,10 +275,8 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       aColor = mColorGrayText;
       break;
     case ColorID::Inactiveborder:
-      aColor = mColorInactiveBorder;
-      break;
     case ColorID::Inactivecaption:
-      aColor = mColorInactiveCaption;
+      aColor = mColorControlBackground;
       break;
     case ColorID::Inactivecaptiontext:
       aColor = NS_RGB(0x45, 0x45, 0x45);
@@ -311,13 +300,10 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       aColor = NS_RGB(0xDA, 0xDA, 0xDA);
       break;
     case ColorID::Menu:
-      aColor = mColorMenu;
-      break;
-    case ColorID::Infobackground:
-      aColor = NS_RGB(0xFF, 0xFF, 0xC7);
+      aColor = mColorAlternateSelectedControlText;
       break;
     case ColorID::Windowframe:
-      aColor = mColorWindowFrame;
+      aColor = mColorGrid;
       break;
     case ColorID::Window:
     case ColorID::Field:
@@ -326,7 +312,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       break;
     case ColorID::Fieldtext:
     case ColorID::MozComboboxtext:
-      aColor = mColorFieldText;
+      aColor = mColorControlText;
       break;
     case ColorID::MozDialog:
       aColor = mColorDialog;
@@ -336,7 +322,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
     case ColorID::MozHtmlCellhighlighttext:
     case ColorID::MozColheadertext:
     case ColorID::MozColheaderhovertext:
-      aColor = mColorDialogText;
+      aColor = mColorControlText;
       break;
     case ColorID::MozDragtargetzone:
       aColor = mColorDragTargetZone;
@@ -513,13 +499,6 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
     case IntID::TreeScrollLinesMax:
       aResult = 3;
       break;
-    case IntID::DWMCompositor:
-    case IntID::WindowsClassic:
-    case IntID::WindowsDefaultTheme:
-    case IntID::WindowsThemeIdentifier:
-      aResult = 0;
-      res = NS_ERROR_NOT_IMPLEMENTED;
-      break;
     case IntID::MacGraphiteTheme:
       aResult = [NSColor currentControlTint] == NSGraphiteControlTint;
       break;
@@ -584,6 +563,9 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
         mPrefersReducedMotionCached = true;
       }
       aResult = mPrefersReducedMotion;
+      break;
+    case IntID::VideoDynamicRange:
+      aResult = nsCocoaFeatures::OnHighSierraOrLater();
       break;
     default:
       aResult = 0;
@@ -712,9 +694,7 @@ void nsLookAndFeel::EnsureInit() {
   }
   mInitialized = true;
 
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK
-
-  nscolor color;
+  NS_OBJC_BEGIN_TRY_IGNORE_BLOCK
 
   mColorTextSelectBackground = GetColorFromNSColor([NSColor selectedTextBackgroundColor]);
   mColorTextSelectBackgroundDisabled = GetColorFromNSColor([NSColor secondarySelectedControlColor]);
@@ -722,36 +702,20 @@ void nsLookAndFeel::EnsureInit() {
   mColorHighlight = GetColorFromNSColor([NSColor alternateSelectedControlColor]);
   mColorMenuHover = GetColorFromNSColor([NSColor alternateSelectedControlColor]);
 
-  GetColor(ColorID::TextSelectBackground, color);
-  if (color == 0x000000) {
-    mColorTextSelectForeground = NS_RGB(0xff, 0xff, 0xff);
-  } else {
-    mColorTextSelectForeground = NS_DONT_CHANGE_COLOR;
-  }
+  mColorAlternateSelectedControlText =
+      GetColorFromNSColor([NSColor alternateSelectedControlTextColor]);
 
-  mColorMenuHoverText = GetColorFromNSColor([NSColor alternateSelectedControlTextColor]);
-
-  if (nsCocoaFeatures::OnYosemiteOrLater()) {
-    mColorButtonText = NS_RGB(0xFF, 0xFF, 0xFF);
-    mHasColorButtonText = true;
-  }
-
-  mColorButtonHoverText = GetColorFromNSColor([NSColor controlTextColor]);
+  mColorControlText = GetColorFromNSColor([NSColor controlTextColor]);
   mColorText = GetColorFromNSColor([NSColor textColor]);
   mColorWindowText = GetColorFromNSColor([NSColor windowFrameTextColor]);
-  mColorActiveCaption = GetColorFromNSColor([NSColor gridColor]);
+  mColorGrid = GetColorFromNSColor([NSColor gridColor]);
   mColorActiveBorder = GetColorFromNSColor([NSColor keyboardFocusIndicatorColor]);
   NSColor* disabledColor = [NSColor disabledControlTextColor];
   mColorGrayText = GetColorFromNSColorWithAlpha(disabledColor, [disabledColor alphaComponent]);
-  mColorInactiveBorder = GetColorFromNSColor([NSColor controlBackgroundColor]);
-  mColorInactiveCaption = GetColorFromNSColor([NSColor controlBackgroundColor]);
+  mColorControlBackground = GetColorFromNSColor([NSColor controlBackgroundColor]);
   mColorScrollbar = GetColorFromNSColor([NSColor scrollBarColor]);
   mColorThreeDHighlight = GetColorFromNSColor([NSColor highlightColor]);
-  mColorMenu = GetColorFromNSColor([NSColor alternateSelectedControlTextColor]);
-  mColorWindowFrame = GetColorFromNSColor([NSColor gridColor]);
-  mColorFieldText = GetColorFromNSColor([NSColor controlTextColor]);
   mColorDialog = GetColorFromNSColor([NSColor controlHighlightColor]);
-  mColorDialogText = GetColorFromNSColor([NSColor controlTextColor]);
   mColorDragTargetZone = GetColorFromNSColor([NSColor selectedControlColor]);
 
   int grey = NativeGreyColorAsInt(toolbarFillGrey, true);

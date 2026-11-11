@@ -35,6 +35,7 @@ WORKSPACE_JOBS_DIR = WORKSPACE_DIR / "jobs"
 #: The directory where artifacts from this job will be placed.
 OUTPUT_DIR = Path("/", "builds", "worker", "artifacts")
 
+
 #: A job to process through visualmetrics.py
 @attr.s
 class Job:

@@ -10,13 +10,13 @@ function run_test() {
   Assert.equal(pm.all.length, 0);
 
   // add some permissions
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "http://amazon.com:8080"
   );
-  let principal2 = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal2 = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "http://google.com:2048"
   );
-  let principal3 = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal3 = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "https://google.com"
   );
 

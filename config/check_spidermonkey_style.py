@@ -338,6 +338,7 @@ def check_style(enable_fixup):
                     if non_js_dir == "intl/components/":
                         inclname = "mozilla/intl/" + filename
                     non_js_inclnames.add(inclname)
+    non_js_inclnames.add("mozilla/StaticPrefs_privacy.h")
 
     # Look for header files in js/public.
     js_public_root = os.path.join("js", "public")

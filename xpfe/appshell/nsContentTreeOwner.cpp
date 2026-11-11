@@ -80,9 +80,8 @@ nsContentTreeOwner::GetWebBrowserChrome() {
     return nullptr;
   }
 
-  nsCOMPtr<nsPIDOMWindowOuter> outer(docShell->GetWindow());
   if (nsCOMPtr<nsIWebBrowserChrome3> chrome =
-          do_QueryActor("WebBrowserChrome", outer)) {
+          do_QueryActor("WebBrowserChrome", docShell->GetDocument())) {
     return chrome.forget();
   }
 
@@ -403,15 +402,6 @@ NS_IMETHODIMP nsContentTreeOwner::ShouldLoadURIInThisProcess(nsIURI* aURI,
                                                              bool* aRetVal) {
   MOZ_ASSERT_UNREACHABLE("Should only be called in child process.");
   *aRetVal = true;
-  return NS_OK;
-}
-
-NS_IMETHODIMP nsContentTreeOwner::ReloadInFreshProcess(
-    nsIDocShell* aDocShell, nsIURI* aURI, nsIReferrerInfo* aReferrerInfo,
-    nsIPrincipal* aTriggeringPrincipal, uint32_t aLoadFlags,
-    nsIContentSecurityPolicy* aCsp, bool* aRetVal) {
-  NS_WARNING("Cannot reload in fresh process from a nsContentTreeOwner!");
-  *aRetVal = false;
   return NS_OK;
 }
 

@@ -5,9 +5,9 @@
 "use strict";
 
 // In which we connect to a host and encounter OCSP responses with the
-// Cache-Control header set, which Necko will normally cache. We need to ensure
-// that these responses aren't cached to disk when the original https request
-// was in a private context.
+// Cache-Control header set, which normally Necko would cache. This test
+// ensures that these responses aren't cached. PSM has its own OCSP cache, so
+// Necko shouldn't also be caching them.
 
 do_get_profile(); // must be called before getting nsIX509CertDB
 const certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
@@ -49,7 +49,7 @@ function add_flush_cache() {
   });
 }
 
-function add_ocsp_necko_cache_test(loadContext, shouldFindEntry) {
+function add_ocsp_necko_cache_test(loadContext) {
   // Pre-testcase cleanup/setup.
   add_test(() => {
     Services.cache2.clear();
@@ -69,7 +69,7 @@ function add_ocsp_necko_cache_test(loadContext, shouldFindEntry) {
       [],
       [],
       [],
-      [["Cache-Control", "max-age: 1000"]]
+      [["Cache-Control", "max-age=1000"]]
     );
     run_next_test();
   });
@@ -86,8 +86,7 @@ function add_ocsp_necko_cache_test(loadContext, shouldFindEntry) {
 
   add_flush_cache();
 
-  // Traverse the cache and ensure the response made it into the cache with the
-  // appropriate properties (private or not private).
+  // Traverse the cache and ensure the response was not cached.
   add_test(() => {
     let foundEntry = false;
     let visitor = {
@@ -110,11 +109,7 @@ function add_ocsp_necko_cache_test(loadContext, shouldFindEntry) {
         foundEntry = true;
       },
       onCacheEntryVisitCompleted() {
-        Assert.equal(
-          foundEntry,
-          shouldFindEntry,
-          "should only find a cached entry if we're expecting one"
-        );
+        Assert.ok(!foundEntry, "should not find a cached entry");
         run_next_test();
       },
       QueryInterface: ChromeUtils.generateQI(["nsICacheStorageVisitor"]),
@@ -131,7 +126,7 @@ function add_ocsp_necko_cache_test(loadContext, shouldFindEntry) {
 function run_test() {
   Services.prefs.setIntPref("security.OCSP.enabled", 1);
   add_tls_server_setup("OCSPStaplingServer", "ocsp_certs");
-  add_ocsp_necko_cache_test(Services.loadContextInfo.private, false);
-  add_ocsp_necko_cache_test(Services.loadContextInfo.default, true);
+  add_ocsp_necko_cache_test(Services.loadContextInfo.private);
+  add_ocsp_necko_cache_test(Services.loadContextInfo.default);
   run_next_test();
 }

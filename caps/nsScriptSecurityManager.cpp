@@ -248,30 +248,31 @@ nsScriptSecurityManager::GetChannelResultStoragePrincipal(
     return rv;
   }
 
-  return StoragePrincipalHelper::Create(aChannel, principal, aPrincipal);
+  return StoragePrincipalHelper::Create(
+      aChannel, principal, /* aForceIsolation */ false, aPrincipal);
 }
 
 NS_IMETHODIMP
 nsScriptSecurityManager::GetChannelResultPrincipals(
     nsIChannel* aChannel, nsIPrincipal** aPrincipal,
-    nsIPrincipal** aStoragePrincipal) {
+    nsIPrincipal** aPartitionedPrincipal) {
   nsresult rv = GetChannelResultPrincipal(aChannel, aPrincipal,
                                           /*aIgnoreSandboxing*/ false);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  if (!(*aPrincipal)->GetIsCodebasePrincipal()) {
+  if (!(*aPrincipal)->GetIsContentPrincipal()) {
     // If for some reason we don't have a content principal here, just reuse our
     // principal for the storage principal too, since attempting to create a
     // storage principal would fail anyway.
     nsCOMPtr<nsIPrincipal> copy = *aPrincipal;
-    copy.forget(aStoragePrincipal);
+    copy.forget(aPartitionedPrincipal);
     return NS_OK;
   }
 
-  return StoragePrincipalHelper::Create(aChannel, *aPrincipal,
-                                        aStoragePrincipal);
+  return StoragePrincipalHelper::Create(
+      aChannel, *aPrincipal, /* aForceIsolation */ true, aPartitionedPrincipal);
 }
 
 nsresult nsScriptSecurityManager::GetChannelResultPrincipal(
@@ -378,7 +379,7 @@ nsScriptSecurityManager::GetChannelURIPrincipal(nsIChannel* aChannel,
   OriginAttributes attrs = loadInfo->GetOriginAttributes();
 
   nsCOMPtr<nsIPrincipal> prin =
-      BasePrincipal::CreateCodebasePrincipal(uri, attrs);
+      BasePrincipal::CreateContentPrincipal(uri, attrs);
   prin.forget(aPrincipal);
   return *aPrincipal ? NS_OK : NS_ERROR_FAILURE;
 }
@@ -1113,7 +1114,7 @@ nsScriptSecurityManager::GetSystemPrincipal(nsIPrincipal** result) {
 }
 
 NS_IMETHODIMP
-nsScriptSecurityManager::CreateCodebasePrincipal(
+nsScriptSecurityManager::CreateContentPrincipal(
     nsIURI* aURI, JS::Handle<JS::Value> aOriginAttributes, JSContext* aCx,
     nsIPrincipal** aPrincipal) {
   OriginAttributes attrs;
@@ -1121,13 +1122,13 @@ nsScriptSecurityManager::CreateCodebasePrincipal(
     return NS_ERROR_INVALID_ARG;
   }
   nsCOMPtr<nsIPrincipal> prin =
-      BasePrincipal::CreateCodebasePrincipal(aURI, attrs);
+      BasePrincipal::CreateContentPrincipal(aURI, attrs);
   prin.forget(aPrincipal);
   return *aPrincipal ? NS_OK : NS_ERROR_FAILURE;
 }
 
 NS_IMETHODIMP
-nsScriptSecurityManager::CreateCodebasePrincipalFromOrigin(
+nsScriptSecurityManager::CreateContentPrincipalFromOrigin(
     const nsACString& aOrigin, nsIPrincipal** aPrincipal) {
   if (StringBeginsWith(aOrigin, "["_ns)) {
     return NS_ERROR_INVALID_ARG;
@@ -1138,7 +1139,7 @@ nsScriptSecurityManager::CreateCodebasePrincipalFromOrigin(
     return NS_ERROR_INVALID_ARG;
   }
 
-  nsCOMPtr<nsIPrincipal> prin = BasePrincipal::CreateCodebasePrincipal(aOrigin);
+  nsCOMPtr<nsIPrincipal> prin = BasePrincipal::CreateContentPrincipal(aOrigin);
   prin.forget(aPrincipal);
   return *aPrincipal ? NS_OK : NS_ERROR_FAILURE;
 }
@@ -1191,22 +1192,22 @@ nsScriptSecurityManager::CreateNullPrincipal(
 }
 
 NS_IMETHODIMP
-nsScriptSecurityManager::GetLoadContextCodebasePrincipal(
+nsScriptSecurityManager::GetLoadContextContentPrincipal(
     nsIURI* aURI, nsILoadContext* aLoadContext, nsIPrincipal** aPrincipal) {
   NS_ENSURE_STATE(aLoadContext);
   OriginAttributes docShellAttrs;
   aLoadContext->GetOriginAttributes(docShellAttrs);
 
   nsCOMPtr<nsIPrincipal> prin =
-      BasePrincipal::CreateCodebasePrincipal(aURI, docShellAttrs);
+      BasePrincipal::CreateContentPrincipal(aURI, docShellAttrs);
   prin.forget(aPrincipal);
   return *aPrincipal ? NS_OK : NS_ERROR_FAILURE;
 }
 
 NS_IMETHODIMP
-nsScriptSecurityManager::GetDocShellCodebasePrincipal(
+nsScriptSecurityManager::GetDocShellContentPrincipal(
     nsIURI* aURI, nsIDocShell* aDocShell, nsIPrincipal** aPrincipal) {
-  nsCOMPtr<nsIPrincipal> prin = BasePrincipal::CreateCodebasePrincipal(
+  nsCOMPtr<nsIPrincipal> prin = BasePrincipal::CreateContentPrincipal(
       aURI, nsDocShell::Cast(aDocShell)->GetOriginAttributes());
   prin.forget(aPrincipal);
   return *aPrincipal ? NS_OK : NS_ERROR_FAILURE;
@@ -1219,7 +1220,7 @@ nsScriptSecurityManager::PrincipalWithOA(
   if (!aPrincipal) {
     return NS_OK;
   }
-  if (aPrincipal->GetIsCodebasePrincipal()) {
+  if (aPrincipal->GetIsContentPrincipal()) {
     OriginAttributes attrs;
     if (!aOriginAttributes.isObject() || !attrs.Init(aCx, aOriginAttributes)) {
       return NS_ERROR_INVALID_ARG;

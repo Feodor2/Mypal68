@@ -205,6 +205,8 @@ nsresult nsSystemInfo::Init() {
                          false);
   NS_ENSURE_SUCCESS(rv, rv);
 
+  SetUint64Property(u"memsize"_ns, PR_GetPhysicalMemorySize());
+
 #ifdef XP_WIN
   bool isMinGW =
 #  ifdef __MINGW32__
@@ -212,7 +214,7 @@ nsresult nsSystemInfo::Init() {
 #  else
       false;
 #  endif
-  rv = SetPropertyAsBool(NS_LITERAL_STRING("isMinGW"), !!isMinGW);
+  rv = SetPropertyAsBool(u"isMinGW"_ns, !!isMinGW);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

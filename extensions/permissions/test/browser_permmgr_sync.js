@@ -1,5 +1,5 @@
 function addPerm(aOrigin, aName) {
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     aOrigin
   );
   Services.perms.addFromPrincipal(
@@ -55,7 +55,7 @@ add_task(async function() {
         // Before the load http URIs shouldn't have been sent down yet
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "http://example.com"
             ),
             "perm1"
@@ -65,7 +65,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "http://foo.bar.example.com"
             ),
             "perm2"
@@ -75,7 +75,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "about:home"
             ),
             "perm3"
@@ -85,7 +85,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://example.com"
             ),
             "perm4"
@@ -95,7 +95,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://somerandomwebsite.com"
             ),
             "cookie"
@@ -115,7 +115,7 @@ add_task(async function() {
         // After the load finishes, we should know about example.com, but not foo.bar.example.com
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "http://example.com"
             ),
             "perm1"
@@ -125,7 +125,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "http://foo.bar.example.com"
             ),
             "perm2"
@@ -135,7 +135,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "about:home"
             ),
             "perm3"
@@ -145,7 +145,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://example.com"
             ),
             "perm4"
@@ -155,7 +155,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://somerandomwebsite.com"
             ),
             "cookie"
@@ -176,7 +176,7 @@ add_task(async function() {
         // http://example.com, and about:home
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "http://example.com"
             ),
             "perm1"
@@ -186,7 +186,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "http://example.com"
             ),
             "newperm1"
@@ -196,7 +196,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "http://foo.bar.example.com"
             ),
             "perm2"
@@ -206,7 +206,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "http://foo.bar.example.com"
             ),
             "newperm2"
@@ -216,7 +216,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "about:home"
             ),
             "perm3"
@@ -226,7 +226,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "about:home"
             ),
             "newperm3"
@@ -236,7 +236,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://example.com"
             ),
             "perm4"
@@ -246,7 +246,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://example.com"
             ),
             "newperm4"
@@ -256,7 +256,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://somerandomwebsite.com"
             ),
             "cookie"
@@ -266,7 +266,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://someotherrandomwebsite.com"
             ),
             "cookie"
@@ -287,7 +287,7 @@ add_task(async function() {
         // permissions are also avaliable for its parent domain, https://example.com!
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "http://example.com"
             ),
             "perm1"
@@ -297,7 +297,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "http://example.com"
             ),
             "newperm1"
@@ -307,7 +307,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "http://foo.bar.example.com"
             ),
             "perm2"
@@ -317,7 +317,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "http://foo.bar.example.com"
             ),
             "newperm2"
@@ -327,7 +327,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "about:home"
             ),
             "perm3"
@@ -337,7 +337,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "about:home"
             ),
             "newperm3"
@@ -347,7 +347,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://example.com"
             ),
             "perm4"
@@ -357,7 +357,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://example.com"
             ),
             "newperm4"
@@ -367,7 +367,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://somerandomwebsite.com"
             ),
             "cookie"
@@ -377,7 +377,7 @@ add_task(async function() {
         );
         is(
           Services.perms.testPermissionFromPrincipal(
-            Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               "https://someotherrandomwebsite.com"
             ),
             "cookie"

@@ -256,7 +256,7 @@ function run_test() {
   // This permission should always be there.
   let ssm = Services.scriptSecurityManager;
   let uri = NetUtil.newURI("http://example.org");
-  let principal = ssm.createCodebasePrincipal(uri, {});
+  let principal = ssm.createContentPrincipal(uri, {});
   Assert.equal(
     pm.testPermissionFromPrincipal(principal, "test-load-invalid-entries"),
     Ci.nsIPermissionManager.ALLOW_ACTION

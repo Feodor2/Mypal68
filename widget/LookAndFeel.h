@@ -12,12 +12,19 @@
 #include "nsDebug.h"
 #include "nsColor.h"
 #include "nsTArray.h"
+#include "mozilla/Maybe.h"
 
 struct gfxFontStyle;
 
 struct LookAndFeelInt;
 
+class nsIFrame;
+
 namespace mozilla {
+
+namespace dom {
+class Document;
+}
 
 enum class StyleSystemColor : uint8_t;
 
@@ -89,6 +96,7 @@ class LookAndFeel {
      * The value of this metric is not used on other platforms. These platforms
      * should return NS_ERROR_NOT_IMPLEMENTED when queried for this metric.
      */
+#ifdef XP_WIN
     WindowsAccentColorInTitlebar,
 
     /*
@@ -125,6 +133,7 @@ class LookAndFeel {
      * (will return the default of NS_ERROR_FAILURE).
      */
     WindowsGlass,
+#endif
 
     /*
      * A Boolean value to determine whether the Mac graphite theme is
@@ -133,6 +142,7 @@ class LookAndFeel {
      * The value of this metric is not used on other platforms. These platforms
      * should return NS_ERROR_NOT_IMPLEMENTED when queried for this metric.
      */
+#ifdef XP_MACOSX
     MacGraphiteTheme,
 
     /*
@@ -144,6 +154,7 @@ class LookAndFeel {
      * metric.
      */
     MacYosemiteTheme,
+#endif
 
     /*
      * AlertNotificationOrigin indicates from which corner of the
@@ -226,6 +237,7 @@ class LookAndFeel {
      * A boolean value indicating whether client-side decorations are
      * supported by the user's GTK version.
      */
+#ifdef XP_LINUX
     GTKCSDAvailable,
 
     /*
@@ -263,6 +275,7 @@ class LookAndFeel {
      * in left titlebar corner.
      */
     GTKCSDReversedPlacement,
+#endif
 
     /*
      * A boolean value indicating whether or not the OS is using a dark theme,
@@ -292,6 +305,20 @@ class LookAndFeel {
      * 'Coarse | Fine | Hover'.
      */
     AllPointerCapabilities,
+
+    /**
+     * Corresponding to dynamic-range.
+     * https://drafts.csswg.org/mediaqueries-5/#dynamic-range
+     * 0: Standard
+     * 1: High
+     */
+    DynamicRange,
+    VideoDynamicRange,
+
+    /*
+     * Not an ID; used to define the range of valid IDs.  Must be last.
+     */
+    End,
   };
 
   /**
@@ -344,6 +371,9 @@ class LookAndFeel {
     // The width/height ratio of the cursor. If used, the CaretWidth int metric
     // should be added to the calculated caret width.
     CaretAspectRatio,
+
+    // Not an ID; used to define the range of valid IDs.  Must be last.
+    End,
   };
 
   // These constants must be kept in 1:1 correspondence with the
@@ -373,31 +403,55 @@ class LookAndFeel {
     MAXIMUM = Widget,
   };
 
-  /**
-   * GetColor() return a native color value (might be overwritten by prefs) for
-   * aID.  Some platforms don't return an error even if the index doesn't
-   * match any system colors.  And also some platforms may initialize the
-   * return value even when it returns an error.  Therefore, if you want to
-   * use a color for the default value, you should use the other GetColor()
-   * which returns nscolor directly.
-   *
-   * NOTE:
-   *   ColorID::TextSelectForeground might return NS_DONT_CHANGE_COLOR.
-   *   ColorID::IME* might return NS_TRANSPARENT, NS_SAME_AS_FOREGROUND_COLOR or
-   *   NS_40PERCENT_FOREGROUND_COLOR.
-   *   These values have particular meaning.  Then, they are not an actual
-   *   color value.
-   */
-  static nsresult GetColor(ColorID aID, nscolor* aResult);
+  // Whether we should use a light or dark appearance.
+  //
+  // This is currently ignored (but won't be for long).
+  enum class ColorScheme : uint8_t { Light, Dark };
 
-  /**
-   * This variant of GetColor() takes an extra Boolean parameter that allows
-   * the caller to ask that hard-coded color values be substituted for
-   * native colors (used when it is desireable to hide system colors to
-   * avoid system fingerprinting).
-   */
-  static nsresult GetColor(ColorID aID, bool aUseStandinsForNativeColors,
-                           nscolor* aResult);
+  // Whether standins for native colors should be used (that is, colors faked,
+  // taken from win7, mostly). This forces light appearance, effectively.
+  enum class UseStandins : bool { No, Yes };
+
+  // Returns a native color value (might be overwritten by prefs) for a given
+  // color id.
+  //
+  // NOTE:
+  //   ColorID::TextSelectForeground might return NS_DONT_CHANGE_COLOR.
+  //   ColorID::IME* might return NS_TRANSPARENT, NS_SAME_AS_FOREGROUND_COLOR or
+  //   NS_40PERCENT_FOREGROUND_COLOR.
+  //   These values have particular meaning.  Then, they are not an actual
+  //   color value.
+  static Maybe<nscolor> GetColor(ColorID, ColorScheme, UseStandins);
+
+  // Gets the color with appropriate defaults for UseStandins, ColorScheme etc
+  // for a given document.
+  static Maybe<nscolor> GetColor(ColorID, const dom::Document&);
+
+  // Gets the color with appropriate defaults for UseStandins, ColorScheme etc
+  // for a given frame.
+  //
+  // TODO(emilio): This right now just peeks the document out of the frame's
+  // pres context, but in the future we actually want to look at the style to
+  // get the right color scheme, to implement the color-scheme property.
+  static Maybe<nscolor> GetColor(ColorID, const nsIFrame*);
+
+  // Versions of the above which returns the color if found, or a default (which
+  // defaults to opaque black) otherwise.
+  static nscolor Color(ColorID aId, ColorScheme aScheme,
+                       UseStandins aUseStandins,
+                       nscolor aDefault = NS_RGB(0, 0, 0)) {
+    return GetColor(aId, aScheme, aUseStandins).valueOr(aDefault);
+  }
+
+  static nscolor Color(ColorID aId, const dom::Document& aDoc,
+                       nscolor aDefault = NS_RGB(0, 0, 0)) {
+    return GetColor(aId, aDoc).valueOr(aDefault);
+  }
+
+  static nscolor Color(ColorID aId, nsIFrame* aFrame,
+                       nscolor aDefault = NS_RGB(0, 0, 0)) {
+    return GetColor(aId, aFrame).valueOr(aDefault);
+  }
 
   /**
    * GetInt() and GetFloat() return a int or float value for aID.  The result
@@ -407,27 +461,8 @@ class LookAndFeel {
    * use a value for the default value, you should use the other method which
    * returns int or float directly.
    */
-  static nsresult GetInt(IntID aID, int32_t* aResult);
+  static nsresult GetInt(IntID, int32_t* aResult);
   static nsresult GetFloat(FloatID aID, float* aResult);
-
-  static nscolor GetColor(ColorID aID, nscolor aDefault = NS_RGB(0, 0, 0)) {
-    nscolor result = NS_RGB(0, 0, 0);
-    if (NS_FAILED(GetColor(aID, &result))) {
-      return aDefault;
-    }
-    return result;
-  }
-
-  static nscolor GetColorUsingStandins(ColorID aID,
-                                       nscolor aDefault = NS_RGB(0, 0, 0)) {
-    nscolor result = NS_RGB(0, 0, 0);
-    if (NS_FAILED(GetColor(aID,
-                           true,  // aUseStandinsForNativeColors
-                           &result))) {
-      return aDefault;
-    }
-    return result;
-  }
 
   static int32_t GetInt(IntID aID, int32_t aDefault = 0) {
     int32_t result;

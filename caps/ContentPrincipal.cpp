@@ -52,7 +52,7 @@ NS_IMPL_CI_INTERFACE_GETTER(ContentPrincipal, nsIPrincipal)
 ContentPrincipal::ContentPrincipal(nsIURI* aURI,
                                    const OriginAttributes& aOriginAttributes,
                                    const nsACString& aOriginNoSuffix)
-    : BasePrincipal(eCodebasePrincipal, aOriginNoSuffix, aOriginAttributes),
+    : BasePrincipal(eContentPrincipal, aOriginNoSuffix, aOriginAttributes),
       mURI(aURI) {
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   // Assert that the URI we get here isn't any of the schemes that we know we
@@ -282,7 +282,7 @@ bool ContentPrincipal::MayLoadInternal(nsIURI* aURI) {
     MOZ_ASSERT(origin);
     OriginAttributes attrs;
     RefPtr<BasePrincipal> principal =
-        BasePrincipal::CreateCodebasePrincipal(origin, attrs);
+        BasePrincipal::CreateContentPrincipal(origin, attrs);
     return nsIPrincipal::Subsumes(principal);
   }
 #endif
@@ -493,7 +493,7 @@ nsresult ContentPrincipal::GetSiteIdentifier(SiteIdentifier& aSite) {
   nsresult rv = GetSiteOrigin(siteOrigin);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  RefPtr<BasePrincipal> principal = CreateCodebasePrincipal(siteOrigin);
+  RefPtr<BasePrincipal> principal = CreateContentPrincipal(siteOrigin);
   if (!principal) {
     NS_WARNING("could not instantiate content principal");
     return NS_ERROR_FAILURE;

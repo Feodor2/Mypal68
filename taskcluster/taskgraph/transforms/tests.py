@@ -1395,8 +1395,9 @@ def set_tag(config, tests):
 
 @transforms.add
 def set_test_type(config, tests):
+    types = ['mochitest', 'reftest', 'talos', 'raptor', 'geckoview-junit', 'gtest']
     for test in tests:
-        for test_type in ['mochitest', 'reftest', 'talos', 'raptor']:
+        for test_type in types:
             if test_type in test['suite'] and 'web-platform' not in test['suite']:
                 test.setdefault('tags', {})['test-type'] = test_type
         yield test
@@ -1540,7 +1541,10 @@ def make_job_description(config, tests):
             # so do not include the platform or any other components here
             schedules = [category]
         else:
-            schedules = [category, platform_family(test['build-platform'])]
+            schedules = [attributes['unittest_category'], platform_family(test['build-platform'])]
+            component = test.get('schedules-component')
+            if component:
+                schedules.append(component)
 
         if test.get('when'):
             # This may still be used by comm-central.

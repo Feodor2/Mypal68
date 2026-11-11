@@ -119,7 +119,7 @@ BasePrincipal::GetSiteOrigin(nsACString& aSiteOrigin) {
 // {"0":{"0":"moz-nullprincipal:{56cac540-864d-47e7-8e25-1614eab5155e}"}} ->
 // {"0":"moz-nullprincipal:{56cac540-864d-47e7-8e25-1614eab5155e}"}
 //
-// Codebase principal:
+// Content principal:
 // {"1":{"0":"https://mozilla.com"}} -> {"0":"https://mozilla.com"}
 //
 // Expanded principal:
@@ -154,7 +154,7 @@ static const Json::Value* GetPrincipalObject(const Json::Value& aRoot,
     return nullptr;
   }
   MOZ_ASSERT(principalKind == BasePrincipal::eNullPrincipal ||
-             principalKind == BasePrincipal::eCodebasePrincipal ||
+             principalKind == BasePrincipal::eContentPrincipal ||
              principalKind == BasePrincipal::eExpandedPrincipal ||
              principalKind == BasePrincipal::eSystemPrincipal);
   aOutPrincipalKind = principalKind;
@@ -182,7 +182,7 @@ static const Json::Value* GetPrincipalObject(const Json::Value& aRoot,
 // value
 // - value: The string that was serialized for this key
 // - key: an SerializableKeys enum value specific to the principal.
-//        For example content principal is an enum of: eCodebase, eDomain,
+//        For example content principal is an enum of: eURI, eDomain,
 //        eSuffix, eCSP
 //
 //
@@ -195,7 +195,7 @@ static const Json::Value* GetPrincipalObject(const Json::Value& aRoot,
 //                                |
 //                              Value
 //
-// They Key "0" corresponds to ContentPrincipal::eCodebase
+// They Key "0" corresponds to ContentPrincipal::eURI
 // They Key "1" corresponds to ContentPrincipal::eSuffix
 template <typename T>
 static nsTArray<typename T::KeyVal> GetJSONKeys(const Json::Value* aInput) {
@@ -282,7 +282,7 @@ already_AddRefed<BasePrincipal> BasePrincipal::FromJSON(
     return NullPrincipal::FromProperties(res);
   }
 
-  if (principalKind == eCodebasePrincipal) {
+  if (principalKind == eContentPrincipal) {
     nsTArray<ContentPrincipal::KeyVal> res =
         GetJSONKeys<ContentPrincipal>(value);
     return ContentPrincipal::FromProperties(res);
@@ -331,7 +331,7 @@ bool BasePrincipal::FastSubsumesIgnoringFPD(
     nsIPrincipal* aOther, DocumentDomainConsideration aConsideration) {
   MOZ_ASSERT(aOther);
 
-  if (Kind() == eCodebasePrincipal &&
+  if (Kind() == eContentPrincipal &&
       !dom::ChromeUtils::IsOriginAttributesEqualIgnoringFPD(
           mOriginAttributes, Cast(aOther)->mOriginAttributes)) {
     return false;
@@ -343,13 +343,13 @@ bool BasePrincipal::FastSubsumesIgnoringFPD(
 bool BasePrincipal::Subsumes(nsIPrincipal* aOther,
                              DocumentDomainConsideration aConsideration) {
   MOZ_ASSERT(aOther);
-  MOZ_ASSERT_IF(Kind() == eCodebasePrincipal, mOriginSuffix);
+  MOZ_ASSERT_IF(Kind() == eContentPrincipal, mOriginSuffix);
 
   // Expanded principals handle origin attributes for each of their
   // sub-principals individually, null principals do only simple checks for
   // pointer equality, and system principals are immune to origin attributes
-  // checks, so only do this check for codebase principals.
-  if (Kind() == eCodebasePrincipal &&
+  // checks, so only do this check for content principals.
+  if (Kind() == eContentPrincipal &&
       mOriginSuffix != Cast(aOther)->mOriginSuffix) {
     return false;
   }
@@ -477,7 +477,7 @@ nsresult BasePrincipal::CheckMayLoadHelper(nsIURI* aURI,
 
 NS_IMETHODIMP
 BasePrincipal::IsThirdPartyURI(nsIURI* aURI, bool* aRes) {
-  if (IsSystemPrincipal()) {
+  if (IsSystemPrincipal() || AddonPolicy()) {
     *aRes = false;
     return NS_OK;
   }
@@ -656,8 +656,8 @@ BasePrincipal::GetIsNullPrincipal(bool* aResult) {
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetIsCodebasePrincipal(bool* aResult) {
-  *aResult = Kind() == eCodebasePrincipal;
+BasePrincipal::GetIsContentPrincipal(bool* aResult) {
+  *aResult = Kind() == eContentPrincipal;
   return NS_OK;
 }
 
@@ -941,7 +941,7 @@ nsIPrincipal* BasePrincipal::PrincipalToInherit(nsIURI* aRequestedURI) {
   return this;
 }
 
-already_AddRefed<BasePrincipal> BasePrincipal::CreateCodebasePrincipal(
+already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
     nsIURI* aURI, const OriginAttributes& aAttrs) {
   MOZ_ASSERT(aURI);
 
@@ -954,17 +954,17 @@ already_AddRefed<BasePrincipal> BasePrincipal::CreateCodebasePrincipal(
     return NullPrincipal::Create(aAttrs);
   }
 
-  return CreateCodebasePrincipal(aURI, aAttrs, originNoSuffix);
+  return CreateContentPrincipal(aURI, aAttrs, originNoSuffix);
 }
 
-already_AddRefed<BasePrincipal> BasePrincipal::CreateCodebasePrincipal(
+already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
     nsIURI* aURI, const OriginAttributes& aAttrs,
     const nsACString& aOriginNoSuffix) {
   MOZ_ASSERT(aURI);
   MOZ_ASSERT(!aOriginNoSuffix.IsEmpty());
 
   // If the URI is supposed to inherit the security context of whoever loads it,
-  // we shouldn't make a codebase principal for it.
+  // we shouldn't make a content principal for it.
   bool inheritsPrincipal;
   nsresult rv = NS_URIChainHasFlags(
       aURI, nsIProtocolHandler::URI_INHERITS_SECURITY_CONTEXT,
@@ -985,7 +985,7 @@ already_AddRefed<BasePrincipal> BasePrincipal::CreateCodebasePrincipal(
     }
     MOZ_ASSERT(origin);
     OriginAttributes attrs;
-    RefPtr<BasePrincipal> principal = CreateCodebasePrincipal(origin, attrs);
+    RefPtr<BasePrincipal> principal = CreateContentPrincipal(origin, attrs);
     return principal.forget();
   }
 #endif
@@ -1004,15 +1004,15 @@ already_AddRefed<BasePrincipal> BasePrincipal::CreateCodebasePrincipal(
   return principal.forget();
 }
 
-already_AddRefed<BasePrincipal> BasePrincipal::CreateCodebasePrincipal(
+already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
     const nsACString& aOrigin) {
   MOZ_ASSERT(!StringBeginsWith(aOrigin, "["_ns),
-             "CreateCodebasePrincipal does not support System and Expanded "
+             "CreateContentPrincipal does not support System and Expanded "
              "principals");
 
   MOZ_ASSERT(
       !StringBeginsWith(aOrigin, nsLiteralCString(NS_NULLPRINCIPAL_SCHEME ":")),
-      "CreateCodebasePrincipal does not support NullPrincipal");
+      "CreateContentPrincipal does not support NullPrincipal");
 
   nsAutoCString originNoSuffix;
   OriginAttributes attrs;
@@ -1024,12 +1024,12 @@ already_AddRefed<BasePrincipal> BasePrincipal::CreateCodebasePrincipal(
   nsresult rv = NS_NewURI(getter_AddRefs(uri), originNoSuffix);
   NS_ENSURE_SUCCESS(rv, nullptr);
 
-  return BasePrincipal::CreateCodebasePrincipal(uri, attrs);
+  return BasePrincipal::CreateContentPrincipal(uri, attrs);
 }
 
 already_AddRefed<BasePrincipal> BasePrincipal::CloneForcingOriginAttributes(
     const OriginAttributes& aOriginAttributes) {
-  if (NS_WARN_IF(!IsCodebasePrincipal())) {
+  if (NS_WARN_IF(!IsContentPrincipal())) {
     return nullptr;
   }
 
@@ -1155,7 +1155,7 @@ BasePrincipal::GetNextSubDomainPrincipal(
     attrs.StripAttributes(mozilla::OriginAttributes::STRIP_USER_CONTEXT_ID);
   }
   RefPtr<nsIPrincipal> principal =
-      mozilla::BasePrincipal::CreateCodebasePrincipal(subDomainURI, attrs);
+      mozilla::BasePrincipal::CreateContentPrincipal(subDomainURI, attrs);
 
   if (!principal) {
     return NS_OK;

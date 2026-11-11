@@ -46,7 +46,7 @@ function mk_permission(uri) {
   let secMan = Services.scriptSecurityManager;
 
   // Get the permission from the principal!
-  let principal = secMan.createCodebasePrincipal(uri, {});
+  let principal = secMan.createContentPrincipal(uri, {});
 
   pm.addFromPrincipal(principal, "test/matchesuri", pm.ALLOW_ACTION);
   let permission = pm.getPermissionObject(principal, "test/matchesuri", true);

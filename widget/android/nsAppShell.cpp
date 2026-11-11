@@ -29,6 +29,7 @@
 #include "mozilla/Hal.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/intl/OSPreferences.h"
+#include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/widget/ScreenManager.h"
 #include "prenv.h"
 
@@ -131,7 +132,7 @@ class GeckoThreadSupport final
 
     OriginAttributes attrs;
     nsCOMPtr<nsIPrincipal> principal =
-        BasePrincipal::CreateCodebasePrincipal(uri, attrs);
+        BasePrincipal::CreateContentPrincipal(uri, attrs);
     specConn->SpeculativeConnect(uri, principal, nullptr);
   }
 
@@ -342,6 +343,49 @@ class GeckoAppShellSupport final
   }
 };
 
+class XPCOMEventTargetWrapper final
+    : public java::XPCOMEventTarget::Natives<XPCOMEventTargetWrapper> {
+ public:
+  // Wraps a java runnable into an XPCOM runnable and dispatches it to mTarget.
+  void DispatchNative(mozilla::jni::Object::Param aJavaRunnable) {
+    java::XPCOMEventTarget::JNIRunnable::GlobalRef r =
+        java::XPCOMEventTarget::JNIRunnable::Ref::From(aJavaRunnable);
+    mTarget->Dispatch(NS_NewRunnableFunction(
+        "XPCOMEventTargetWrapper::DispatchNative",
+        [runnable = std::move(r)]() { runnable->Run(); }));
+  }
+
+  bool IsOnCurrentThread() { return mTarget->IsOnCurrentThread(); }
+
+  static void Init() {
+    java::XPCOMEventTarget::Natives<XPCOMEventTargetWrapper>::Init();
+    CreateWrapper(u"main"_ns, do_GetMainThread());
+    if (XRE_IsParentProcess()) {
+      CreateWrapper(u"launcher"_ns, ipc::GetIPCLauncher());
+    }
+  }
+
+  static void CreateWrapper(mozilla::jni::String::Param aName,
+                            nsCOMPtr<nsIEventTarget> aTarget) {
+    auto java = java::XPCOMEventTarget::New();
+    auto native = MakeUnique<XPCOMEventTargetWrapper>(aTarget.forget());
+    AttachNative(java, std::move(native));
+
+    java::XPCOMEventTarget::SetTarget(aName, java);
+  }
+
+  static void ResolveAndDispatchNative(mozilla::jni::String::Param aName,
+                                       mozilla::jni::Object::Param aRunnable) {
+    java::XPCOMEventTarget::ResolveAndDispatch(aName, aRunnable);
+  }
+
+  explicit XPCOMEventTargetWrapper(already_AddRefed<nsIEventTarget> aTarget)
+      : mTarget(aTarget) {}
+
+ private:
+  nsCOMPtr<nsIEventTarget> mTarget;
+};
+
 nsAppShell::nsAppShell()
     : mSyncRunFinished(*(sAppShellLock = new Mutex("nsAppShell")),
                        "nsAppShell.SyncRun"),
@@ -357,6 +401,7 @@ nsAppShell::nsAppShell()
     if (jni::IsAvailable()) {
       GeckoThreadSupport::Init();
       GeckoAppShellSupport::Init();
+      XPCOMEventTargetWrapper::Init();
       mozilla::GeckoSystemStateListener::Init();
       mozilla::widget::Telemetry::Init();
 
@@ -374,6 +419,7 @@ nsAppShell::nsAppShell()
     AndroidBridge::ConstructBridge();
     GeckoAppShellSupport::Init();
     GeckoThreadSupport::Init();
+    XPCOMEventTargetWrapper::Init();
     mozilla::GeckoBatteryManager::Init();
     mozilla::GeckoNetworkManager::Init();
     mozilla::GeckoProcessManager::Init();

@@ -811,6 +811,16 @@
   value: 2
   mirror: always
 
+# How often to validate document in cache
+#   0 = once-per-session,
+#   1 = each-time,
+#   2 = never,
+#   3 = when-appropriate/automatically
+- name: browser.cache.check_doc_frequency
+  type: RelaxedAtomicUint32
+  value: 3
+  mirror: always
+
 # How many recent block/unblock actions per origins we remember in the
 # Content Blocking log for each top-level window.
 - name: browser.contentblocking.originlog.length
@@ -978,34 +988,15 @@
   value: false
   mirror: always
 
-# Blocked plugin content
-- name: browser.safebrowsing.blockedURIs.enabled
-  type: bool
-  value: true
-  mirror: always
-
-# Malware protection
-- name: browser.safebrowsing.malware.enabled
-  type: bool
-  value: true
-  mirror: always
-
-# Password protection
-- name: browser.safebrowsing.passwords.enabled
+- name: browser.navigation.requireUserInteraction
   type: bool
   value: false
   mirror: always
 
-# Phishing protection
-- name: browser.safebrowsing.phishing.enabled
+# Indicates if about:newtab shows content (enabled) or just blank.
+- name: browser.newtabpage.enabled
   type: bool
   value: true
-  mirror: always
-
-# Maximum size for an array to store the safebrowsing prefixset.
-- name: browser.safebrowsing.prefixset_max_array_size
-  type: RelaxedAtomicUint32
-  value: 512*1024
   mirror: always
 
 # ContentSessionStore prefs
@@ -1018,11 +1009,32 @@
 # If set, use DocumentChannel with nsDocShell in place of HttpChannel.
 - name: browser.tabs.documentchannel
   type: bool
-#if !defined(ANDROID)
-  value: @IS_NIGHTLY_BUILD@
-#else
+#if defined(ANDROID)
   value: false  # See bug 1589982.
+#else
+  value: true
 #endif
+  mirror: always
+
+# If set, use DocumentChannel with parent process' sDocShell
+- name: browser.tabs.documentchannel.ppdc
+  type: bool
+  value: true
+  mirror: always
+
+# If set, use DocumentChannel to initiate loads from
+# parent-process BrowsingContexts in parallel with the content
+# process.
+- name: browser.tabs.documentchannel.parent-initiated
+  type: bool
+  value: true
+  mirror: always
+
+# If set, use DocumentChannel to directly initiate loads entirely
+# from parent-process BrowsingContexts
+- name: browser.tabs.documentchannel.parent-controlled
+  type: bool
+  value: false
   mirror: always
 
 - name: browser.tabs.remote.desktopbehavior
@@ -1919,12 +1931,13 @@
   value: true
   mirror: always
 
-- name: dom.largeAllocation.forceEnable
+# Whether the Large-Allocation header is enabled.
+- name: dom.largeAllocationHeader.enabled
   type: bool
-  value: false
+  value: true
   mirror: always
 
-- name: dom.largeAllocation.testing.allHttpLoads
+- name: dom.largeAllocation.forceEnable
   type: bool
   value: false
   mirror: always
@@ -2374,6 +2387,39 @@
   type: bool
   value: false
   mirror: always
+
+#if defined(DEBUG)
+# For testing purposes only: Flipping this pref to true allows
+# to skip the allowlist for about: pages and do not ship with a
+# CSP and NS_ASSERT right away.
+- name: dom.security.skip_about_page_csp_allowlist_and_assert
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+# For testing purposes only: Flipping this pref to true allows
+# to skip the assertion that every about page ships with a CSP.
+- name: dom.security.skip_about_page_has_csp_assert
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+# For testing purposes only: Flipping this pref to true allows
+# to skip the assertion that HTML fragments (e.g. innerHTML) can
+# not be used within chrome code or about: pages.
+- name: dom.security.skip_html_fragment_assertion
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+# For testing purposes only; Flipping this pref to true allows
+# to skip the assertion that remote scripts can not be loaded
+# in system privileged contexts.
+- name: dom.security.skip_remote_script_assertion_in_system_priv_context
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+#endif
 
 # Whether or not selection events on text controls are enabled.
 - name: dom.select_events.textcontrols.selectionchange.enabled
@@ -3271,8 +3317,13 @@
 # Prefs starting with "fission."
 #---------------------------------------------------------------------------
 
-# Whether to enable Fission.
-# Overridden in all.js on RELEASE_OR_BETA in order to add the locked attribute.
+# Whether to enable Fission in new windows by default.
+# IMPORTANT: This preference should *almost never* be checked directly, since
+# any session can contain a mix of Fission and non-Fission windows. Instead,
+# callers should check whether the relevant nsILoadContext has the
+# `useRemoteSubframes` flag set.
+# Note: This is overridden in all.js on RELEASE_OR_BETA in order to add the
+# locked attribute.
 - name: fission.autostart
   type: bool
   value: false
@@ -3435,6 +3486,11 @@
   value: true
   mirror: always
 
+- name: full-screen-api.pointer-lock.enabled
+  type: bool
+  value: true
+  mirror: always
+
 #---------------------------------------------------------------------------
 # Prefs starting with "fuzzing.". It's important that these can only be
 # checked in fuzzing builds (when FUZZING is defined), otherwise you could
@@ -3456,6 +3512,14 @@
 #---------------------------------------------------------------------------
 # Prefs starting with "general."
 #---------------------------------------------------------------------------
+
+# Limits the depth of recursive conversion of data when opening
+# a content to view.  This is mostly intended to prevent infinite
+# loops with faulty converters involved.
+- name: general.document_open_conversion_depth_limit
+  type: uint32_t
+  value: 20
+  mirror: always
 
 - name: general.smoothScroll
   type: RelaxedAtomicBool
@@ -5577,10 +5641,17 @@
   mirror: always
   rust: true
 
-# Whether the `:autofill` pseudo-class is exposed to content.
-- name: layout.css.autofill.enabled
+# Whether the `:-moz-lwtheme` pseudo-class is exposed to content.
+- name: layout.css.moz-lwtheme.content.enabled
   type: RelaxedAtomicBool
-  value: true
+  value: false
+  mirror: always
+  rust: true
+
+# Whether the `:-moz-locale-dir()` pseudo-class is exposed to content.
+- name: layout.css.moz-locale-dir.content.enabled
+  type: RelaxedAtomicBool
+  value: false
   mirror: always
   rust: true
 
@@ -5659,6 +5730,13 @@
   type: bool
   value: false
   mirror: always
+
+# Is support for CSS conic-gradient enabled?
+- name: layout.css.conic-gradient.enabled
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+  rust: true
 
 # Should stray control characters be rendered visibly?
 - name: layout.css.control-characters.visible
@@ -5797,6 +5875,13 @@
 - name: layout.css.grid-template-masonry-value.enabled
   type: RelaxedAtomicBool
   value: @IS_NIGHTLY_BUILD@
+  mirror: always
+  rust: true
+
+# Is support for :has() enabled?
+- name: layout.css.has-selector.enabled
+  type: RelaxedAtomicBool
+  value: false
   mirror: always
   rust: true
 
@@ -5959,12 +6044,6 @@
   type: AtomicFloat
   value: 1.0f
   mirror: always
-
-- name: layout.css.supports-selector.enabled
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-  rust: true
 
 # Tuning of the smooth scroll motion used by CSSOM-View scroll-behavior.
 # Spring-constant controls the strength of the simulated MSD
@@ -6294,16 +6373,6 @@
   value: true
   mirror: always
 
-# Whether :is() and :where() ignore errors inside their selector lists
-# internally, rather than failing to parse altogether.
-#
-# See https://github.com/w3c/csswg-drafts/issues/3264
-- name: layout.css.is-and-where-better-error-recovery.enabled
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-  rust: true
-
 # Is 'font-synthesis: small-caps' supported?
 - name: layout.css.font-synthesis-small-caps.enabled
   type: RelaxedAtomicBool
@@ -6418,16 +6487,18 @@
 # Prefs starting with "media."
 #---------------------------------------------------------------------------
 
-# These prefs use camel case instead of snake case for the getter because one
-# reviewer had an unshakeable preference for that. Who could that be?
 
-# If "media.autoplay.default" is not ALLOWED, and this pref is true,
-# then audible media would only be allowed to autoplay after website has
-# been activated by specific user gestures, but non-audible
-# media won't be restricted.
-- name: media.autoplay.enabled.user-gestures-needed
-  type: bool
-  value: false
+# This pref defines what the blocking policy would be used in blocking autoplay.
+# 0 : use sticky activation (default)
+# https://html.spec.whatwg.org/multipage/interaction.html#sticky-activation
+# 1 : use transient activation (the transient activation duration can be
+#     adjusted by the pref `dom.user_activation.transient.timeout`)
+# https://html.spec.whatwg.org/multipage/interaction.html#transient-activation
+# 2 : user input depth (allow autoplay when the play is trigged by user input
+#     which is determined by the user input depth)
+- name: media.autoplay.blocking_policy
+  type: uint32_t
+  value: 0
   mirror: always
 
 # File-backed MediaCache size.
@@ -7690,6 +7761,12 @@
   value: @IS_NIGHTLY_BUILD@
 #endif
 
+# Whether we can send OnDataAvailable to content process directly.
+- name: network.send_ODA_to_content_directly
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
 # Perform all network access on the socket process.
 # The pref requires "network.process.enabled" to be true.
 # Changing these prefs requires a restart.
@@ -8117,6 +8194,11 @@
   value: @IS_NIGHTLY_BUILD@
   mirror: always
 
+- name: privacy.trackingprotection.testing.report_blocked_node
+  type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
 # Whether to spoof user locale to English (used as part of Resist
 # Fingerprinting).
 # 0 - will prompt
@@ -8214,6 +8296,13 @@
 - name: privacy.resistFingerprinting.target_video_res
   type: uint32_t
   value: 480
+  mirror: always
+
+# Setting TZ=UTC ensures that even libc functions use the spoofed time zone.
+# We want to remove that override as soon as possible however.
+- name: privacy.resistFingerprinting.testing.setTZtoUTC
+  type: bool
+  value: false
   mirror: always
 
 # Bitfield for selectively disabling RFP
@@ -8343,6 +8432,11 @@
   value: 40
   mirror: always
 
+- name: security.csp.truncate_blocked_uri_for_frame_navigations
+  type: bool
+  value: true
+  mirror: always
+
 # Allows loading ui resources in CheckLoadURIFlags
 # TODO Bug 1654488: Remove pref in CheckLoadURIFlags
 #      which allows all UI resources to load
@@ -8357,6 +8451,13 @@
 - name: security.data_uri.block_toplevel_data_uri_navigations
   type: bool
   value: true
+  mirror: always
+
+# Whether window A is allowed to navigate cross-origin window B (that is not
+# a descendant frame of A) to a URI that loads externally.
+- name: security.allow_disjointed_external_uri_loads
+  type: bool
+  value: false
   mirror: always
 
 # Allowed by default so it doesn't affect Thunderbird/SeaMonkey, but
@@ -8378,6 +8479,13 @@
 - name: security.allow_eval_in_parent_process
   type: RelaxedAtomicBool
   value: true
+  mirror: always
+
+# Disallowed by default, ensure not disallowed content is loaded in the parent
+# process.
+- name: security.allow_unsafe_parent_loads
+  type: bool
+  value: false
   mirror: always
 
 # Pref to block mixed scripts (fonts, plugin content, scripts, stylesheets,
@@ -8469,6 +8577,12 @@
 - name: security.block_Worker_with_wrong_mime
   type: bool
   value: @IS_EARLY_BETA_OR_EARLIER@
+  mirror: always
+
+# Cancel outgoing requests from SystemPrincipal
+- name: security.cancel_non_local_loads_triggered_by_systemprincipal
+  type: bool
+  value: false
   mirror: always
 
 #---------------------------------------------------------------------------

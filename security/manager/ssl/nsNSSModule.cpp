@@ -28,7 +28,7 @@
 #include "nsPK11TokenDB.h"
 #include "nsPKCS11Slot.h"
 #include "nsRandomGenerator.h"
-#include "nsSecureBrowserUIImpl.h"
+#include "nsSecureBrowserUI.h"
 #include "nsXULAppAPI.h"
 
 #ifdef MOZ_XUL

@@ -19,10 +19,10 @@ function check_enumerator(prefix, permissions) {
 function run_test() {
   let pm = Services.perms;
 
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "http://example.com"
   );
-  let subPrincipal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let subPrincipal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "http://sub.example.com"
   );
 

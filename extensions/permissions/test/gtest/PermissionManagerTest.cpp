@@ -23,7 +23,7 @@ class PermissionManagerTester : public ::testing::Test {
         NS_NewURI(getter_AddRefs(uri),
                   "https://test.origin.with.subdomains.example.com"_ns);
     MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
-    mPrincipal = mozilla::BasePrincipal::CreateCodebasePrincipal(
+    mPrincipal = mozilla::BasePrincipal::CreateContentPrincipal(
         uri, OriginAttributes());
   }
 

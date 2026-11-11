@@ -1,0 +1,54 @@
+schema: 1
+
+bugzilla:
+  product: Toolkit
+  component: "General"
+
+origin:
+  name: brotli
+  description: generic-purpose lossless compression algorithm
+
+  url: https://github.com/google/brotli
+
+  release: 4792c8e4c4235f6b501f13dbd07a8b4b253eee21 (2026-04-08T19:24:31Z).
+  revision: 4792c8e4c4235f6b501f13dbd07a8b4b253eee21
+
+  license: MIT
+
+vendoring:
+  url: https://github.com/google/brotli
+  source-hosting: github
+  tracking: commit
+
+  exclude:
+    - ".*"
+    - "*"
+    - docs
+    - go
+    - python
+    - scripts
+    - java
+    - tests
+    - c/enc
+    - c/tools
+
+  include:
+    - c/include/
+    - c/common/
+    - c/dec/
+
+  keep:
+    - LICENSE
+
+  update-actions:
+    - action: move-dir
+      from: '{vendor_dir}/c/include'
+      to: '{vendor_dir}/include'
+    - action: move-dir
+      from: '{vendor_dir}/c/common'
+      to: '{vendor_dir}/common'
+    - action: move-dir
+      from: '{vendor_dir}/c/dec'
+      to: '{vendor_dir}/dec'
+    - action: delete-path
+      path: '{vendor_dir}/c'

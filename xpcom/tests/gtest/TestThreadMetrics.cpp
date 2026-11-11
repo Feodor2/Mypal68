@@ -102,7 +102,8 @@ class ThreadMetrics : public ::testing::Test {
  protected:
   virtual void SetUp() {
     // building the DocGroup structure
-    RefPtr<dom::BrowsingContextGroup> group = new dom::BrowsingContextGroup();
+    RefPtr<dom::BrowsingContextGroup> group =
+        dom::BrowsingContextGroup::Create();
     mDocGroup = group->AddDocument("key"_ns, nullptr);
     mDocGroup2 = group->AddDocument("key2"_ns, nullptr);
     mCounter = mDocGroup->GetPerformanceCounter();

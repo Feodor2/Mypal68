@@ -1,7 +1,7 @@
 add_task(async function() {
   // Add a permission for example.com, start a new content process, and make
   // sure that the permission has been sent down.
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "http://example.com"
   );
   Services.perms.addFromPrincipal(

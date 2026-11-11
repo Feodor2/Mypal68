@@ -572,7 +572,7 @@ nsOfflineCacheUpdateService::OfflineAppAllowedForURI(nsIURI* aURI,
                                                      bool* aAllowed) {
   OriginAttributes attrs;
   nsCOMPtr<nsIPrincipal> principal =
-      BasePrincipal::CreateCodebasePrincipal(aURI, attrs);
+      BasePrincipal::CreateContentPrincipal(aURI, attrs);
   return OfflineAppPermForPrincipal(principal, false, aAllowed);
 }
 
@@ -580,7 +580,7 @@ nsresult nsOfflineCacheUpdateService::OfflineAppPinnedForURI(
     nsIURI* aDocumentURI, bool* aPinned) {
   OriginAttributes attrs;
   nsCOMPtr<nsIPrincipal> principal =
-      BasePrincipal::CreateCodebasePrincipal(aDocumentURI, attrs);
+      BasePrincipal::CreateContentPrincipal(aDocumentURI, attrs);
   return OfflineAppPermForPrincipal(principal, true, aPinned);
 }
 

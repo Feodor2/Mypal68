@@ -1215,10 +1215,11 @@ bool nsNativeThemeGTK::CreateWebRenderCommandsForWidget(
   switch (aAppearance) {
     case StyleAppearance::Window:
     case StyleAppearance::Dialog:
-      aBuilder.PushRect(
-          bounds, bounds, true,
-          wr::ToColorF(Color::FromABGR(LookAndFeel::GetColor(
-              LookAndFeel::ColorID::WindowBackground, NS_RGBA(0, 0, 0, 0)))));
+      aBuilder.PushRect(bounds, bounds, true,
+                        wr::ToColorF(ToDeviceColor(LookAndFeel::Color(
+                            LookAndFeel::ColorID::WindowBackground,
+                            LookAndFeel::ColorScheme::Light,
+                            LookAndFeel::UseStandins::No, NS_TRANSPARENT))));
       return true;
 
     default:
@@ -1370,6 +1371,7 @@ bool nsNativeThemeGTK::GetWidgetPadding(nsDeviceContext* aContext,
   switch (aAppearance) {
     case StyleAppearance::ButtonFocus:
     case StyleAppearance::Toolbarbutton:
+    case StyleAppearance::Tooltip:
     case StyleAppearance::MozWindowButtonBox:
     case StyleAppearance::MozWindowButtonClose:
     case StyleAppearance::MozWindowButtonMinimize:

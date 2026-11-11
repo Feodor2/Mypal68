@@ -17,7 +17,7 @@ path = "lib.rs"
 doctest = false
 
 [features]
-gecko = ["nsstring", "serde", "style_traits/gecko", "fallible/known_system_malloc", "bindgen", "regex", "toml"]
+gecko = ["nsstring", "serde", "style_traits/gecko", "bindgen", "regex", "toml"]
 servo = ["serde", "style_traits/servo", "servo_atoms", "servo_config", "html5ever",
          "cssparser/serde", "encoding_rs", "malloc_size_of/servo", "arrayvec/use_union",
          "servo_url", "string_cache", "to_shmem/servo", "servo_arc/servo"]
@@ -37,9 +37,7 @@ derive_more = "0.99"
 new_debug_unreachable = "1.0"
 encoding_rs = {version = "0.8", optional = true}
 euclid = "0.20"
-fallible = { path = "../fallible" }
 fxhash = "0.2"
-hashglobe = { path = "../hashglobe" }
 html5ever = {version = "0.24", optional = true}
 indexmap = {version = "1.6", features = ["std"]}
 itertools = "0.8"
@@ -65,6 +63,7 @@ servo_atoms = {path = "../atoms", optional = true}
 servo_config = {path = "../config", optional = true}
 smallbitvec = "2.3.0"
 smallvec = "1.0"
+static_assertions = "1.1"
 static_prefs = { path = "../../../modules/libpref/init/static_prefs" }
 string_cache = { version = "0.8", optional = true }
 style_derive = {path = "../style_derive"}
@@ -74,7 +73,7 @@ thin-slice = "0.1.0"
 to_shmem = {path = "../to_shmem"}
 to_shmem_derive = {path = "../to_shmem_derive"}
 time = "0.1"
-uluru = "0.4"
+uluru = "1.1"
 unicode-bidi = "0.3"
 unicode-segmentation = "1.0"
 void = "1.0.2"

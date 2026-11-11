@@ -7,6 +7,7 @@
 #include "nsDocShell.h"
 #include "nsReadableUtils.h"
 #include "nsCRT.h"
+#include "nsQueryObject.h"
 
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/ResultExtensions.h"
@@ -165,14 +166,14 @@ static void DumpPrintObjectsTreeLayout(const UniquePtr<nsPrintObject>& aPO,
 #  define DUMP_DOC_TREELAYOUT
 #endif
 
-static bool CollectDocuments(Document& aDoc,
-                             nsTArray<nsCOMPtr<Document>>& aDocs) {
+static CallState CollectDocuments(Document& aDoc,
+                                  nsTArray<nsCOMPtr<Document>>& aDocs) {
   aDocs.AppendElement(&aDoc);
   auto recurse = [&aDocs](Document& aSubDoc) {
     return CollectDocuments(aSubDoc, aDocs);
   };
   aDoc.EnumerateSubDocuments(recurse);
-  return true;
+  return CallState::Continue;
 }
 
 MOZ_CAN_RUN_SCRIPT
@@ -288,43 +289,41 @@ GetSeqFrameAndCountPagesInternal(const UniquePtr<nsPrintObject>& aPO) {
  * The outparam aDocList returns a (depth first) flat list of all the
  * nsPrintObjects created.
  */
-static void BuildNestedPrintObjects(BrowsingContext* aBrowsingContext,
+static void BuildNestedPrintObjects(Document* aDocument,
                                     const UniquePtr<nsPrintObject>& aPO,
                                     nsTArray<nsPrintObject*>* aDocList) {
-  MOZ_ASSERT(aBrowsingContext, "Pointer is null!");
+  MOZ_ASSERT(aDocument, "Pointer is null!");
   MOZ_ASSERT(aDocList, "Pointer is null!");
   MOZ_ASSERT(aPO, "Pointer is null!");
 
-  for (auto& childBC : aBrowsingContext->GetChildren()) {
-    // if we no longer have a nsFrameLoader for this BrowsingContext, it's
-    // probably being torn down.
-    nsCOMPtr<nsFrameLoaderOwner> flo =
-        do_QueryInterface(childBC->GetEmbedderElement());
-    RefPtr<nsFrameLoader> frameLoader = flo ? flo->GetFrameLoader() : nullptr;
-    if (!frameLoader) {
+  nsTArray<Document::PendingFrameStaticClone> pendingClones =
+      aDocument->TakePendingFrameStaticClones();
+  for (auto& clone : pendingClones) {
+    if (NS_WARN_IF(!clone.mStaticCloneOf)) {
       continue;
     }
 
-    // Finish performing the static clone for this BrowsingContext.
-    nsresult rv = frameLoader->FinishStaticClone();
+    RefPtr<Element> element = do_QueryObject(clone.mElement);
+    RefPtr<nsFrameLoader> frameLoader =
+        nsFrameLoader::Create(element, /* aNetworkCreated */ false);
+    clone.mElement->SetFrameLoader(frameLoader);
+
+    nsCOMPtr<nsIDocShell> docshell;
+    RefPtr<Document> doc;
+    nsresult rv = frameLoader->FinishStaticClone(
+        clone.mStaticCloneOf, getter_AddRefs(docshell), getter_AddRefs(doc));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       continue;
     }
 
-    auto window = childBC->GetDOMWindow();
-    if (!window) {
-      // XXXfission - handle OOP-iframes
-      continue;
-    }
     auto childPO = MakeUnique<nsPrintObject>();
-    rv = childPO->InitAsNestedObject(childBC->GetDocShell(),
-                                     window->GetExtantDoc(), aPO.get());
+    rv = childPO->InitAsNestedObject(docshell, doc, aPO.get());
     if (NS_FAILED(rv)) {
       MOZ_ASSERT_UNREACHABLE("Init failed?");
     }
     aPO->mKids.AppendElement(std::move(childPO));
     aDocList->AppendElement(aPO->mKids.LastElement().get());
-    BuildNestedPrintObjects(childBC, aPO->mKids.LastElement(), aDocList);
+    BuildNestedPrintObjects(doc, aPO->mKids.LastElement(), aDocList);
   }
 }
 
@@ -609,9 +608,8 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
     printData->mPrintObject->mFrameType =
         printData->mIsParentAFrameSet ? eFrameSet : eDoc;
 
-    BuildNestedPrintObjects(
-        printData->mPrintObject->mDocShell->GetBrowsingContext(),
-        printData->mPrintObject, &printData->mPrintDocList);
+    BuildNestedPrintObjects(printData->mPrintObject->mDocument,
+                            printData->mPrintObject, &printData->mPrintDocList);
   }
 
   if (!aSourceDoc->IsStaticDocument()) {
@@ -2892,7 +2890,7 @@ static void DumpViews(nsIDocShell* aDocShell, FILE* out) {
     // dump the views of the sub documents
     int32_t i, n;
     BrowsingContext* bc = nsDocShell::Cast(aDocShell)->GetBrowsingContext();
-    for (auto& child : bc->GetChildren()) {
+    for (auto& child : bc->Children()) {
       if (auto childDS = child->GetDocShell()) {
         DumpViews(childAsShell, out);
       }

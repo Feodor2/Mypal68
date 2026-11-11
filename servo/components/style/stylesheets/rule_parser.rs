@@ -10,7 +10,6 @@ use crate::font_face::parse_font_face_block;
 use crate::media_queries::MediaList;
 use crate::parser::{Parse, ParserContext};
 use crate::properties::parse_property_declaration_list;
-use crate::queries::FeatureType;
 use crate::selector_parser::{SelectorImpl, SelectorParser};
 use crate::shared_lock::{Locked, SharedRwLock};
 use crate::str::starts_with_ignore_ascii_case;
@@ -29,7 +28,6 @@ use crate::stylesheets::{CssRule, CssRuleType, CssRules, RulesMutateError, Style
 use crate::stylesheets::{NamespaceRule, PageRule, StyleRule, SupportsRule, ViewportRule};
 use crate::values::computed::font::FamilyName;
 use crate::values::{CssUrl, CustomIdent, KeyframesName};
-use crate::values::specified::ContainerName;
 use crate::{Namespace, Prefix};
 use cssparser::{AtRuleParser, Parser, QualifiedRuleParser, RuleListParser};
 use cssparser::{BasicParseError, BasicParseErrorKind, CowRcStr, ParserState, SourcePosition};
@@ -163,7 +161,7 @@ pub enum AtRulePrelude {
     /// A @media rule prelude, with its media queries.
     Media(Arc<Locked<MediaList>>),
     /// A @container rule prelude.
-    Container(ContainerName, ContainerCondition),
+    Container(Arc<ContainerCondition>),
     /// An @supports rule, with its conditional
     Supports(SupportsCondition),
     /// A @viewport rule prelude.
@@ -429,13 +427,8 @@ impl<'a, 'b, 'i> AtRuleParser<'i> for NestedRuleParser<'a, 'b> {
                 AtRulePrelude::FontFace
             },
             "container" if static_prefs::pref!("layout.css.container-queries.enabled") => {
-                // FIXME: This is a bit ambiguous:
-                // https://github.com/w3c/csswg-drafts/issues/7203
-                let name = input.try_parse(|input| {
-                    ContainerName::parse(self.context, input)
-                }).ok().unwrap_or_else(ContainerName::none);
-                let condition = ContainerCondition::parse(self.context, input, FeatureType::Container)?;
-                AtRulePrelude::Container(name, condition)
+                let condition = Arc::new(ContainerCondition::parse(self.context, input)?);
+                AtRulePrelude::Container(condition)
             },
             "layer" if static_prefs::pref!("layout.css.cascade-layers.enabled") => {
                 let names = input.try_parse(|input| {
@@ -607,10 +600,9 @@ impl<'a, 'b, 'i> AtRuleParser<'i> for NestedRuleParser<'a, 'b> {
                     },
                 ))))
             },
-            AtRulePrelude::Container(name, condition) => {
+            AtRulePrelude::Container(condition) => {
                 Ok(CssRule::Container(Arc::new(self.shared_lock.wrap(
                     ContainerRule {
-                        name,
                         condition,
                         rules: self.parse_nested_rules(input, CssRuleType::Container),
                         source_location: start.source_location(),
@@ -705,7 +697,8 @@ impl<'a, 'b, 'i> QualifiedRuleParser<'i> for NestedRuleParser<'a, 'b> {
         let selector_parser = SelectorParser {
             stylesheet_origin: self.context.stylesheet_origin,
             namespaces: self.namespaces,
-            url_data: Some(self.context.url_data),
+            url_data: self.context.url_data,
+            for_supports_rule: false,
         };
         let selectors = SelectorList::parse(&selector_parser, input)?;
         if self.context.error_reporting_enabled() {

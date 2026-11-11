@@ -292,7 +292,7 @@ where
     let custom_properties = {
         let mut builder = CustomPropertiesBuilder::new(
             inherited_style.custom_properties(),
-            device.environment(),
+            device,
         );
 
         for (declaration, priority) in iter {
@@ -324,6 +324,7 @@ where
         in_media_query: false,
         for_smil_animation: false,
         for_non_inherited_property: None,
+        container_info: None,
         font_metrics_provider,
         quirks_mode,
         rule_cache_conditions: RefCell::new(rule_cache_conditions),
@@ -547,7 +548,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             self.context.builder.writing_mode,
             self.context.builder.custom_properties.as_ref(),
             self.context.quirks_mode,
-            self.context.device().environment(),
+            self.context.device(),
             cache,
         )
     }

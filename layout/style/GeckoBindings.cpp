@@ -682,14 +682,8 @@ bool Gecko_IsDocumentBody(const Element* aElement) {
 
 nscolor Gecko_GetLookAndFeelSystemColor(int32_t aId, const Document* aDoc) {
   auto colorId = static_cast<LookAndFeel::ColorID>(aId);
-  const bool useStandinsForNativeColors =
-      (nsContentUtils::UseStandinsForNativeColors() &&
-       !nsContentUtils::IsChromeDoc(aDoc));
-
   AutoWriteLock guard(*sServoFFILock);
-  nscolor result = 0;
-  LookAndFeel::GetColor(colorId, useStandinsForNativeColors, &result);
-  return result;
+  return LookAndFeel::Color(colorId, *aDoc);
 }
 
 int32_t Gecko_GetLookAndFeelInt(int32_t aId) {
@@ -747,10 +741,6 @@ nsAtom* Gecko_GetXMLLangValue(const Element* aElement) {
 
   RefPtr<nsAtom> atom = attr->GetAtomValue();
   return atom.forget().take();
-}
-
-Document::DocumentTheme Gecko_GetDocumentLWTheme(const Document* aDocument) {
-  return aDocument->ThreadSafeGetDocumentLWTheme();
 }
 
 const PreferenceSheet::Prefs* Gecko_GetPrefSheetPrefs(const Document* aDoc) {

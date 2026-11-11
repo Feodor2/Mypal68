@@ -9,7 +9,7 @@
 use super::*;
 use crate::applicable_declarations::CascadePriority;
 use crate::context::QuirksMode;
-use crate::custom_properties::{CssEnvironment, CustomPropertiesBuilder};
+use crate::custom_properties::CustomPropertiesBuilder;
 use crate::error_reporting::{ContextualParseError, ParseErrorReporter};
 use crate::parser::ParserContext;
 use crate::properties::animated_properties::{AnimationValue, AnimationValueMap};
@@ -796,6 +796,7 @@ impl PropertyDeclarationBlock {
         dest: &mut CssStringWriter,
         computed_values: Option<&ComputedValues>,
         custom_properties_block: Option<&PropertyDeclarationBlock>,
+        device: &Device,
     ) -> fmt::Result {
         if let Ok(shorthand) = property.as_shorthand() {
             return self.shorthand_to_css(shorthand, dest);
@@ -808,19 +809,13 @@ impl PropertyDeclarationBlock {
             None => return Err(fmt::Error),
         };
 
-        // TODO(emilio): When we implement any environment variable without
-        // hard-coding the values we're going to need to get something
-        // meaningful out of here... All this code path is so terribly hacky
-        // ;_;.
-        let env = CssEnvironment;
-
         let custom_properties = if let Some(cv) = computed_values {
             // If there are extra custom properties for this declaration block,
             // factor them in too.
             if let Some(block) = custom_properties_block {
                 // FIXME(emilio): This is not super-efficient here, and all this
                 // feels like a hack anyway...
-                block.cascade_custom_properties(cv.custom_properties(), &env)
+                block.cascade_custom_properties(cv.custom_properties(), device)
             } else {
                 cv.custom_properties().cloned()
             }
@@ -844,7 +839,7 @@ impl PropertyDeclarationBlock {
                         computed_values.writing_mode,
                         custom_properties.as_ref(),
                         QuirksMode::NoQuirks,
-                        &env,
+                        device,
                         &mut Default::default()
                     )
                     .to_css(dest)
@@ -893,7 +888,7 @@ impl PropertyDeclarationBlock {
     ) -> Option<Arc<crate::custom_properties::CustomPropertiesMap>> {
         self.cascade_custom_properties(
             context.style().custom_properties(),
-            context.device().environment(),
+            context.device(),
         )
     }
 
@@ -903,9 +898,9 @@ impl PropertyDeclarationBlock {
     fn cascade_custom_properties(
         &self,
         inherited_custom_properties: Option<&Arc<crate::custom_properties::CustomPropertiesMap>>,
-        environment: &CssEnvironment,
+        device: &Device,
     ) -> Option<Arc<crate::custom_properties::CustomPropertiesMap>> {
-        let mut builder = CustomPropertiesBuilder::new(inherited_custom_properties, environment);
+        let mut builder = CustomPropertiesBuilder::new(inherited_custom_properties, device);
 
         for declaration in self.normal_declaration_iter() {
             if let PropertyDeclaration::Custom(ref declaration) = *declaration {

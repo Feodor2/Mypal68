@@ -128,7 +128,7 @@ impl RuleTree {
             return;
         }
 
-        let mut children_count = crate::hash::FxHashMap::default();
+        let mut children_count = fxhash::FxHashMap::default();
 
         let mut stack = SmallVec::<[_; 32]>::new();
         stack.push(self.root.clone());
@@ -202,9 +202,6 @@ impl RuleTree {
 /// doing a GC when calling maybe_gc().  (The value is copied from Gecko,
 /// where it likely did not result from a rigorous performance analysis.)
 const RULE_TREE_GC_INTERVAL: usize = 300;
-
-/// Used for some size assertions.
-pub const RULE_NODE_SIZE: usize = std::mem::size_of::<RuleNode>();
 
 /// A node in the rule tree.
 struct RuleNode {
@@ -771,3 +768,8 @@ impl hash::Hash for StrongRuleNode {
         (&*self.p as *const RuleNode).hash(state)
     }
 }
+
+// Large pages generate thousands of RuleNode objects.
+size_of_test!(RuleNode, 80);
+// StrongRuleNode should be pointer-sized even inside an option.
+size_of_test!(Option<StrongRuleNode>, 8);

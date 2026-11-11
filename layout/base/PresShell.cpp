@@ -4398,7 +4398,7 @@ nsresult PresShell::RenderDocument(const nsRect& aRect,
   nsIFrame* rootFrame = mFrameConstructor->GetRootFrame();
   if (!rootFrame) {
     // Nothing to paint, just fill the rect
-    aThebesContext->SetColor(Color::FromABGR(aBackgroundColor));
+    aThebesContext->SetColor(sRGBColor::FromABGR(aBackgroundColor));
     aThebesContext->Fill();
     return NS_OK;
   }
@@ -6134,7 +6134,7 @@ void PresShell::Paint(nsView* aViewToPaint, const nsRegion& aDirtyRegion,
     nsIntRect bounds =
         pc->GetVisibleArea().ToOutsidePixels(pc->AppUnitsPerDevPixel());
     bgcolor = NS_ComposeColors(bgcolor, mCanvasBackgroundColor);
-    root->SetColor(Color::FromABGR(bgcolor));
+    root->SetColor(ToDeviceColor(bgcolor));
     root->SetVisibleRegion(LayerIntRegion::FromUnknownRegion(bounds));
     layerManager->SetRoot(root);
   }
@@ -6407,7 +6407,7 @@ nsIFrame* PresShell::EventHandler::GetNearestFrameContainingPresShell(
   return frame;
 }
 
-static bool FlushThrottledStyles(Document& aDocument) {
+static CallState FlushThrottledStyles(Document& aDocument) {
   PresShell* presShell = aDocument.GetPresShell();
   if (presShell && presShell->IsVisible()) {
     if (nsPresContext* presContext = presShell->GetPresContext()) {
@@ -6416,7 +6416,7 @@ static bool FlushThrottledStyles(Document& aDocument) {
   }
 
   aDocument.EnumerateSubDocuments(FlushThrottledStyles);
-  return true;
+  return CallState::Continue;
 }
 
 bool PresShell::CanDispatchEvent(const WidgetGUIEvent* aEvent) const {
@@ -8824,11 +8824,11 @@ static void FreezeElement(nsISupports* aSupports) {
   }
 }
 
-static bool FreezeSubDocument(Document& aDocument) {
+static CallState FreezeSubDocument(Document& aDocument) {
   if (PresShell* presShell = aDocument.GetPresShell()) {
     presShell->Freeze();
   }
-  return true;
+  return CallState::Continue;
 }
 
 void PresShell::Freeze() {
@@ -8905,7 +8905,7 @@ void PresShell::Thaw() {
       if (PresShell* presShell = aSubDoc.GetPresShell()) {
         presShell->Thaw();
       }
-      return true;
+      return CallState::Continue;
     });
   }
 
@@ -10113,11 +10113,11 @@ void ReflowCountMgr::PaintCount(const char* aName,
       fm->SetTextRunRTL(false);
       width = fm->GetWidth(buf, len, drawTarget);
 
-      Color color;
-      Color color2;
+      sRGBColor color;
+      sRGBColor color2;
       if (aColor != 0) {
-        color = Color::FromABGR(aColor);
-        color2 = Color(0.f, 0.f, 0.f);
+        color = sRGBColor::FromABGR(aColor);
+        color2 = sRGBColor(0.f, 0.f, 0.f);
       } else {
         gfx::Float rc = 0.f, gc = 0.f, bc = 0.f;
         if (counter->mCount < 5) {
@@ -10128,14 +10128,14 @@ void ReflowCountMgr::PaintCount(const char* aName,
         } else {
           rc = 1.f;
         }
-        color = Color(rc, gc, bc);
-        color2 = Color(rc / 2, gc / 2, bc / 2);
+        color = sRGBColor(rc, gc, bc);
+        color2 = sRGBColor(rc / 2, gc / 2, bc / 2);
       }
 
       nsRect rect(0, 0, width + 15, height + 15);
       Rect devPxRect =
           NSRectToSnappedRect(rect, appUnitsPerDevPixel, *drawTarget);
-      ColorPattern black(ToDeviceColor(Color(0.f, 0.f, 0.f, 1.f)));
+      ColorPattern black(ToDeviceColor(sRGBColor::OpaqueBlack()));
       drawTarget->FillRect(devPxRect, black);
 
       aRenderingContext->SetColor(color2);
@@ -10405,7 +10405,7 @@ nsresult PresShell::SetIsActive(bool aIsActive) {
       if (PresShell* presShell = aResourceDoc.GetPresShell()) {
         presShell->SetIsActive(aIsActive);
       }
-      return true;
+      return CallState::Continue;
     };
     mDocument->EnumerateExternalResources(recurse);
   }
@@ -10954,7 +10954,7 @@ void PresShell::SetIsUnderHiddenEmbedderElement(
     BrowsingContext* bc = docShell->GetBrowsingContext();
 
     // Propagate to children.
-    for (BrowsingContext* child : bc->GetChildren()) {
+    for (BrowsingContext* child : bc->Children()) {
       Element* embedderElement = child->GetEmbedderElement();
       if (!embedderElement) {
         // TODO: We shouldn't need to null check here since `child` and the
@@ -11168,7 +11168,7 @@ void PresShell::EndPaint() {
       if (PresShell* presShell = aSubDoc.GetPresShell()) {
         presShell->EndPaint();
       }
-      return true;
+      return CallState::Continue;
     });
   }
 }

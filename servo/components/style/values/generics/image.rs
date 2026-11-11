@@ -9,6 +9,7 @@
 use crate::custom_properties;
 use crate::values::serialize_atom_identifier;
 use crate::Atom;
+use crate::Zero;
 use servo_arc::Arc;
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ToCss};
@@ -176,27 +177,51 @@ pub use self::GenericImageSetItem as ImageSetItem;
 /// <https://drafts.csswg.org/css-images/#gradients>
 #[derive(Clone, Debug, MallocSizeOf, PartialEq, ToComputedValue, ToResolvedValue, ToShmem)]
 #[repr(C)]
-pub struct GenericGradient<
+pub enum GenericGradient<
     LineDirection,
     LengthPercentage,
     NonNegativeLength,
     NonNegativeLengthPercentage,
     Position,
+    Angle,
+    AngleOrPercentage,
     Color,
 > {
-    /// Gradients can be linear or radial.
-    pub kind: GenericGradientKind<
-        LineDirection,
-        NonNegativeLength,
-        NonNegativeLengthPercentage,
-        Position,
-    >,
-    /// The color stops and interpolation hints.
-    pub items: crate::OwnedSlice<GenericGradientItem<Color, LengthPercentage>>,
-    /// True if this is a repeating gradient.
-    pub repeating: bool,
-    /// Compatibility mode.
-    pub compat_mode: GradientCompatMode,
+    /// A linear gradient.
+    Linear {
+        /// Line direction
+        direction: LineDirection,
+        /// The color stops and interpolation hints.
+        items: crate::OwnedSlice<GenericGradientItem<Color, LengthPercentage>>,
+        /// True if this is a repeating gradient.
+        repeating: bool,
+        /// Compatibility mode.
+        compat_mode: GradientCompatMode,
+    },
+    /// A radial gradient.
+    Radial {
+        /// Shape of gradient
+        shape: GenericEndingShape<NonNegativeLength, NonNegativeLengthPercentage>,
+        /// Center of gradient
+        position: Position,
+        /// The color stops and interpolation hints.
+        items: crate::OwnedSlice<GenericGradientItem<Color, LengthPercentage>>,
+        /// True if this is a repeating gradient.
+        repeating: bool,
+        /// Compatibility mode.
+        compat_mode: GradientCompatMode,
+    },
+    /// A conic gradient.
+    Conic {
+        /// Start angle of gradient
+        angle: Angle,
+        /// Center of gradient
+        position: Position,
+        /// The color stops and interpolation hints.
+        items: crate::OwnedSlice<GenericGradientItem<Color, AngleOrPercentage>>,
+        /// True if this is a repeating gradient.
+        repeating: bool,
+    },
 }
 
 pub use self::GenericGradient as Gradient;
@@ -214,26 +239,6 @@ pub enum GradientCompatMode {
     /// `-moz` prefix
     Moz,
 }
-
-/// A gradient kind.
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, ToComputedValue, ToResolvedValue, ToShmem)]
-#[repr(C, u8)]
-pub enum GenericGradientKind<
-    LineDirection,
-    NonNegativeLength,
-    NonNegativeLengthPercentage,
-    Position,
-> {
-    /// A linear gradient.
-    Linear(LineDirection),
-    /// A radial gradient.
-    Radial(
-        GenericEndingShape<NonNegativeLength, NonNegativeLengthPercentage>,
-        Position,
-    ),
-}
-
-pub use self::GenericGradientKind as GradientKind;
 
 /// A radial gradient's ending shape.
 #[derive(
@@ -451,45 +456,62 @@ where
     }
 }
 
-impl<D, LP, NL, NLP, P, C> ToCss for Gradient<D, LP, NL, NLP, P, C>
+impl<D, LP, NL, NLP, P, A: Zero, AoP, C> ToCss for Gradient<D, LP, NL, NLP, P, A, AoP, C>
 where
     D: LineDirection,
     LP: ToCss,
     NL: ToCss,
     NLP: ToCss,
     P: ToCss,
+    A: ToCss,
+    AoP: ToCss,
     C: ToCss,
 {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
     where
         W: Write,
     {
-        match self.compat_mode {
+        let (compat_mode, repeating) = match *self {
+            Gradient::Linear { compat_mode, repeating, .. } => (compat_mode, repeating),
+            Gradient::Radial { compat_mode, repeating, .. } => (compat_mode, repeating),
+            Gradient::Conic { repeating, .. } => (GradientCompatMode::Modern, repeating),
+        };
+
+        match compat_mode {
             GradientCompatMode::WebKit => dest.write_str("-webkit-")?,
             GradientCompatMode::Moz => dest.write_str("-moz-")?,
             _ => {},
         }
 
-        if self.repeating {
+        if repeating {
             dest.write_str("repeating-")?;
         }
-        dest.write_str(self.kind.label())?;
-        dest.write_str("-gradient(")?;
-        let mut skip_comma = match self.kind {
-            GradientKind::Linear(ref direction) if direction.points_downwards(self.compat_mode) => {
-                true
+
+        match *self {
+            Gradient::Linear { ref direction, ref items, compat_mode, .. } => {
+                dest.write_str("linear-gradient(")?;
+                let mut skip_comma = if !direction.points_downwards(compat_mode) {
+                    direction.to_css(dest, compat_mode)?;
+                    false
+                } else {
+                    true
+                };
+                for item in &**items {
+                    if !skip_comma {
+                        dest.write_str(", ")?;
+                    }
+                    skip_comma = false;
+                    item.to_css(dest)?;
+                }
             },
-            GradientKind::Linear(ref direction) => {
-                direction.to_css(dest, self.compat_mode)?;
-                false
-            },
-            GradientKind::Radial(ref shape, ref position) => {
+            Gradient::Radial { ref shape, ref position, ref items, compat_mode, .. } => {
+                dest.write_str("radial-gradient(")?;
                 let omit_shape = match *shape {
                     EndingShape::Ellipse(Ellipse::Extent(ShapeExtent::Cover)) |
                     EndingShape::Ellipse(Ellipse::Extent(ShapeExtent::FarthestCorner)) => true,
                     _ => false,
                 };
-                if self.compat_mode == GradientCompatMode::Modern {
+                if compat_mode == GradientCompatMode::Modern {
                     if !omit_shape {
                         shape.to_css(dest)?;
                         dest.write_str(" ")?;
@@ -503,26 +525,27 @@ where
                         shape.to_css(dest)?;
                     }
                 }
-                false
+                for item in &**items {
+                    dest.write_str(", ")?;
+                    item.to_css(dest)?;
+                }
             },
-        };
-        for item in &*self.items {
-            if !skip_comma {
-                dest.write_str(", ")?;
-            }
-            skip_comma = false;
-            item.to_css(dest)?;
+            Gradient::Conic { ref angle, ref position, ref items, .. } => {
+                dest.write_str("conic-gradient(")?;
+                if !angle.is_zero() {
+                    dest.write_str("from ")?;
+                    angle.to_css(dest)?;
+                    dest.write_str(" ")?;
+                }
+                dest.write_str("at ")?;
+                position.to_css(dest)?;
+                for item in &**items {
+                    dest.write_str(", ")?;
+                    item.to_css(dest)?;
+                }
+            },
         }
         dest.write_str(")")
-    }
-}
-
-impl<D, L, LoP, P> GradientKind<D, L, LoP, P> {
-    fn label(&self) -> &str {
-        match *self {
-            GradientKind::Linear(..) => "linear",
-            GradientKind::Radial(..) => "radial",
-        }
     }
 }
 

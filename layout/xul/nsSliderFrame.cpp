@@ -47,7 +47,6 @@
 
 using namespace mozilla;
 using mozilla::dom::Event;
-using mozilla::layers::APZCCallbackHelper;
 using mozilla::layers::AsyncDragMetrics;
 using mozilla::layers::InputAPZContext;
 using mozilla::layers::ScrollbarData;

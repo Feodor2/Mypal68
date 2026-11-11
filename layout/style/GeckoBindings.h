@@ -133,9 +133,6 @@ bool Gecko_MatchLang(const mozilla::dom::Element*, nsAtom* override_lang,
 
 nsAtom* Gecko_GetXMLLangValue(const mozilla::dom::Element*);
 
-mozilla::dom::Document::DocumentTheme Gecko_GetDocumentLWTheme(
-    const mozilla::dom::Document*);
-
 const mozilla::PreferenceSheet::Prefs* Gecko_GetPrefSheetPrefs(
     const mozilla::dom::Document*);
 
@@ -596,6 +593,11 @@ bool Gecko_MediaFeatures_PrefersReducedMotion(const mozilla::dom::Document*);
 mozilla::StylePrefersContrast Gecko_MediaFeatures_PrefersContrast(
     const mozilla::dom::Document*);
 mozilla::StylePrefersColorScheme Gecko_MediaFeatures_PrefersColorScheme(
+    const mozilla::dom::Document*);
+
+mozilla::StyleDynamicRange Gecko_MediaFeatures_DynamicRange(
+    const mozilla::dom::Document*);
+mozilla::StyleDynamicRange Gecko_MediaFeatures_VideoDynamicRange(
     const mozilla::dom::Document*);
 
 mozilla::PointerCapabilities Gecko_MediaFeatures_PrimaryPointerCapabilities(

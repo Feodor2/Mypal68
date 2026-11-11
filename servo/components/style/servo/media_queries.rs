@@ -17,7 +17,7 @@ use crate::values::KeyframesName;
 use app_units::Au;
 use cssparser::RGBA;
 use euclid::default::Size2D as UntypedSize2D;
-use euclid::{Scale, Size2D};
+use euclid::{Scale, Size2D, SideOffsets2D};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use style_traits::viewport::ViewportConstraints;
 use style_traits::{CSSPixel, DevicePixel};
@@ -180,6 +180,10 @@ impl Device {
         RGBA::new(0, 0, 0, 255)
     }
 
+    /// Returns safe area insets
+    pub fn safe_area_insets(&self) -> SideOffsets2D<f32, CSSPixel> {
+        SideOffsets2D::zero()
+    }
 }
 
 /// https://drafts.csswg.org/mediaqueries-4/#width

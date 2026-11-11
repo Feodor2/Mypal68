@@ -199,6 +199,11 @@ void nsSubDocumentFrame::ShowViewer() {
       if (!HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
         frameloader->UpdatePositionAndSize(this);
       }
+
+      if (!weakThis.IsAlive()) {
+        return;
+      }
+      InvalidateFrame();
     }
   }
 }
@@ -938,7 +943,7 @@ static void DestroyDisplayItemDataForFrames(nsIFrame* aFrame) {
   }
 }
 
-static bool BeginSwapDocShellsForDocument(Document& aDocument) {
+static CallState BeginSwapDocShellsForDocument(Document& aDocument) {
   if (PresShell* presShell = aDocument.GetPresShell()) {
     // Disable painting while the views are detached, see bug 946929.
     presShell->SetNeverPainting(true);
@@ -949,7 +954,7 @@ static bool BeginSwapDocShellsForDocument(Document& aDocument) {
   }
   aDocument.EnumerateActivityObservers(nsPluginFrame::BeginSwapDocShells);
   aDocument.EnumerateSubDocuments(BeginSwapDocShellsForDocument);
-  return true;
+  return CallState::Continue;
 }
 
 static nsView* BeginSwapDocShellsForViews(nsView* aSibling) {
@@ -1010,7 +1015,7 @@ nsresult nsSubDocumentFrame::BeginSwapDocShells(nsIFrame* aOther) {
   return NS_OK;
 }
 
-static bool EndSwapDocShellsForDocument(Document& aDocument) {
+static CallState EndSwapDocShellsForDocument(Document& aDocument) {
   // Our docshell and view trees have been updated for the new hierarchy.
   // Now also update all nsDeviceContext::mWidget to that of the
   // container view in the new hierarchy.
@@ -1033,7 +1038,7 @@ static bool EndSwapDocShellsForDocument(Document& aDocument) {
 
   aDocument.EnumerateActivityObservers(nsPluginFrame::EndSwapDocShells);
   aDocument.EnumerateSubDocuments(EndSwapDocShellsForDocument);
-  return true;
+  return CallState::Continue;
 }
 
 static void EndSwapDocShellsForViews(nsView* aSibling) {
@@ -1344,8 +1349,8 @@ bool nsDisplayRemote::CreateWebRenderCommands(
     // longer visible
     RefPtr<WebRenderRemoteData> userData =
         aManager->CommandBuilder()
-            .CreateOrRecycleWebRenderUserData<WebRenderRemoteData>(
-                this, aBuilder.GetRenderRoot(), nullptr);
+            .CreateOrRecycleWebRenderUserData<WebRenderRemoteData>(this,
+                                                                   nullptr);
     userData->SetRemoteBrowser(remoteBrowser);
   }
 #endif

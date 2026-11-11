@@ -15,6 +15,7 @@
 #include "mozilla/EventStateManager.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
+#include "mozilla/dom/ContentParent.h"
 
 #include "base/basictypes.h"
 
@@ -783,7 +784,7 @@ void nsPresContext::RecomputeBrowsingContextDependentData() {
     if (nsPresContext* subResourcePc = aSubResource.GetPresContext()) {
       subResourcePc->RecomputeBrowsingContextDependentData();
     }
-    return false;
+    return CallState::Continue;
   });
 }
 
@@ -1364,17 +1365,17 @@ void nsPresContext::ThemeChangedInternal() {
     // surfaces. (We could add a vector image only version of DiscardAll, but
     // in bug 940625 we decided theme changes are rare enough not to bother.)
     image::SurfaceCacheUtils::DiscardAll();
+
+    if (XRE_IsParentProcess()) {
+      nsTArray<ContentParent*> cp;
+      ContentParent::GetAll(cp);
+      auto cache = LookAndFeel::GetIntCache();
+      for (ContentParent* c : cp) {
+        Unused << c->SendThemeChanged(cache);
+      }
+    }
   }
 
-  // Recursively notify all remote leaf descendants that the
-  // system theme has changed.
-  if (nsPIDOMWindowOuter* window = mDocument->GetWindow()) {
-    nsContentUtils::CallOnAllRemoteChildren(
-        window, [](BrowserParent* aBrowserParent) -> bool {
-          aBrowserParent->ThemeChanged();
-          return false;
-        });
-  }
   // Reset default background and foreground colors for the document since they
   // may be using system colors.
   PreferenceSheet::Refresh();
@@ -1450,7 +1451,7 @@ void nsPresContext::UIResolutionChangedInternalScale(double aScale) {
       // currently hidden, and will not be updated until shown): bug 1249279.
       pc->UIResolutionChangedInternalScale(aScale);
     }
-    return true;
+    return CallState::Continue;
   };
   mDocument->EnumerateSubDocuments(recurse);
 }
@@ -1563,7 +1564,7 @@ void nsPresContext::MediaFeatureValuesChangedAllDocuments(
     if (nsPresContext* pc = aSubDoc.GetPresContext()) {
       pc->MediaFeatureValuesChangedAllDocuments(aChange);
     }
-    return true;
+    return CallState::Continue;
   };
   mDocument->EnumerateSubDocuments(recurse);
 }
@@ -1632,9 +1633,9 @@ void nsPresContext::FlushPendingMediaFeatureValuesChanged() {
 void nsPresContext::SizeModeChanged(nsSizeMode aSizeMode) {
   if (nsPIDOMWindowOuter* window = mDocument->GetWindow()) {
     nsContentUtils::CallOnAllRemoteChildren(
-        window, [&aSizeMode](BrowserParent* aBrowserParent) -> bool {
+        window, [&aSizeMode](BrowserParent* aBrowserParent) -> CallState {
           aBrowserParent->SizeModeChanged(aSizeMode);
-          return false;
+          return CallState::Continue;
         });
   }
   MediaFeatureValuesChangedAllDocuments(
@@ -1904,10 +1905,10 @@ bool nsPresContext::MayHavePaintEventListenerInSubDocument() {
     if (nsPresContext* pc = aSubDoc.GetPresContext()) {
       if (pc->MayHavePaintEventListenerInSubDocument()) {
         result = true;
-        return false;
+        return CallState::Stop;
       }
     }
-    return true;
+    return CallState::Continue;
   };
 
   mDocument->EnumerateSubDocuments(recurse);
@@ -2081,7 +2082,7 @@ void nsPresContext::NotifyRevokingDidPaint(TransactionId aTransactionId) {
     if (nsPresContext* pc = aSubDoc.GetPresContext()) {
       pc->NotifyRevokingDidPaint(aTransactionId);
     }
-    return true;
+    return CallState::Continue;
   };
   mDocument->EnumerateSubDocuments(recurse);
 }
@@ -2151,7 +2152,7 @@ void nsPresContext::NotifyDidPaintForSubtree(
     if (nsPresContext* pc = aSubDoc.GetPresContext()) {
       pc->NotifyDidPaintForSubtree(aTransactionId, aTimeStamp);
     }
-    return true;
+    return CallState::Continue;
   };
   mDocument->EnumerateSubDocuments(recurse);
 }

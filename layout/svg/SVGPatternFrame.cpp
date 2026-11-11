@@ -676,7 +676,7 @@ already_AddRefed<gfxPattern> SVGPatternFrame::GetPaintServerPattern(
     float aGraphicOpacity, imgDrawingParams& aImgParams,
     const gfxRect* aOverrideBounds) {
   if (aGraphicOpacity == 0.0f) {
-    return do_AddRef(new gfxPattern(Color()));
+    return do_AddRef(new gfxPattern(DeviceColor()));
   }
 
   // Paint it!

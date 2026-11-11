@@ -21,7 +21,7 @@ namespace mozilla {
  * FilterPrimitiveDescription connected to the filter graph.
  */
 class CSSFilterInstance {
-  typedef mozilla::gfx::Color Color;
+  typedef mozilla::gfx::sRGBColor sRGBColor;
   typedef gfx::FilterPrimitiveDescription FilterPrimitiveDescription;
   typedef gfx::IntPoint IntPoint;
   typedef gfx::Size Size;
@@ -101,7 +101,7 @@ class CSSFilterInstance {
    * Converts an nscolor to a Color, suitable for use as a
    * FilterPrimitiveDescription attribute.
    */
-  Color ToAttributeColor(nscolor aColor);
+  sRGBColor ToAttributeColor(nscolor aColor);
 
   /**
    * Converts a blur radius in frame space to filter space.

@@ -246,8 +246,8 @@ already_AddRefed<gfxPattern> SVGGradientFrame::GetPaintServerPattern(
   // SVG specification says that no stops should be treated like
   // the corresponding fill or stroke had "none" specified.
   if (nStops == 0) {
-    RefPtr<gfxPattern> pattern = new gfxPattern(Color());
-    return do_AddRef(new gfxPattern(Color()));
+    RefPtr<gfxPattern> pattern = new gfxPattern(DeviceColor());
+    return do_AddRef(new gfxPattern(DeviceColor()));
   }
 
   if (nStops == 1 || GradientVectorLengthIsZero()) {
@@ -258,9 +258,9 @@ already_AddRefed<gfxPattern> SVGGradientFrame::GetPaintServerPattern(
     float stopOpacity = svgReset->mStopOpacity;
     nscolor stopColor = svgReset->mStopColor.CalcColor(lastStopFrame);
 
-    Color stopColor2 = Color::FromABGR(stopColor);
+    sRGBColor stopColor2 = sRGBColor::FromABGR(stopColor);
     stopColor2.a *= stopOpacity * aGraphicOpacity;
-    return do_AddRef(new gfxPattern(stopColor2));
+    return do_AddRef(new gfxPattern(ToDeviceColor(stopColor2)));
   }
 
   // Get the transform list (if there is one). We do this after the returns
@@ -313,9 +313,9 @@ already_AddRefed<gfxPattern> SVGGradientFrame::GetPaintServerPattern(
     else
       lastOffset = offset;
 
-    Color stopColor2 = Color::FromABGR(stopColor);
+    sRGBColor stopColor2 = sRGBColor::FromABGR(stopColor);
     stopColor2.a *= stopOpacity * aGraphicOpacity;
-    gradient->AddColorStop(offset, stopColor2);
+    gradient->AddColorStop(offset, ToDeviceColor(stopColor2));
   }
 
   return gradient.forget();

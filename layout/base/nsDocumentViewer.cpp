@@ -1085,6 +1085,12 @@ nsDocumentViewer::LoadComplete(nsresult aStatus) {
     }
   } else {
     // XXX: Should fire error event to the document...
+
+    // If our load was explicitly aborted, then we want to set our
+    // readyState to COMPLETE, and fire a readystatechange event.
+    if (aStatus == NS_BINDING_ABORTED && mDocument) {
+      mDocument->NotifyAbortedLoad();
+    }
   }
 
   // Notify the document that it has been shown (regardless of whether
@@ -1096,7 +1102,10 @@ nsDocumentViewer::LoadComplete(nsresult aStatus) {
   // pageshow, and that's pretty broken... Fortunately, this should be rare.
   // (It requires us to spin the event loop in onload handler, e.g. via sync
   // XHR, in order for the navigation-away to happen before onload completes.)
-  if (mDocument && mDocument->IsCurrentActiveDocument()) {
+  // We skip firing pageshow if we're currently handling unload, or if loading
+  // was explicitly aborted.
+  if (mDocument && mDocument->IsCurrentActiveDocument() &&
+      aStatus != NS_BINDING_ABORTED) {
     // Re-get window, since it might have changed during above firing of onload
     window = mDocument->GetWindow();
     if (window) {
@@ -2565,7 +2574,7 @@ void nsDocumentViewer::PropagateToPresContextsHelper(CallChildFunc aChildFunc,
       if (nsPresContext* pc = aResourceDoc.GetPresContext()) {
         aPcFunc(pc);
       }
-      return true;
+      return CallState::Continue;
     };
     mDocument->EnumerateExternalResources(resourceDoc);
   }

@@ -9,7 +9,6 @@ use cssparser::ToCss as ParserToCss;
 use cssparser::{ParseErrorKind, Parser, ParserInput, SourceLocation, UnicodeRange};
 use malloc_size_of::MallocSizeOfOps;
 use nsstring::{nsCString, nsString};
-use selectors::matching::{matches_selector, MatchingContext, MatchingMode, VisitedHandlingMode};
 use selectors::{NthIndexCache, SelectorList};
 use servo_arc::{Arc, ArcBorrow, RawOffsetArc};
 use smallvec::SmallVec;
@@ -713,15 +712,18 @@ macro_rules! get_property_id_from_nscsspropertyid {
 pub extern "C" fn Servo_AnimationValue_Serialize(
     value: &RawServoAnimationValue,
     property: nsCSSPropertyID,
+    raw_data: &RawServoStyleSet,
     buffer: &mut nsACString,
 ) {
     let uncomputed_value = AnimationValue::as_arc(&value).uncompute();
+    let data = PerDocumentStyleData::from_ffi(raw_data).borrow();
     let rv = PropertyDeclarationBlock::with_one(uncomputed_value, Importance::Normal)
         .single_value_to_css(
             &get_property_id_from_nscsspropertyid!(property, ()),
             buffer,
             None,
             None, /* No extra custom properties */
+            &data.stylist.device(),
         );
     debug_assert!(rv.is_ok());
 }
@@ -2419,6 +2421,7 @@ pub extern "C" fn Servo_StyleRule_SelectorMatchesElement(
     pseudo_type: PseudoStyleType,
     relevant_link_visited: bool,
 ) -> bool {
+    use selectors::matching::{matches_selector, MatchingContext, MatchingMode, VisitedHandlingMode, NeedsSelectorFlags};
     read_locked_arc(rule, |rule: &StyleRule| {
         let index = index as usize;
         if index >= rule.selectors.0.len() {
@@ -2455,9 +2458,15 @@ pub extern "C" fn Servo_StyleRule_SelectorMatchesElement(
         } else {
             VisitedHandlingMode::AllLinksUnvisited
         };
-        let mut ctx =
-            MatchingContext::new_for_visited(matching_mode, None, None, visited_mode, quirks_mode);
-        matches_selector(selector, 0, None, &element, &mut ctx, &mut |_, _| {})
+        let mut ctx = MatchingContext::new_for_visited(
+            matching_mode,
+            None,
+            None,
+            visited_mode,
+            quirks_mode,
+            NeedsSelectorFlags::No,
+        );
+        matches_selector(selector, 0, None, &element, &mut ctx)
     })
 }
 
@@ -2478,7 +2487,8 @@ pub extern "C" fn Servo_StyleRule_SetSelectorText(
         let parser = SelectorParser {
             stylesheet_origin: contents.origin,
             namespaces: &namespaces,
-            url_data: Some(&url_data),
+            url_data: &url_data,
+            for_supports_rule: false,
         };
 
         let mut parser_input = ParserInput::new(&value_str);
@@ -2807,7 +2817,7 @@ pub extern "C" fn Servo_ContainerRule_GetConditionText(
     result: &mut nsACString,
 ) {
     read_locked_arc(rule, |rule: &ContainerRule| {
-        rule.condition.to_css(&mut CssWriter::new(result)).unwrap();
+        rule.query_condition().to_css(&mut CssWriter::new(result)).unwrap();
     })
 }
 
@@ -4392,6 +4402,7 @@ pub extern "C" fn Servo_DeclarationBlock_SerializeOneValue(
     buffer: &mut nsACString,
     computed_values: Option<&ComputedValues>,
     custom_properties: Option<&RawServoDeclarationBlock>,
+    raw_data: &RawServoStyleSet,
 ) {
     let property_id = get_property_id_from_nscsspropertyid!(property_id, ());
 
@@ -4402,7 +4413,8 @@ pub extern "C" fn Servo_DeclarationBlock_SerializeOneValue(
     let custom_properties =
         Locked::<PropertyDeclarationBlock>::arc_from_borrowed(&custom_properties);
     let custom_properties = custom_properties.map(|block| block.read_with(&guard));
-    let rv = decls.single_value_to_css(&property_id, buffer, computed_values, custom_properties);
+    let data = PerDocumentStyleData::from_ffi(raw_data).borrow();
+    let rv = decls.single_value_to_css(&property_id, buffer, computed_values, custom_properties, &data.stylist.device());
     debug_assert!(rv.is_ok());
 }
 
@@ -5634,6 +5646,7 @@ fn create_context_for_animation<'a>(
         quirks_mode: per_doc_data.stylist.quirks_mode(),
         for_smil_animation,
         for_non_inherited_property: None,
+        container_info: None,
         rule_cache_conditions: RefCell::new(rule_cache_conditions),
     }
 }
@@ -6537,11 +6550,18 @@ pub extern "C" fn Servo_HasPendingRestyleAncestor(
 #[no_mangle]
 pub unsafe extern "C" fn Servo_SelectorList_Parse(
     selector_list: &nsACString,
+    is_chrome: bool,
 ) -> OwnedOrNull<RawServoSelectorList> {
     use style::selector_parser::SelectorParser;
 
+    let url_data = UrlExtraData::from_ptr_ref(if is_chrome {
+        &DUMMY_CHROME_URL_DATA
+    } else {
+        &DUMMY_URL_DATA
+    });
+
     let input = selector_list.as_str_unchecked();
-    let selector_list = match SelectorParser::parse_author_origin_no_namespace(&input) {
+    let selector_list = match SelectorParser::parse_author_origin_no_namespace(&input, url_data) {
         Ok(selector_list) => selector_list,
         Err(..) => return OwnedOrNull::null(),
     };

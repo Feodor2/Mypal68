@@ -2693,8 +2693,8 @@ static void PaintDebugBorder(nsIFrame* aFrame, DrawTarget* aDrawTarget,
                              const nsRect& aDirtyRect, nsPoint aPt) {
   nsRect r(aPt, aFrame->GetSize());
   int32_t appUnitsPerDevPixel = aFrame->PresContext()->AppUnitsPerDevPixel();
-  Color blueOrRed(aFrame->HasView() ? Color(0.f, 0.f, 1.f, 1.f)
-                                    : Color(1.f, 0.f, 0.f, 1.f));
+  sRGBColor blueOrRed(aFrame->HasView() ? sRGBColor(0.f, 0.f, 1.f, 1.f)
+                                        : sRGBColor(1.f, 0.f, 0.f, 1.f));
   aDrawTarget->StrokeRect(NSRectToRect(r, appUnitsPerDevPixel),
                           ColorPattern(ToDeviceColor(blueOrRed)));
 }
@@ -2703,7 +2703,7 @@ static void PaintEventTargetBorder(nsIFrame* aFrame, DrawTarget* aDrawTarget,
                                    const nsRect& aDirtyRect, nsPoint aPt) {
   nsRect r(aPt, aFrame->GetSize());
   int32_t appUnitsPerDevPixel = aFrame->PresContext()->AppUnitsPerDevPixel();
-  ColorPattern purple(ToDeviceColor(Color(.5f, 0.f, .5f, 1.f)));
+  ColorPattern purple(ToDeviceColor(sRGBColor(.5f, 0.f, .5f, 1.f)));
   aDrawTarget->StrokeRect(NSRectToRect(r, appUnitsPerDevPixel), purple);
 }
 

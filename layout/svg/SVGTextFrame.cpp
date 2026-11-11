@@ -2576,7 +2576,7 @@ void SVGTextDrawPathCallbacks::HandleTextGeometry() {
   if (IsClipPathChild()) {
     RefPtr<Path> path = mContext.GetPath();
     ColorPattern white(
-        Color(1.f, 1.f, 1.f, 1.f));  // for masking, so no ToDeviceColor
+        DeviceColor(1.f, 1.f, 1.f, 1.f));  // for masking, so no ToDeviceColor
     mContext.GetDrawTarget()->Fill(path, white);
   } else {
     // Normal painting.

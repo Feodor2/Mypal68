@@ -378,7 +378,7 @@ void nsPageFrame::DrawHeaderFooter(gfxContext& aRenderingContext,
     aRenderingContext.Save();
     aRenderingContext.Clip(NSRectToSnappedRect(
         aRect, PresContext()->AppUnitsPerDevPixel(), *drawTarget));
-    aRenderingContext.SetColor(Color(0.f, 0.f, 0.f));
+    aRenderingContext.SetColor(sRGBColor::OpaqueBlack());
     nsLayoutUtils::DrawString(this, aFontMetrics, &aRenderingContext, str.get(),
                               str.Length(), nsPoint(x, y + aAscent), nullptr,
                               DrawStringFlags::ForceHorizontal);
@@ -479,7 +479,7 @@ static void PaintMarginGuides(nsIFrame* aFrame, DrawTarget* aDrawTarget,
   // (In many cases, the entire preview is scaled down so that the guides
   // will be nominally less than 1 dev px even on a hidpi screen, resulting
   // in lighter antialiased rendering so they don't dominate the page.)
-  ColorPattern pattern(ToDeviceColor(Color(0.0f, 0.0f, 1.0f)));
+  ColorPattern pattern(ToDeviceColor(sRGBColor(0.0f, 0.0f, 1.0f)));
   Float dashes[] = {2.0f, 2.0f};
   StrokeOptions stroke(/* line width (in CSS px) */ 0.5f,
                        JoinStyle::MITER_OR_BEVEL, CapStyle::BUTT,
@@ -743,7 +743,7 @@ void nsPageFrame::PaintHeaderFooter(gfxContext& aRenderingContext, nsPoint aPt,
   nsPresContext* pc = PresContext();
 
   nsRect rect(aPt, mRect.Size());
-  aRenderingContext.SetColor(Color(0.f, 0.f, 0.f));
+  aRenderingContext.SetColor(sRGBColor::OpaqueBlack());
 
   DrawTargetAutoDisableSubpixelAntialiasing disable(
       aRenderingContext.GetDrawTarget(), aDisableSubpixelAA);

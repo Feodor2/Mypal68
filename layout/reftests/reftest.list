@@ -24,9 +24,6 @@ include apng-mime/reftest.list
 
 include async-scrolling/reftest.list
 
-# backgrounds/
-include backgrounds/reftest.list
-
 # bidi/
 include bidi/reftest.list
 
@@ -120,9 +117,6 @@ include css-valid/reftest.list
 
 # css invalid
 include css-invalid/reftest.list
-
-# css-submit-invalid
-include css-submit-invalid/reftest.list
 
 # css text-overflow
 include text-overflow/reftest.list

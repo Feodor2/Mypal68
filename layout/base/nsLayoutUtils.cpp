@@ -5768,7 +5768,7 @@ void nsLayoutUtils::PaintTextShadow(
 
     aDestCtx->Save();
     aDestCtx->NewPath();
-    aDestCtx->SetColor(Color::FromABGR(shadowColor));
+    aDestCtx->SetColor(sRGBColor::FromABGR(shadowColor));
 
     // The callback will draw whatever we want to blur as a shadow.
     aCallback(shadowContext, shadowOffset, shadowColor, aCallbackData);
@@ -8752,14 +8752,14 @@ ScrollMetadata nsLayoutUtils::ComputeScrollMetadata(
   if (aScrollFrame) {
     if (isRootScrollFrame) {
       metadata.SetBackgroundColor(
-          Color::FromABGR(presShell->GetCanvasBackground()));
+          sRGBColor::FromABGR(presShell->GetCanvasBackground()));
     } else {
       ComputedStyle* backgroundStyle;
       if (nsCSSRendering::FindBackground(aScrollFrame, &backgroundStyle)) {
         nscolor backgroundColor =
             backgroundStyle->StyleBackground()->BackgroundColor(
                 backgroundStyle);
-        metadata.SetBackgroundColor(Color::FromABGR(backgroundColor));
+        metadata.SetBackgroundColor(sRGBColor::FromABGR(backgroundColor));
       }
     }
   }

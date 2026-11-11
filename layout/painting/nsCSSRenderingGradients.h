@@ -25,11 +25,11 @@ class DisplayListBuilder;
 // a color.
 struct ColorStop {
   ColorStop() : mPosition(0), mIsMidpoint(false) {}
-  ColorStop(double aPosition, bool aIsMidPoint, const gfx::Color& aColor)
+  ColorStop(double aPosition, bool aIsMidPoint, const gfx::sRGBColor& aColor)
       : mPosition(aPosition), mIsMidpoint(aIsMidPoint), mColor(aColor) {}
   double mPosition;  // along the gradient line; 0=start, 1=end
   bool mIsMidpoint;
-  gfx::Color mColor;
+  gfx::sRGBColor mColor;
 };
 
 class nsCSSGradientRenderer final {
@@ -64,7 +64,9 @@ class nsCSSGradientRenderer final {
                                 nsTArray<wr::GradientStop>& aStops,
                                 LayoutDevicePoint& aLineStart,
                                 LayoutDevicePoint& aLineEnd,
-                                LayoutDeviceSize& aGradientRadius);
+                                LayoutDeviceSize& aGradientRadius,
+                                LayoutDevicePoint& aGradientCenter,
+                                float& aGradientAngle);
 
   /**
    * Build display items for the gradient
@@ -89,7 +91,8 @@ class nsCSSGradientRenderer final {
       : mPresContext(nullptr),
         mGradient(nullptr),
         mRadiusX(0.0),
-        mRadiusY(0.0) {}
+        mRadiusY(0.0),
+        mAngle(0.0) {}
 
   /**
    * Attempts to paint the tiles for a gradient by painting it once to an
@@ -107,8 +110,10 @@ class nsCSSGradientRenderer final {
   nsPresContext* mPresContext;
   const StyleGradient* mGradient;
   nsTArray<ColorStop> mStops;
-  gfxPoint mLineStart, mLineEnd;
-  double mRadiusX, mRadiusY;
+  gfxPoint mLineStart, mLineEnd;  // only for linear/radial gradients
+  double mRadiusX, mRadiusY;      // only for radial gradients
+  gfxPoint mCenter;               // only for conic gradients
+  float mAngle;                   // only for conic gradients
 };
 
 }  // namespace mozilla

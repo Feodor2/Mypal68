@@ -897,7 +897,7 @@ static void TakeAndAddModifiedAndFramesWithPropsFromRootFrame(
       TakeAndAddModifiedAndFramesWithPropsFromRootFrame(
           aBuilder, aModifiedFrames, aFramesWithProps, rootFrame, aSubDoc);
     }
-    return true;
+    return CallState::Continue;
   };
   aDoc.EnumerateSubDocuments(recurse);
 }

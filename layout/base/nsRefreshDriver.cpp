@@ -1795,14 +1795,14 @@ void nsRefreshDriver::CancelIdleRunnable(nsIRunnable* aRunnable) {
   }
 }
 
-static bool ReduceAnimations(Document& aDocument) {
+static CallState ReduceAnimations(Document& aDocument) {
   if (nsPresContext* pc = aDocument.GetPresContext()) {
     if (pc->EffectCompositor()->NeedsReducing()) {
       pc->EffectCompositor()->ReduceAnimations();
     }
   }
   aDocument.EnumerateSubDocuments(ReduceAnimations);
-  return true;
+  return CallState::Continue;
 }
 
 void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime) {

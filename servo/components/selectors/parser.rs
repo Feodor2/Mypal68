@@ -253,9 +253,9 @@ pub trait Parser<'i> {
         false
     }
 
-    /// The error recovery that selector lists inside :is() and :where() have.
-    fn is_and_where_error_recovery(&self) -> ParseErrorRecovery {
-        ParseErrorRecovery::IgnoreInvalidSelector
+    /// Whether to parse the :has pseudo-class.
+    fn parse_has(&self) -> bool {
+        false
     }
 
     /// Whether the given function name is an alias for the `:is()` function.
@@ -266,6 +266,11 @@ pub trait Parser<'i> {
     /// Whether to parse the `:host` pseudo-class.
     fn parse_host(&self) -> bool {
         false
+    }
+
+    /// Whether to allow forgiving selector-list parsing.
+    fn allow_forgiving_selectors(&self) -> bool {
+        true
     }
 
     /// This function can return an "Err" pseudo-element in order to support CSS2.1
@@ -337,7 +342,7 @@ pub struct SelectorList<Impl: SelectorImpl>(
 );
 
 /// How to treat invalid selectors in a selector list.
-pub enum ParseErrorRecovery {
+enum ParseErrorRecovery {
     /// Discard the entire selector list, this is the default behavior for
     /// almost all of CSS.
     DiscardList,
@@ -388,7 +393,11 @@ impl<Impl: SelectorImpl> SelectorList<Impl> {
                 Ok(selector) => values.push(selector),
                 Err(err) => match recovery {
                     ParseErrorRecovery::DiscardList => return Err(err),
-                    ParseErrorRecovery::IgnoreInvalidSelector => {},
+                    ParseErrorRecovery::IgnoreInvalidSelector => {
+                        if !parser.allow_forgiving_selectors() {
+                            return Err(err);
+                        }
+                    },
                 },
             }
 
@@ -1011,17 +1020,6 @@ impl Combinator {
 #[derive(Clone, Eq, PartialEq, ToShmem)]
 #[shmem(no_bounds)]
 pub enum Component<Impl: SelectorImpl> {
-    Combinator(Combinator),
-
-    ExplicitAnyNamespace,
-    ExplicitNoNamespace,
-    DefaultNamespace(#[shmem(field_bound)] Impl::NamespaceUrl),
-    Namespace(
-        #[shmem(field_bound)] Impl::NamespacePrefix,
-        #[shmem(field_bound)] Impl::NamespaceUrl,
-    ),
-
-    ExplicitUniversalType,
     LocalName(LocalName<Impl>),
 
     ID(#[shmem(field_bound)] Impl::Identifier),
@@ -1043,6 +1041,16 @@ pub enum Component<Impl: SelectorImpl> {
     },
     // Use a Box in the less common cases with more data to keep size_of::<Component>() small.
     AttributeOther(Box<AttrSelectorWithOptionalNamespace<Impl>>),
+
+    ExplicitUniversalType,
+    ExplicitAnyNamespace,
+
+    ExplicitNoNamespace,
+    DefaultNamespace(#[shmem(field_bound)] Impl::NamespaceUrl),
+    Namespace(
+        #[shmem(field_bound)] Impl::NamespacePrefix,
+        #[shmem(field_bound)] Impl::NamespaceUrl,
+    ),
 
     /// Pseudo-classes
     Negation(Box<[Selector<Impl>]>),
@@ -1098,8 +1106,16 @@ pub enum Component<Impl: SelectorImpl> {
     ///
     /// Same comment as above re. the argument.
     Is(Box<[Selector<Impl>]>),
+    /// The `:has` pseudo-class.
+    ///
+    /// https://drafts.csswg.org/selectors/#has-pseudo
+    ///
+    /// Same comment as above re. the argument.
+    Has(Box<[Selector<Impl>]>),
     /// An implementation-dependent pseudo-element selector.
     PseudoElement(#[shmem(field_bound)] Impl::PseudoElement),
+
+    Combinator(Combinator),
 }
 
 impl<Impl: SelectorImpl> Component<Impl> {
@@ -1568,11 +1584,12 @@ impl<Impl: SelectorImpl> ToCss for Component<Impl> {
                 write_affine(dest, a, b)?;
                 dest.write_char(')')
             },
-            Is(ref list) | Where(ref list) | Negation(ref list) => {
+            Is(ref list) | Where(ref list) | Negation(ref list) | Has(ref list) => {
                 match *self {
                     Where(..) => dest.write_str(":where(")?,
                     Is(..) => dest.write_str(":is(")?,
                     Negation(..) => dest.write_str(":not(")?,
+                    Has(..) => dest.write_str(":has(")?,
                     _ => unreachable!(),
                 }
                 serialize_selector_list(list.iter(), dest)?;
@@ -1858,9 +1875,9 @@ where
     };
 
     let start = input.state();
-    // FIXME: remove clone() when lifetimes are non-lexical
-    match input.next_including_whitespace().map(|t| t.clone()) {
+    match input.next_including_whitespace() {
         Ok(Token::Ident(value)) => {
+            let value = value.clone();
             let after_ident = input.state();
             match input.next_including_whitespace() {
                 Ok(&Token::Delim('|')) => {
@@ -1888,28 +1905,25 @@ where
         },
         Ok(Token::Delim('*')) => {
             let after_star = input.state();
-            // FIXME: remove clone() when lifetimes are non-lexical
-            match input.next_including_whitespace().map(|t| t.clone()) {
-                Ok(Token::Delim('|')) => {
+            match input.next_including_whitespace() {
+                Ok(&Token::Delim('|')) => {
                     explicit_namespace(input, QNamePrefix::ExplicitAnyNamespace)
                 },
-                result => {
+                _ if !in_attr_selector => {
                     input.reset(&after_star);
-                    if in_attr_selector {
-                        match result {
-                            Ok(t) => Err(after_star
-                                .source_location()
-                                .new_custom_error(SelectorParseErrorKind::ExpectedBarInAttr(t))),
-                            Err(e) => Err(e.into()),
-                        }
-                    } else {
-                        default_namespace(None)
-                    }
+                    default_namespace(None)
+                }
+                result => {
+                    let t = result?;
+                    Err(after_star
+                        .source_location()
+                        .new_custom_error(SelectorParseErrorKind::ExpectedBarInAttr(t.clone())))
                 },
             }
         },
         Ok(Token::Delim('|')) => explicit_namespace(input, QNamePrefix::ExplicitNoNamespace),
         Ok(t) => {
+            let t = t.clone();
             input.reset(&start);
             Ok(OptionalQName::None(t))
         },
@@ -2235,7 +2249,7 @@ where
     Ok(empty)
 }
 
-fn parse_is_or_where<'i, 't, P, Impl>(
+fn parse_is_where_has<'i, 't, P, Impl>(
     parser: &P,
     input: &mut CssParser<'i, 't>,
     state: SelectorParsingState,
@@ -2257,7 +2271,7 @@ where
         state |
             SelectorParsingState::SKIP_DEFAULT_NAMESPACE |
             SelectorParsingState::DISALLOW_PSEUDOS,
-        parser.is_and_where_error_recovery(),
+        ParseErrorRecovery::IgnoreInvalidSelector,
     )?;
     Ok(component(inner.0.into_vec().into_boxed_slice()))
 }
@@ -2277,8 +2291,9 @@ where
         "nth-of-type" => return parse_nth_pseudo_class(parser, input, state, Component::NthOfType),
         "nth-last-child" => return parse_nth_pseudo_class(parser, input, state, Component::NthLastChild),
         "nth-last-of-type" => return parse_nth_pseudo_class(parser, input, state, Component::NthLastOfType),
-        "is" if parser.parse_is_and_where() => return parse_is_or_where(parser, input, state, Component::Is),
-        "where" if parser.parse_is_and_where() => return parse_is_or_where(parser, input, state, Component::Where),
+        "is" if parser.parse_is_and_where() => return parse_is_where_has(parser, input, state, Component::Is),
+        "where" if parser.parse_is_and_where() => return parse_is_where_has(parser, input, state, Component::Where),
+        "has" if parser.parse_has() => return parse_is_where_has(parser, input, state, Component::Has),
         "host" => {
             if !state.allows_tree_structural_pseudo_classes() {
                 return Err(input.new_custom_error(SelectorParseErrorKind::InvalidState));
@@ -2292,7 +2307,7 @@ where
     }
 
     if parser.parse_is_and_where() && parser.is_is_alias(&name) {
-        return parse_is_or_where(parser, input, state, Component::Is);
+        return parse_is_where_has(parser, input, state, Component::Is);
     }
 
     if !state.allows_custom_functional_pseudo_classes() {
@@ -2666,8 +2681,8 @@ pub mod tests {
             true
         }
 
-        fn is_and_where_error_recovery(&self) -> ParseErrorRecovery {
-            ParseErrorRecovery::DiscardList
+        fn parse_has(&self) -> bool {
+            true
         }
 
         fn parse_part(&self) -> bool {
@@ -3274,9 +3289,9 @@ pub mod tests {
         assert!(parse("::slotted(div)::before").is_ok());
         assert!(parse("slot::slotted(div,foo)").is_err());
 
-        assert!(parse("foo:where()").is_err());
+        assert!(parse("foo:where()").is_ok());
         assert!(parse("foo:where(div, foo, .bar baz)").is_ok());
-        assert!(parse("foo:where(::before)").is_err());
+        assert!(parse_expected("foo:where(::before)", Some("foo:where()")).is_ok());
     }
 
     #[test]

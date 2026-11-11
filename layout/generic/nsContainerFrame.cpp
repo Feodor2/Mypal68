@@ -47,10 +47,9 @@ using namespace mozilla::dom;
 using namespace mozilla::layout;
 
 using mozilla::gfx::ColorPattern;
-//using mozilla::gfx::DeviceColor;
+using mozilla::gfx::DeviceColor;
 using mozilla::gfx::Rect;
-using mozilla::gfx::Color;
-//using mozilla::gfx::sRGBColor;
+using mozilla::gfx::sRGBColor;
 using mozilla::gfx::ToDeviceColor;
 
 nsContainerFrame::~nsContainerFrame() = default;
@@ -402,16 +401,16 @@ class nsDisplaySelectionOverlay : public nsPaintedDisplayItem {
 #endif
   NS_DISPLAY_DECL_NAME("SelectionOverlay", TYPE_SELECTION_OVERLAY)
  private:
-  Color ComputeColor() const;
+  DeviceColor ComputeColor() const;
 
-  static Color ComputeColorFromSelectionStyle(ComputedStyle&);
-  static Color ApplyTransparencyIfNecessary(nscolor);
+  static DeviceColor ComputeColorFromSelectionStyle(ComputedStyle&);
+  static DeviceColor ApplyTransparencyIfNecessary(nscolor);
 
   // nsISelectionController::getDisplaySelection.
   int16_t mSelectionValue;
 };
 
-Color nsDisplaySelectionOverlay::ApplyTransparencyIfNecessary(nscolor aColor) {
+DeviceColor nsDisplaySelectionOverlay::ApplyTransparencyIfNecessary(nscolor aColor) {
   // If it has already alpha, leave it like that.
   if (NS_GET_A(aColor) != 255) {
     return ToDeviceColor(aColor);
@@ -419,18 +418,18 @@ Color nsDisplaySelectionOverlay::ApplyTransparencyIfNecessary(nscolor aColor) {
 
   // NOTE(emilio): Blink and WebKit do something slightly different here, and
   // blend the color with white instead, both for overlays and text backgrounds.
-  auto color = Color::FromABGR(aColor);
+  auto color = sRGBColor::FromABGR(aColor);
   color.a = 0.5;
   return ToDeviceColor(color);
 }
 
-Color nsDisplaySelectionOverlay::ComputeColorFromSelectionStyle(
+DeviceColor nsDisplaySelectionOverlay::ComputeColorFromSelectionStyle(
     ComputedStyle& aStyle) {
   return ApplyTransparencyIfNecessary(
       aStyle.GetVisitedDependentColor(&nsStyleBackground::mBackgroundColor));
 }
 
-Color nsDisplaySelectionOverlay::ComputeColor() const {
+DeviceColor nsDisplaySelectionOverlay::ComputeColor() const {
   LookAndFeel::ColorID colorID;
   if (RefPtr<ComputedStyle> style =
           mFrame->ComputeSelectionStyle(mSelectionValue)) {
@@ -445,7 +444,7 @@ Color nsDisplaySelectionOverlay::ComputeColor() const {
   }
 
   return ApplyTransparencyIfNecessary(
-      LookAndFeel::GetColor(colorID, NS_RGB(255, 255, 255)));
+      LookAndFeel::Color(colorID, mFrame, NS_RGB(255, 255, 255)));
 }
 
 void nsDisplaySelectionOverlay::Paint(nsDisplayListBuilder* aBuilder,

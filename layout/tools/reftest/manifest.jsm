@@ -268,7 +268,7 @@ function ReadManifest(aURL, aFilter, aManifestID)
             }
         }
 
-        var principal = secMan.createCodebasePrincipal(aURL, {});
+        var principal = secMan.createContentPrincipal(aURL, {});
 
         if (items[0] == "include") {
             if (items.length != 2)
@@ -682,7 +682,7 @@ function ServeTestBase(aURL, depth) {
 
     var testbase = g.ioService.newURI("http://localhost:" + g.httpServerPort +
                                      path + dirPath);
-    var testBasePrincipal = secMan.createCodebasePrincipal(testbase, {});
+    var testBasePrincipal = secMan.createContentPrincipal(testbase, {});
 
     // Give the testbase URI access to XUL and XBL
     Services.perms.addFromPrincipal(testBasePrincipal, "allowXULXBL", Services.perms.ALLOW_ACTION);
@@ -707,7 +707,7 @@ function CreateUrls(test) {
         var testURI = g.ioService.newURI(file, null, testbase);
         let isChrome = testURI.scheme == "chrome";
         let principal = isChrome ? secMan.getSystemPrincipal() :
-                                   secMan.createCodebasePrincipal(manifestURL, {});
+                                   secMan.createContentPrincipal(manifestURL, {});
         secMan.checkLoadURIWithPrincipal(principal, testURI,
                                          Ci.nsIScriptSecurityManager.DISALLOW_SCRIPT);
         return testURI;

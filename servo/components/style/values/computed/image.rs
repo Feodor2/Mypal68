@@ -14,7 +14,7 @@ use crate::values::computed::url::ComputedImageUrl;
 use crate::values::computed::NumberOrPercentage;
 use crate::values::computed::{Angle, Color, Context};
 use crate::values::computed::{
-    LengthPercentage, NonNegativeLength, NonNegativeLengthPercentage,
+    AngleOrPercentage, LengthPercentage, NonNegativeLength, NonNegativeLengthPercentage,
     Resolution, ToComputedValue,
 };
 use crate::values::generics::image::{self as generic, GradientCompatMode};
@@ -29,6 +29,9 @@ use style_traits::{CssWriter, ToCss};
 pub type Image =
     generic::GenericImage<Gradient, MozImageRect, ComputedImageUrl, Color, Percentage, Resolution>;
 
+// Images should remain small, see https://github.com/servo/servo/pull/18430
+size_of_test!(Image, 16);
+
 /// Computed values for a CSS gradient.
 /// <https://drafts.csswg.org/css-images/#gradients>
 pub type Gradient = generic::GenericGradient<
@@ -37,6 +40,8 @@ pub type Gradient = generic::GenericGradient<
     NonNegativeLength,
     NonNegativeLengthPercentage,
     Position,
+    Angle,
+    AngleOrPercentage,
     Color,
 >;
 

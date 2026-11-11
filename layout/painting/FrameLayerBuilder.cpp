@@ -3410,7 +3410,7 @@ already_AddRefed<Layer> ContainerState::PrepareImageLayer(
 already_AddRefed<Layer> ContainerState::PrepareColorLayer(
     PaintedLayerData* aData) {
   RefPtr<ColorLayer> colorLayer = CreateOrRecycleColorLayer(aData->mLayer);
-  colorLayer->SetColor(Color::FromABGR(aData->mSolidColor));
+  colorLayer->SetColor(ToDeviceColor(aData->mSolidColor));
 
   // Copy transform
   colorLayer->SetBaseTransform(aData->mLayer->GetBaseTransform());
@@ -7456,8 +7456,8 @@ already_AddRefed<Layer> ContainerState::CreateMaskLayer(
     context->Multiply(ThebesMatrix(imageTransform));
 
     // paint the clipping rects with alpha to create the mask
-    aClip.FillIntersectionOfRoundedRectClips(context, Color(1.f, 1.f, 1.f, 1.f),
-                                             newData.mAppUnitsPerDevPixel);
+    aClip.FillIntersectionOfRoundedRectClips(
+        context, DeviceColor::MaskOpaqueWhite(), newData.mAppUnitsPerDevPixel);
 
     // build the image and container
     MOZ_ASSERT(aLayer->Manager() == mManager);

@@ -268,11 +268,11 @@ bool FilterInstance::BuildWebRenderFilters(nsIFrame* aFilteredFrame,
         return false;
       }
 
-      Color color = shadow.mColor;
+      sRGBColor color = shadow.mColor;
       if (!primNeedsSrgb) {
-        color = Color(gsRGBToLinearRGBMap[uint8_t(color.r * 255)],
-                      gsRGBToLinearRGBMap[uint8_t(color.g * 255)],
-                      gsRGBToLinearRGBMap[uint8_t(color.b * 255)], color.a);
+        color = sRGBColor(gsRGBToLinearRGBMap[uint8_t(color.r * 255)],
+                          gsRGBToLinearRGBMap[uint8_t(color.g * 255)],
+                          gsRGBToLinearRGBMap[uint8_t(color.b * 255)], color.a);
       }
       wr::Shadow wrShadow;
       wrShadow.offset = {shadow.mOffset.x, shadow.mOffset.y};

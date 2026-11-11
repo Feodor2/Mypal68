@@ -1393,9 +1393,10 @@ nsChangeHint nsStyleTableBorder::CalcDifference(
   }
 }
 
-template <>
-bool StyleGradient::IsOpaque() const {
-  for (auto& stop : items.AsSpan()) {
+template <typename T>
+static bool GradientItemsAreOpaque(
+    Span<const StyleGenericGradientItem<StyleColor, T>> aItems) {
+  for (auto& stop : aItems) {
     if (stop.IsInterpolationHint()) {
       continue;
     }
@@ -1410,6 +1411,17 @@ bool StyleGradient::IsOpaque() const {
   }
 
   return true;
+}
+
+template <>
+bool StyleGradient::IsOpaque() const {
+  if (IsLinear()) {
+    return GradientItemsAreOpaque(AsLinear().items.AsSpan());
+  }
+  if (IsRadial()) {
+    return GradientItemsAreOpaque(AsRadial().items.AsSpan());
+  }
+  return GradientItemsAreOpaque(AsConic().items.AsSpan());
 }
 
 // --------------------

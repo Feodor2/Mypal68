@@ -119,6 +119,8 @@ class PathRecording : public Path {
     return mPath->GetStrokedBounds(aStrokeOptions, aTransform);
   }
 
+  Maybe<Rect> AsRect() const final { return mPath->AsRect(); }
+
   virtual void StreamToSink(PathSink* aSink) const override {
     mPath->StreamToSink(aSink);
   }

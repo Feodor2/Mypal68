@@ -40,7 +40,9 @@ class Document;
  */
 class PreloaderBase : public SupportsWeakPtr, public nsISupports {
  public:
-  PreloaderBase() = default;
+  PreloaderBase();
+  PreloaderBase(const PreloaderBase&) = delete;
+  PreloaderBase& operator=(const PreloaderBase&) = delete;
 
   // Called by resource loaders to register this preload in the document's
   // preload service to provide coalescing, and access to the preload when it
@@ -147,6 +149,7 @@ class PreloaderBase : public SupportsWeakPtr, public nsISupports {
   // classes don't have to deal with calling super when implementing these
   // interfaces from some reason as well.
   class RedirectSink;
+  RefPtr<RedirectSink> mRedirectSink;
 
  private:
   // Reference to HTMLLinkElement DOM nodes to deliver onload and onerror

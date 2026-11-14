@@ -30,6 +30,11 @@ class PreloaderBase::RedirectSink final : public nsIInterfaceRequestor,
 
   RedirectSink(PreloaderBase* aPreloader, nsIInterfaceRequestor* aCallbacks);
 
+  void Disconnect() {
+    mRedirectChannel = nullptr;
+    mCallbacks = nullptr;
+  }
+
  private:
   MainThreadWeakPtr<PreloaderBase> mPreloader;
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
@@ -63,8 +68,12 @@ NS_IMETHODIMP PreloaderBase::RedirectSink::AsyncOnChannelRedirect(
   if (mCallbacks) {
     nsCOMPtr<nsIChannelEventSink> sink(do_GetInterface(mCallbacks));
     if (sink) {
-      return sink->AsyncOnChannelRedirect(aOldChannel, aNewChannel, aFlags,
-                                          aCallback);
+      nsresult rv = sink->AsyncOnChannelRedirect(aOldChannel, aNewChannel,
+                                                 aFlags, aCallback);
+      if (NS_FAILED(rv)) {
+        mRedirectChannel = nullptr;
+      }
+      return rv;
     }
   }
 
@@ -73,7 +82,7 @@ NS_IMETHODIMP PreloaderBase::RedirectSink::AsyncOnChannelRedirect(
 }
 
 NS_IMETHODIMP PreloaderBase::RedirectSink::OnRedirectResult(bool proceeding) {
-  if (proceeding && mRedirectChannel) {
+  if (proceeding && mRedirectChannel && mPreloader) {
     mPreloader->mChannel = std::move(mRedirectChannel);
   } else {
     mRedirectChannel = nullptr;
@@ -106,7 +115,15 @@ NS_IMETHODIMP PreloaderBase::RedirectSink::GetInterface(const nsIID& aIID,
   return NS_ERROR_NO_INTERFACE;
 }
 
-PreloaderBase::~PreloaderBase() { MOZ_ASSERT(NS_IsMainThread()); }
+PreloaderBase::PreloaderBase() = default;
+
+PreloaderBase::~PreloaderBase() {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (mRedirectSink) {
+    mRedirectSink->Disconnect();
+    mRedirectSink = nullptr;
+  }
+}
 
 // static
 void PreloaderBase::AddLoadBackgroundFlag(nsIChannel* aChannel) {
@@ -139,7 +156,11 @@ void PreloaderBase::NotifyOpen(const PreloadHashKey& aKey, nsIChannel* aChannel,
 
   nsCOMPtr<nsIInterfaceRequestor> callbacks;
   mChannel->GetNotificationCallbacks(getter_AddRefs(callbacks));
+  if (mRedirectSink) {
+    mRedirectSink->Disconnect();
+  }
   RefPtr<RedirectSink> sink(new RedirectSink(this, callbacks));
+  mRedirectSink = sink;
   mChannel->SetNotificationCallbacks(sink);
 }
 
@@ -236,6 +257,10 @@ void PreloaderBase::NotifyStop(nsresult aStatus) {
   }
 
   mChannel = nullptr;
+  if (mRedirectSink) {
+    mRedirectSink->Disconnect();
+    mRedirectSink = nullptr;
+  }
 }
 
 void PreloaderBase::NotifyValidating() { mOnStopStatus.reset(); }

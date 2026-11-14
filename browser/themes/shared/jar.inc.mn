@@ -172,7 +172,6 @@
   skin/classic/browser/restore-session.svg            (../shared/icons/restore-session.svg)
   skin/classic/browser/quit.svg                       (../shared/icons/quit.svg)
   skin/classic/browser/reload.svg                     (../shared/icons/reload.svg)
-  skin/classic/browser/reload-to-stop.svg             (../shared/icons/reload-to-stop.svg)
   skin/classic/browser/save.svg                       (../shared/icons/save.svg)
   skin/classic/browser/search-glass.svg               (../shared/icons/search-glass.svg)
   skin/classic/browser/send-to-device.svg             (../shared/icons/send-to-device.svg)
@@ -182,7 +181,6 @@
   skin/classic/browser/sort.svg                       (../shared/icons/sort.svg)
 #endif
   skin/classic/browser/stop.svg                       (../shared/icons/stop.svg)
-  skin/classic/browser/stop-to-reload.svg             (../shared/icons/stop-to-reload.svg)
   skin/classic/browser/sync.svg                       (../shared/icons/sync.svg)
   skin/classic/browser/tab.svg                        (../shared/icons/tab.svg)
   skin/classic/browser/undo.svg                       (../shared/icons/undo.svg)

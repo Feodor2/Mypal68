@@ -10,6 +10,7 @@
 #include "include/third_party/skcms/skcms.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkOpts.h"
+#include "include/private/SkOnce.h"
 
 bool SkColorSpacePrimaries::toXYZD50(skcms_Matrix3x3* toXYZ_D50) const {
     return skcms_PrimariesToXYZD50(fRX, fRY, fGX, fGY, fBX, fBY, fWX, fWY, toXYZ_D50);
@@ -69,16 +70,31 @@ public:
     }
 };
 
+// NOTE(mypal): these used function-local statics, which are only lazy-initialised safely
+// when the toolchain provides thread-safe statics.  Firefox/Mypal builds with MSVC
+// -Zc:threadSafeInit- (see old-configure.in, bug 1204752), so the compiler-generated guard
+// word is published *before* the pointer is stored and a second thread can take the "already
+// initialised" fast path while the pointer is still null -> sk_srgb_singleton() == nullptr
+// -> crash in SkColorSpaceXformSteps.  SkOnce uses real atomics (acquire/release) and never
+// lets a caller observe a half-initialised singleton.
+static SkColorSpace* gSRGB;
+static SkOnce        gSRGBOnce;
 SkColorSpace* sk_srgb_singleton() {
-    static SkColorSpace* cs = SkColorSpaceSingletonFactory::Make(SkNamedTransferFn::kSRGB,
-                                                                 SkNamedGamut::kSRGB);
-    return cs;
+    gSRGBOnce([]{
+        gSRGB = SkColorSpaceSingletonFactory::Make(SkNamedTransferFn::kSRGB,
+                                                   SkNamedGamut::kSRGB);
+    });
+    return gSRGB;
 }
 
+static SkColorSpace* gSRGBLinear;
+static SkOnce        gSRGBLinearOnce;
 SkColorSpace* sk_srgb_linear_singleton() {
-    static SkColorSpace* cs = SkColorSpaceSingletonFactory::Make(SkNamedTransferFn::kLinear,
-                                                                 SkNamedGamut::kSRGB);
-    return cs;
+    gSRGBLinearOnce([]{
+        gSRGBLinear = SkColorSpaceSingletonFactory::Make(SkNamedTransferFn::kLinear,
+                                                         SkNamedGamut::kSRGB);
+    });
+    return gSRGBLinear;
 }
 
 sk_sp<SkColorSpace> SkColorSpace::MakeSRGB() {

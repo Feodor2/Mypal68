@@ -40,8 +40,7 @@
 #  include "ScaledFontDWrite.h"
 #endif
 
-namespace mozilla {
-namespace gfx {
+namespace mozilla::gfx {
 
 class GradientStopsSkia : public GradientStops {
  public:
@@ -217,6 +216,7 @@ static bool VerifyRGBXCorners(uint8_t* aData, const IntSize& aSize,
 #endif
 
 static sk_sp<SkImage> GetSkImageForSurface(SourceSurface* aSurface,
+                                           Maybe<MutexAutoLock>* aLock,
                                            const Rect* aBounds = nullptr,
                                            const Matrix* aMatrix = nullptr) {
   if (!aSurface) {
@@ -232,11 +232,11 @@ static sk_sp<SkImage> GetSkImageForSurface(SourceSurface* aSurface,
       return nullptr;
     }
     MOZ_ASSERT(resolved->GetType() != SurfaceType::CAPTURE);
-    return GetSkImageForSurface(resolved, aBounds, aMatrix);
+    return GetSkImageForSurface(resolved, aLock, aBounds, aMatrix);
   }
 
   if (aSurface->GetType() == SurfaceType::SKIA) {
-    return static_cast<SourceSurfaceSkia*>(aSurface)->GetImage();
+    return static_cast<SourceSurfaceSkia*>(aSurface)->GetImage(aLock);
   }
 
   DataSourceSurface* surf = aSurface->GetDataSurface().take();
@@ -396,8 +396,9 @@ static bool ExtractAlphaBitmap(const sk_sp<SkImage>& aImage,
   return false;
 }
 
-static sk_sp<SkImage> ExtractAlphaForSurface(SourceSurface* aSurface) {
-  sk_sp<SkImage> image = GetSkImageForSurface(aSurface);
+static sk_sp<SkImage> ExtractAlphaForSurface(SourceSurface* aSurface,
+                                             Maybe<MutexAutoLock>& aLock) {
+  sk_sp<SkImage> image = GetSkImageForSurface(aSurface, &aLock);
   if (!image) {
     return nullptr;
   }
@@ -416,7 +417,7 @@ static sk_sp<SkImage> ExtractAlphaForSurface(SourceSurface* aSurface) {
 }
 
 static void SetPaintPattern(SkPaint& aPaint, const Pattern& aPattern,
-                            Float aAlpha = 1.0,
+                            Maybe<MutexAutoLock>& aLock, Float aAlpha = 1.0,
                             const SkMatrix* aMatrix = nullptr,
                             const Rect* aBounds = nullptr) {
   switch (aPattern.GetType()) {
@@ -534,7 +535,7 @@ static void SetPaintPattern(SkPaint& aPaint, const Pattern& aPattern,
     case PatternType::SURFACE: {
       const SurfacePattern& pat = static_cast<const SurfacePattern&>(aPattern);
       sk_sp<SkImage> image =
-          GetSkImageForSurface(pat.mSurface, aBounds, &pat.mMatrix);
+          GetSkImageForSurface(pat.mSurface, &aLock, aBounds, &pat.mMatrix);
       if (!image) {
         aPaint.setColor(SK_ColorTRANSPARENT);
         break;
@@ -588,7 +589,7 @@ struct AutoPaintSetup {
                  const Rect* aSourceBounds = nullptr)
       : mNeedsRestore(false), mAlpha(1.0) {
     Init(aCanvas, aOptions, aMaskBounds, false);
-    SetPaintPattern(mPaint, aPattern, mAlpha, aMatrix, aSourceBounds);
+    SetPaintPattern(mPaint, aPattern, mLock, mAlpha, aMatrix, aSourceBounds);
   }
 
   AutoPaintSetup(SkCanvas* aCanvas, const DrawOptions& aOptions,
@@ -644,6 +645,7 @@ struct AutoPaintSetup {
   SkPaint mPaint;
   bool mNeedsRestore;
   SkCanvas* mCanvas;
+  Maybe<MutexAutoLock> mLock;
   Float mAlpha;
 };
 
@@ -659,7 +661,8 @@ void DrawTargetSkia::DrawSurface(SourceSurface* aSurface, const Rect& aDest,
 
   MarkChanged();
 
-  sk_sp<SkImage> image = GetSkImageForSurface(aSurface);
+  Maybe<MutexAutoLock> lock;
+  sk_sp<SkImage> image = GetSkImageForSurface(aSurface, &lock);
   if (!image) {
     return;
   }
@@ -699,7 +702,8 @@ void DrawTargetSkia::DrawSurfaceWithShadow(SourceSurface* aSurface,
 
   MarkChanged();
 
-  sk_sp<SkImage> image = GetSkImageForSurface(aSurface);
+  Maybe<MutexAutoLock> lock;
+  sk_sp<SkImage> image = GetSkImageForSurface(aSurface, &lock);
   if (!image) {
     return;
   }
@@ -1386,8 +1390,9 @@ void DrawTargetSkia::Mask(const Pattern& aSource, const Pattern& aMask,
   MarkChanged();
   AutoPaintSetup paint(mCanvas, aOptions, aSource, nullptr, &maskMatrix);
 
+  Maybe<MutexAutoLock> lock;
   SkPaint maskPaint;
-  SetPaintPattern(maskPaint, aMask);
+  SetPaintPattern(maskPaint, aMask, lock);
 
   SkBitmap maskBitmap;
   if (!maskBitmap.tryAllocPixelsFlags(
@@ -1416,7 +1421,8 @@ void DrawTargetSkia::MaskSurface(const Pattern& aSource, SourceSurface* aMask,
                                            SkFloatToScalar(-aOffset.y));
   AutoPaintSetup paint(mCanvas, aOptions, aSource, nullptr, &invOffset);
 
-  sk_sp<SkImage> alphaMask = ExtractAlphaForSurface(aMask);
+  Maybe<MutexAutoLock> lock;
+  sk_sp<SkImage> alphaMask = ExtractAlphaForSurface(aMask, lock);
   if (!alphaMask) {
     gfxDebug() << *this << ": MaskSurface() failed to extract alpha for mask";
     return;
@@ -1444,7 +1450,8 @@ bool DrawTarget::Draw3DTransformedSurface(SourceSurface* aSurface,
   fullMat.PostTranslate(-xformBounds.X(), -xformBounds.Y(), 0);
 
   // Read in the source data.
-  sk_sp<SkImage> srcImage = GetSkImageForSurface(aSurface);
+  Maybe<MutexAutoLock> lock;
+  sk_sp<SkImage> srcImage = GetSkImageForSurface(aSurface, &lock);
   if (!srcImage) {
     return true;
   }
@@ -1506,7 +1513,8 @@ bool DrawTargetSkia::Draw3DTransformedSurface(SourceSurface* aSurface,
 
   MarkChanged();
 
-  sk_sp<SkImage> image = GetSkImageForSurface(aSurface);
+  Maybe<MutexAutoLock> lock;
+  sk_sp<SkImage> image = GetSkImageForSurface(aSurface, &lock);
   if (!image) {
     return true;
   }
@@ -1642,7 +1650,8 @@ void DrawTargetSkia::CopySurface(SourceSurface* aSurface,
                                  const IntPoint& aDestination) {
   MarkChanged();
 
-  sk_sp<SkImage> image = GetSkImageForSurface(aSurface);
+  Maybe<MutexAutoLock> lock;
+  sk_sp<SkImage> image = GetSkImageForSurface(aSurface, &lock);
   if (!image) {
     return;
   }
@@ -1839,7 +1848,12 @@ void DrawTargetSkia::PushLayerWithBlend(bool aOpaque, Float aOpacity,
     }
   }
 
-  sk_sp<SkImage> clipImage = aMask ? GetSkImageForSurface(aMask) : nullptr;
+  // We don't pass a lock object to GetSkImageForSurface here, to force a
+  // copy of the data if this is a copy-on-write snapshot. If we instead held
+  // the lock until the corresponding PopLayer, we'd risk deadlocking if someone
+  // tried to touch the originating DrawTarget while the layer was pushed.
+  sk_sp<SkImage> clipImage =
+      aMask ? GetSkImageForSurface(aMask, nullptr) : nullptr;
   SkMatrix clipMatrix;
   GfxMatrixToSkiaMatrix(aMaskTransform, clipMatrix);
   if (aMask) {
@@ -1919,5 +1933,4 @@ void DrawTargetSkia::MarkChanged() {
   }
 }
 
-}  // namespace gfx
-}  // namespace mozilla
+}  // namespace mozilla::gfx

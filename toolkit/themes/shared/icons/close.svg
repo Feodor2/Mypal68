@@ -1,1 +1,7 @@
-<svg height="16" width="16" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><image height="16" width="16" xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAgY0hSTQAAeiYAAICEAAD6AAAAgOgAAHUwAADqYAAAOpgAABdwnLpRPAAAAAlwSFlzAAAAJgAAACYB+E5zqwAAAXBJREFUOE+tk71LA0EQxfNXCCKIiqJRk5hPYwQ5xFqw86PQdFGiWBwGwSJwNlcIkcQIFoIQU6hgYS9BRCJyoEgaF2KVPyCFCCKO+xZ2TGFxQQd+7NzMe2+vWY/nP6o8MeOVWBLhEmi9fHdpfNqqb5pNyuXIDdDCwwEnUUN82Ta1AzwccByeEp/ZLAFnfYMulpN0u7pGjUxGgR4z7LQOHg44GpsUH6ZJ4Gx+gVANx6GblaQCPQo7rYOHA4q+uHhPpQjcLy7R82lZGXC29thpHTwcsD8cFY8+H4EHyfmon+7yBRWCQo8ZdloHDwfsDQY54FqKSr8EYIadDoCHA+x+v3gKBAiU/AGqVyp8s/4TzLDTOng4YLd3RNQiEQKFYEiZqwdFugyFFehR2GkdPByQ7R4SL4kEgatYnA4jMXXW5DdonWkdPByw0zUgXg2D2gEeDtju7LOqs3PNt3Sa3AAtPByw1dHjlVgS4RJofx7TX170N8C93e5JHAkhAAAAAElFTkSuQmCC"/></svg>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+  <rect fill="context-fill" fill-opacity="context-fill-opacity" width="20" height="20" rx="2" ry="2"/>
+  <path fill="context-fill" fill-opacity="context-stroke-opacity" d="M11.06 10l3.47-3.47a.75.75 0 0 0-1.06-1.06L10 8.94 6.53 5.47a.75.75 0 1 0-1.06 1.06L8.94 10l-3.47 3.47a.75.75 0 1 0 1.06 1.06L10 11.06l3.47 3.47a.75.75 0 0 0 1.06-1.06z"/>
+</svg>

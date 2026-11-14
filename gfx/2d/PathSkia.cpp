@@ -8,9 +8,9 @@
 #include "Logging.h"
 #include "HelpersSkia.h"
 #include "PathHelpers.h"
+#include "skia/src/core/SkDraw.h"
 
-namespace mozilla {
-namespace gfx {
+namespace mozilla::gfx {
 
 PathBuilderSkia::PathBuilderSkia(const Matrix& aTransform, const SkPath& aPath,
                                  FillRule aFillRule)
@@ -137,8 +137,11 @@ bool PathSkia::StrokeContainsPoint(const StrokeOptions& aStrokeOptions,
     return false;
   }
 
+  SkMatrix skiaMatrix;
+  GfxMatrixToSkiaMatrix(aTransform, skiaMatrix);
   SkPath strokePath;
-  paint.getFillPath(mPath, &strokePath);
+  paint.getFillPath(mPath, &strokePath, nullptr,
+                    SkDraw::ComputeResScaleForStroking(skiaMatrix));
 
   return SkPathContainsPoint(strokePath, aPoint, aTransform);
 }
@@ -201,5 +204,16 @@ void PathSkia::StreamToSink(PathSink* aSink) const {
   }
 }
 
-}  // namespace gfx
-}  // namespace mozilla
+Maybe<Rect> PathSkia::AsRect() const {
+  SkRect skiaRect;
+  if (mPath.isRect(&skiaRect)) {
+    Rect rect = SkRectToRect(skiaRect);
+    // Ensure that the conversion between Skia rect and Moz2D rect is not lossy
+    // due to floating-point precision errors.
+    if (RectToSkRect(rect) == skiaRect) {
+      return Some(rect);
+    }
+  }
+  return Nothing();
+}
+}  // namespace mozilla::gfx

@@ -12,7 +12,6 @@
 #include "ImageTypes.h"
 #include "imgINotificationObserver.h"
 #include "imgLoader.h"
-#include "mozilla/Telemetry.h"     // for Telemetry
 #include "mozilla/dom/DocGroup.h"  // for DocGroup
 #include "mozilla/dom/Document.h"
 #include "nsCRTGlue.h"
@@ -123,21 +122,6 @@ imgRequestProxy::imgRequestProxy()
 imgRequestProxy::~imgRequestProxy() {
   /* destructor code */
   MOZ_ASSERT(!mListener, "Someone forgot to properly cancel this request!");
-
-  // If we had a listener, that means we would have issued notifications. With
-  // bug 1359833, we added support for main thread scheduler groups. Each
-  // imgRequestProxy may have its own associated listener, document and/or
-  // scheduler group. Typically most imgRequestProxy belong to the same
-  // document, or have no listener, which means we will want to execute all main
-  // thread code in that shared scheduler group. Less frequently, there may be
-  // multiple imgRequests and they have separate documents, which means that
-  // when we issue state notifications, some or all need to be dispatched to the
-  // appropriate scheduler group for each request. This should be rare, so we
-  // want to monitor the frequency of dispatching in the wild.
-  if (mHadListener) {
-    mozilla::Telemetry::Accumulate(mozilla::Telemetry::IMAGE_REQUEST_DISPATCHED,
-                                   mHadDispatch);
-  }
 
   MOZ_RELEASE_ASSERT(!mLockCount, "Someone forgot to unlock on time?");
 

@@ -150,6 +150,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWebGpu)
 #endif
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mLocks)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mClipboard)
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
 #ifdef MOZ_GAMEPAD
@@ -223,6 +224,7 @@ void Navigator::Invalidate() {
   mWebGpu = nullptr;
 #endif
   mLocks = nullptr;
+  mClipboard = nullptr;
 }
 
 void Navigator::GetUserAgent(nsAString& aUserAgent, CallerType aCallerType,

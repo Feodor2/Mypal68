@@ -8,6 +8,7 @@
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/WeakPtr.h"
 #include "mozilla/dom/FetchBinding.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "nsIAsyncOutputStream.h"
@@ -17,14 +18,11 @@ namespace mozilla::dom {
 
 class ReadableStream;
 class ReadableStreamDefaultReader;
-class StrongWorkerRef;
 
-class FetchStreamReader final : public nsIOutputStreamCallback {
+class FetchStreamReader final : public nsISupports, public SupportsWeakPtr {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(
-      FetchStreamReader, nsIOutputStreamCallback)
-  NS_DECL_NSIOUTPUTSTREAMCALLBACK
+  NS_DECL_CYCLE_COLLECTION_CLASS(FetchStreamReader)
 
   // This creates a nsIInputStream able to retrieve data from the ReadableStream
   // object. The reading starts when StartConsuming() is called.
@@ -51,7 +49,14 @@ class FetchStreamReader final : public nsIOutputStreamCallback {
   void StartConsuming(JSContext* aCx, ReadableStream* aStream,
                       ReadableStreamDefaultReader** aReader, ErrorResult& aRv);
 
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  void OnOutputStreamReady();
+
+  nsIGlobalObject* GetParentObject() const { return mGlobal; }
+
  private:
+  class OutputStreamHolder;
+
   explicit FetchStreamReader(nsIGlobalObject* aGlobal);
   ~FetchStreamReader();
 
@@ -62,18 +67,15 @@ class FetchStreamReader final : public nsIOutputStreamCallback {
   nsCOMPtr<nsIGlobalObject> mGlobal;
   nsCOMPtr<nsIEventTarget> mOwningEventTarget;
 
-  nsCOMPtr<nsIAsyncOutputStream> mPipeOut;
-
-  RefPtr<StrongWorkerRef> mWorkerRef;
-  RefPtr<StrongWorkerRef> mAsyncWaitWorkerRef;
+  RefPtr<OutputStreamHolder> mOutput;
 
   RefPtr<ReadableStreamDefaultReader> mReader;
 
   nsTArray<uint8_t> mBuffer;
-  uint32_t mBufferRemaining;
-  uint32_t mBufferOffset;
+  uint32_t mBufferRemaining = 0;
+  uint32_t mBufferOffset = 0;
 
-  bool mStreamClosed;
+  bool mStreamClosed = false;
 };
 
 }  // namespace mozilla::dom

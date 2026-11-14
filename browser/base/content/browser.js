@@ -5444,17 +5444,6 @@ var CombinedStopReload = {
           this._stopClicked = true;
         }
         break;
-      case "animationend": {
-        if (
-          event.target.classList.contains("toolbarbutton-animatable-image") &&
-          (event.animationName == "reload-to-stop" ||
-            event.animationName == "stop-to-reload" ||
-            event.animationName == "reload-to-stop-rtl" ||
-            event.animationName == "stop-to-reload-rtl")
-        ) {
-          this.stopReloadContainer.removeAttribute("animate");
-        }
-      }
     }
   },
 
@@ -5778,7 +5767,7 @@ nsBrowserAccess.prototype = {
       aFlags,
       aTriggeringPrincipal,
       aCsp,
-      false
+      true
     );
   },
 
@@ -5794,7 +5783,7 @@ nsBrowserAccess.prototype = {
       aFlags,
       aTriggeringPrincipal,
       aCsp,
-      true
+      false
     );
   },
 

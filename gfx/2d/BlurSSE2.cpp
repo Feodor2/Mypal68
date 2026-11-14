@@ -8,8 +8,7 @@
 
 #include <string.h>
 
-namespace mozilla {
-namespace gfx {
+namespace mozilla::gfx {
 
 MOZ_ALWAYS_INLINE
 __m128i Divide(__m128i aValues, __m128i aDivisor) {
@@ -341,5 +340,4 @@ void AlphaBoxBlur::BoxBlur_SSE2(uint8_t* aData, int32_t aLeftLobe,
   }
 }
 
-}  // namespace gfx
-}  // namespace mozilla
+}  // namespace mozilla::gfx

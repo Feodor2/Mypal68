@@ -1758,6 +1758,12 @@ mozilla::ipc::IPCResult HttpChannelChild::RecvRedirect3Complete() {
         nsresult rv = NS_OK;
         Unused << self->GetStatus(&rv);
         if (NS_FAILED(rv)) {
+          nsCOMPtr<nsIRedirectResultListener> vetoHook;
+          self->GetCallback(vetoHook);
+          if (vetoHook) {
+            vetoHook->OnRedirectResult(false);
+          }
+
           // Pre-redirect channel was canceled. Call |HandleAsyncAbort|, so
           // mListener's OnStart/StopRequest can be called. Nothing else will
           // trigger these notification after this point.
@@ -1781,10 +1787,41 @@ mozilla::ipc::IPCResult HttpChannelChild::RecvRedirect3Complete() {
             // already called.
             httpChannelChild->DoNotifyListener();
           }
+          self->mRedirectChannelChild = nullptr;
           return;
         }
 
         self->Redirect3Complete(nullptr);
+      }));
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult HttpChannelChild::RecvRedirectFailed() {
+  LOG(("HttpChannelChild::RecvRedirectFailed [this=%p]\n", this));
+  mEventQ->RunOrEnqueue(new NeckoTargetChannelFunctionEvent(
+      this, [self = UnsafePtr<HttpChannelChild>(this)]() {
+        nsCOMPtr<nsIRedirectResultListener> vetoHook;
+        self->GetCallback(vetoHook);
+        if (vetoHook) {
+          vetoHook->OnRedirectResult(false);
+        }
+
+        nsCOMPtr<nsIHttpChannelChild> chan =
+            do_QueryInterface(self->mRedirectChannelChild);
+        RefPtr<HttpChannelChild> httpChannelChild =
+            static_cast<HttpChannelChild*>(chan.get());
+        if (httpChannelChild) {
+          // For sending an IPC message to parent channel so that the loading
+          // can be cancelled.
+          Unused << httpChannelChild->Cancel(NS_BINDING_ABORTED);
+
+          // The post-redirect channel could still get OnStart/StopRequest IPC
+          // messages from parent, but the mListener is still null. So, we
+          // call |DoNotifyListener| to pretend that OnStart/StopRequest are
+          // already called.
+          httpChannelChild->DoNotifyListener();
+        }
+        self->mRedirectChannelChild = nullptr;
       }));
   return IPC_OK();
 }

@@ -427,6 +427,16 @@ void DrawTargetRecording::CopySurface(SourceSurface* aSurface,
 }
 
 void DrawTargetRecording::PushClip(const Path* aPath) {
+  // The canvas doesn't have a clipRect API so we always end up in the generic
+  // path. The D2D backend doesn't have a good way of specializing rectangular
+  // clips so we take advantage of the fact that aPath is usually backed by a
+  // SkiaPath which implements AsRect() and specialize it here.
+  auto rect = aPath->AsRect();
+  if (rect.isSome()) {
+    PushClipRect(rect.value());
+    return;
+  }
+
   RefPtr<PathRecording> pathRecording = EnsurePathStored(aPath);
 
   mRecorder->RecordEvent(RecordedPushClip(this, pathRecording));
@@ -635,7 +645,7 @@ void DrawTargetRecording::EnsurePatternDependenciesStored(
     }
     case PatternType::RADIAL_GRADIENT: {
       MOZ_ASSERT_IF(
-          static_cast<const LinearGradientPattern*>(&aPattern)->mStops,
+          static_cast<const RadialGradientPattern*>(&aPattern)->mStops,
           mRecorder->HasStoredObject(
               static_cast<const RadialGradientPattern*>(&aPattern)->mStops));
       return;

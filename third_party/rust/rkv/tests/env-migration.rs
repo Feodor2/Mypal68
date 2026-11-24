@@ -40,6 +40,25 @@ macro_rules! populate_store {
     };
 }
 
+fn insert_invalid_tag(path: &Path, store_name: &str, key: &[u8]) {
+    use lmdb::{DatabaseFlags, Environment, Transaction, WriteFlags};
+
+    let env = Environment::new().set_max_dbs(4).open(path).expect("raw source");
+    let store = env.create_db(Some(store_name), DatabaseFlags::empty()).expect("raw store");
+    let mut writer = env.begin_rw_txn().expect("raw writer");
+    writer.put(store, &key, &b"\xff", WriteFlags::empty()).expect("invalid tag");
+    writer.commit().expect("commit invalid tag");
+}
+
+fn populate_two_stores(env: &Rkv<LmdbEnvironment>) {
+    let first = env.open_single("a", StoreOptions::create()).expect("first store");
+    let last = env.open_single("z", StoreOptions::create()).expect("last store");
+    let mut writer = env.write().expect("writer");
+    first.put(&mut writer, "key", &Value::Str("first")).expect("first value");
+    last.put(&mut writer, "key", &Value::Str("last")).expect("last value");
+    writer.commit().expect("commit");
+}
+
 #[test]
 fn test_open_migrator_lmdb_to_safe() {
     let root = Builder::new().prefix("test_open_migrator_lmdb_to_safe").tempdir().expect("tempdir");
@@ -315,6 +334,66 @@ fn test_migrator_lmdb_to_safe_3() {
     assert_eq!(store.get(&reader, "foo").expect("read"), Some(Value::I64(1234)));
     assert_eq!(store.get(&reader, "bar").expect("read"), Some(Value::Bool(true)));
     assert_eq!(store.get(&reader, "baz").expect("read"), Some(Value::Str("héllo, yöu")));
+}
+
+#[test]
+fn test_migrator_lmdb_rejects_invalid_value_without_committing_store() {
+    let root = Builder::new().prefix("test_migrate_invalid_value").tempdir().expect("tempdir");
+    {
+        let env = Rkv::new::<Lmdb>(root.path()).expect("source");
+        let store = env.open_single("store", StoreOptions::create()).expect("store");
+        let mut writer = env.write().expect("writer");
+        store.put(&mut writer, "a", &Value::Str("before")).expect("first");
+        store.put(&mut writer, "z", &Value::Str("after")).expect("last");
+        writer.commit().expect("commit");
+    }
+    insert_invalid_tag(root.path(), "store", b"m");
+
+    let source = Rkv::new::<Lmdb>(root.path()).expect("source");
+    let destination = Rkv::new::<SafeMode>(root.path()).expect("destination");
+    assert!(Migrator::migrate_lmdb_to_safe_mode(&source, &destination).is_err());
+    assert!(root.path().join("data.mdb").is_file());
+    let store = destination.open_single("store", StoreOptions::create()).expect("destination store");
+    let reader = destination.read().expect("destination reader");
+    assert_eq!(store.get(&reader, "a").expect("first"), None);
+}
+
+#[test]
+fn test_migrator_lmdb_failure_does_not_commit_earlier_store() {
+    let root = Builder::new().prefix("test_migrate_invalid_second_store").tempdir().expect("tempdir");
+    {
+        let env = Rkv::new::<Lmdb>(root.path()).expect("source");
+        populate_two_stores(&env);
+    }
+    insert_invalid_tag(root.path(), "z", b"bad");
+
+    let source = Rkv::new::<Lmdb>(root.path()).expect("source");
+    let destination = Rkv::new::<SafeMode>(root.path()).expect("destination");
+    assert!(Migrator::migrate_lmdb_to_safe_mode(&source, &destination).is_err());
+    assert!(root.path().join("data.mdb").is_file());
+    let first = destination.open_single("a", StoreOptions::default()).expect("destination first store");
+    let reader = destination.read().expect("destination reader");
+    assert_eq!(first.get(&reader, "key").expect("first value"), None);
+}
+
+#[test]
+fn test_migrator_multiple_stores_round_trip() {
+    let root = Builder::new().prefix("test_migrate_multiple_stores").tempdir().expect("tempdir");
+    let source = Rkv::new::<Lmdb>(root.path()).expect("source");
+    populate_two_stores(&source);
+
+    let intermediate = Rkv::new::<SafeMode>(root.path()).expect("intermediate");
+    Migrator::migrate_lmdb_to_safe_mode(&source, &intermediate).expect("migrate to SafeMode");
+    let round_trip_path = root.path().join("round-trip");
+    fs::create_dir(&round_trip_path).expect("round-trip directory");
+    let round_trip = Rkv::new::<Lmdb>(&round_trip_path).expect("round-trip environment");
+    Migrator::migrate_safe_mode_to_lmdb(&intermediate, &round_trip).expect("migrate to LMDB");
+
+    let first = round_trip.open_single("a", StoreOptions::default()).expect("first store");
+    let last = round_trip.open_single("z", StoreOptions::default()).expect("last store");
+    let reader = round_trip.read().expect("reader");
+    assert_eq!(first.get(&reader, "key").expect("first value"), Some(Value::Str("first")));
+    assert_eq!(last.get(&reader, "key").expect("last value"), Some(Value::Str("last")));
 }
 
 #[test]

@@ -1,5 +1,5 @@
 /**
- * @file modrm_assembler_test.cpp
+ * @file modrm-assembler.cpp
  * @brief Validate real x86 JIT memory-operand encoding against reference bytes.
  *
  * Responsibilities:

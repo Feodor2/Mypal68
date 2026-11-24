@@ -1,3 +1,19 @@
+/**
+ * @file JitScript.cpp
+ * @brief Manage per-script JIT state and its lifetime.
+ *
+ * Responsibilities:
+ *  - Construct and destroy JIT metadata and inline cache state.
+ *
+ * Invariants:
+ *  - JIT state matches script flags and ownership.
+ *
+ * Thread-safety:
+ *  - Script state follows the JavaScript engine ownership rules.
+ *
+ * Performance notes:
+ *  - Large-function classification is computed once per JitScript.
+ */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +27,7 @@
 
 #include "jit/BaselineIC.h"
 #include "jit/BaselineJIT.h"
+#include "jit/BaselineLargeScriptPolicy.h"
 #include "jit/BytecodeAnalysis.h"
 #include "jit/IonScript.h"
 #include "jit/JitFrames.h"
@@ -41,6 +58,10 @@ JitScript::JitScript(JSScript* script, Offset fallbackStubsOffset,
                 fallbackStubsOffset - offsetOfICScript(),
                 endOffset - offsetOfICScript(),
                 /*depth=*/0) {
+#if defined(XP_WIN) && (defined(JS_CODEGEN_X86) || \
+                        (defined(JS_CODEGEN_X64) && defined(MYPAL_X64_LARGE_BASELINE_PROBE)))
+  deferLargeBaseline_ = uint8_t(DeferLargeBaseline(script->isFunction(), script->length()));
+#endif
   // Ensure the baselineScript_ and ionScript_ fields match the BaselineDisabled
   // and IonDisabled script flags.
   if (!script->canBaselineCompile()) {

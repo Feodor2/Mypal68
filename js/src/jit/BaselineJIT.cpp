@@ -1,3 +1,20 @@
+/**
+ * @file BaselineJIT.cpp
+ * @brief Manage Baseline compilation and execution transitions.
+ *
+ * Responsibilities:
+ *  - Select and compile eligible scripts and enter Baseline code.
+ *
+ * Invariants:
+ *  - Deferred functions remain eligible for later compilation.
+ *  - Failed compilation does not install a Baseline script.
+ *
+ * Thread-safety:
+ *  - Compilation uses the executing JavaScript context.
+ *
+ * Performance notes:
+ *  - Experimental large-function warm-up delays a potentially costly compile.
+ */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +34,7 @@
 #include "jit/AutoWritableJitCode.h"
 #include "jit/BaselineCodeGen.h"
 #include "jit/BaselineIC.h"
+#include "jit/BaselineLargeScriptPolicy.h"
 #include "jit/CalleeToken.h"
 #include "jit/JitCommon.h"
 #include "jit/JitRuntime.h"
@@ -292,6 +310,14 @@ static MethodStatus CanEnterBaselineJIT(JSContext* cx, HandleScript script,
   if (script->getWarmUpCount() <= JitOptions.baselineJitWarmUpThreshold) {
     return Method_Skipped;
   }
+
+#if defined(XP_WIN) && (defined(JS_CODEGEN_X86) || \
+                        (defined(JS_CODEGEN_X64) && defined(MYPAL_X64_LARGE_BASELINE_PROBE)))
+  if (DeferLargeBaselineAtWarmUp(script->isFunction(), script->length(),
+                                 script->getWarmUpCount())) {
+    return Method_Skipped;
+  }
+#endif
 
   // Check this before calling ensureJitRealmExists, so we're less
   // likely to report OOM in JSRuntime::createJitRuntime.

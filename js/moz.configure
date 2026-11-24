@@ -1118,3 +1118,18 @@ def wasm_has_heapreg(simulator, target):
 
 
 set_define("WASM_HAS_HEAPREG", wasm_has_heapreg)
+
+
+# Existing optional Windows AMD64 large-function Baseline experiment.
+option(env="MYPAL_X64_LARGE_BASELINE_PROBE", nargs=1,
+       help="Enable the experimental Windows AMD64 large-function Baseline policy")
+
+
+@depends("MYPAL_X64_LARGE_BASELINE_PROBE", target)
+def mypal_x64_large_baseline_probe(value, target):
+    if value and (value[0] != "1" or target.kernel != "WINNT" or target.cpu != "x86_64"):
+        die("MYPAL_X64_LARGE_BASELINE_PROBE=1 requires Windows AMD64")
+    return bool(value)
+
+
+set_define("MYPAL_X64_LARGE_BASELINE_PROBE", True, when=mypal_x64_large_baseline_probe)

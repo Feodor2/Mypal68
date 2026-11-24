@@ -1,3 +1,19 @@
+/**
+ * @file BaselineCodeGen.cpp
+ * @brief Generate Baseline JIT and interpreter machine code.
+ *
+ * Responsibilities:
+ *  - Emit Baseline code for bytecode operations and associated metadata.
+ *
+ * Invariants:
+ *  - Deferred large functions remain eligible for later Baseline compilation.
+ *
+ * Thread-safety:
+ *  - Compilation state belongs to its executing JavaScript context.
+ *
+ * Performance notes:
+ *  - The extra warm-up check runs only after the ordinary threshold.
+ */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +25,7 @@
 #include "gc/GC.h"
 #include "jit/BaselineIC.h"
 #include "jit/BaselineJIT.h"
+#include "jit/BaselineLargeScriptPolicy.h"
 #include "jit/CacheIRCompiler.h"
 #include "jit/CacheIRGenerator.h"
 #include "jit/CalleeToken.h"
@@ -1438,6 +1455,16 @@ bool BaselineInterpreterCodeGen::emitWarmUpCounterIncrement() {
   masm.branchPtr(Assembler::Equal,
                  Address(scriptReg, JitScript::offsetOfBaselineScript()),
                  ImmPtr(BaselineDisabledScriptPtr), &done);
+#if defined(XP_WIN) && (defined(JS_CODEGEN_X86) || \
+                        (defined(JS_CODEGEN_X64) && defined(MYPAL_X64_LARGE_BASELINE_PROBE)))
+  Label compileNow;
+  masm.branch8(Assembler::Equal,
+               Address(scriptReg, JitScript::offsetOfDeferLargeBaseline()),
+               Imm32(0), &compileNow);
+  masm.branch32(Assembler::BelowOrEqual, countReg,
+                Imm32(kLargeBaselineWarmUp), &done);
+  masm.bind(&compileNow);
+#endif
   {
     prepareVMCall();
 

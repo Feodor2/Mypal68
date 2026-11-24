@@ -174,7 +174,7 @@ def rust_supported_targets(rustc):
     return data
 
 
-option('--enable-xp64-startup', default=False,
+option('--enable-xp64-startup', default=False, when=rust_compiler,
        help='Enable load-time XUL initialization for Windows XP x64')
 
 

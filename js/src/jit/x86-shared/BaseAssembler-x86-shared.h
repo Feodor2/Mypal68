@@ -1,3 +1,17 @@
+/**
+ * @file BaseAssembler-x86-shared.h
+ * @brief Encode x86 and x64 machine instructions for the JIT.
+ *
+ * Responsibilities:
+ *  - Emit instruction bytes and memory operands into the assembler buffer.
+ * Invariants:
+ *  - Callers reserve enough buffer space before unchecked writes.
+ *  - Packed x86 operands preserve the byte order of the individual writes.
+ * Thread-safety:
+ *  - Each assembler instance is confined to its owning compilation.
+ * Performance notes:
+ *  - Common x86 ModRM and 8-bit displacement bytes share one buffer append.
+ */
 /* ***** BEGIN LICENSE BLOCK *****
  * Copyright (C) 2008 Apple Inc. All rights reserved.
  *
@@ -6190,8 +6204,15 @@ class BaseAssembler : public GenericAssembler {
 #endif
           putModRm(ModRmMemoryNoDisp, base, reg);
         } else if (CAN_SIGN_EXTEND_8_32(offset)) {
+#ifdef JS_CODEGEN_X86
+          const uint32_t modrm = static_cast<uint32_t>(
+              (ModRmMemoryDisp8 << 6) | ((reg & 7) << 3) | (base & 7));
+          const uint32_t displacement = static_cast<uint8_t>(offset);
+          m_buffer.putShortUnchecked(static_cast<int>(modrm | (displacement << 8)));
+#else
           putModRm(ModRmMemoryDisp8, base, reg);
           m_buffer.putByteUnchecked(offset);
+#endif
         } else {
           putModRm(ModRmMemoryDisp32, base, reg);
           m_buffer.putIntUnchecked(offset);

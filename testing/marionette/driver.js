@@ -133,6 +133,7 @@ this.GeckoDriver = function(server) {
   this._server = server;
 
   this.sessionID = null;
+  this._windowCheckTimer = null;
   this.wins = new browser.Windows();
   this.browsers = {};
   // points to current browser
@@ -767,9 +768,12 @@ GeckoDriver.prototype.newSession = async function(cmd) {
     }
     if (!win) {
       // if the window isn't even created, just poll wait for it
-      let checkTimer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
-      checkTimer.initWithCallback(
-        waitForWindow.bind(this),
+      this._windowCheckTimer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+      this._windowCheckTimer.initWithCallback(
+        () => {
+          this._windowCheckTimer = null;
+          waitForWindow.call(this);
+        },
         100,
         Ci.nsITimer.TYPE_ONE_SHOT
       );
@@ -2919,6 +2923,11 @@ GeckoDriver.prototype.closeChromeWindow = async function() {
 
 /** Delete Marionette session. */
 GeckoDriver.prototype.deleteSession = function() {
+  if (this._windowCheckTimer) {
+    this._windowCheckTimer.cancel();
+    this._windowCheckTimer = null;
+  }
+
   if (this.curBrowser !== null) {
     // frame scripts can be safely reused
     MarionettePrefs.contentListener = false;

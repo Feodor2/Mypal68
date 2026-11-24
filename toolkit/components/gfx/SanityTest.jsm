@@ -92,11 +92,6 @@ function removeCrashReportAnnotation(value) {
   } catch (e) {}
 }
 
-function setTimeout(aMs, aCallback) {
-  var timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
-  timer.initWithCallback(aCallback, aMs, Ci.nsITimer.TYPE_ONE_SHOT);
-}
-
 function takeWindowSnapshot(win, ctx) {
   // TODO: drawWindow reads back from the gpu's backbuffer, which won't catch issues with presenting
   // the front buffer via the window manager. Ideally we'd use an OS level API for reading back
@@ -242,6 +237,7 @@ var listener = {
   canvas: null,
   ctx: null,
   mm: null,
+  timeoutTimer: null,
 
   messages: ["gfxSanity:ContentLoaded"],
 
@@ -249,12 +245,15 @@ var listener = {
     this.win = win;
     this.win.onload = this.onWindowLoaded.bind(this);
     this.utils = this.win.windowUtils;
-    setTimeout(TIMEOUT_SEC * 1000, () => {
+    // nsITimer must remain referenced until it fires or is cancelled.
+    this.timeoutTimer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+    this.timeoutTimer.initWithCallback(() => {
+      this.timeoutTimer = null;
       if (this.win) {
         reportResult(TEST_TIMEOUT);
         this.endTest();
       }
-    });
+    }, TIMEOUT_SEC * 1000, Ci.nsITimer.TYPE_ONE_SHOT);
   },
 
   runSanityTest() {
@@ -306,6 +305,11 @@ var listener = {
   endTest() {
     if (!this.win) {
       return;
+    }
+
+    if (this.timeoutTimer) {
+      this.timeoutTimer.cancel();
+      this.timeoutTimer = null;
     }
 
     this.win.ownerGlobal.close();

@@ -1,3 +1,20 @@
+/**
+ * @file JitScript.h
+ * @brief Store per-script state used by Baseline and Ion compilation.
+ *
+ * Responsibilities:
+ *  - Own inline cache state and references to compiled scripts.
+ *
+ * Invariants:
+ *  - Trailing inline cache storage follows the final ICScript field.
+ *  - The large-function flag is initialized from immutable script properties.
+ *
+ * Thread-safety:
+ *  - Script state follows the JavaScript engine ownership rules.
+ *
+ * Performance notes:
+ *  - The experimental flag is checked after the ordinary warm-up threshold.
+ */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -329,6 +346,13 @@ class alignas(uintptr_t) JitScript final : public TrailingArray {
   };
   Flags flags_ = {};  // Zero-initialize flags.
 
+#if defined(XP_WIN) && (defined(JS_CODEGEN_X86) || \
+                        (defined(JS_CODEGEN_X64) && defined(MYPAL_X64_LARGE_BASELINE_PROBE)))
+  // Fits existing alignment padding in the measured x86 release layout.
+  // The x64 probe must independently validate its layout.
+  uint8_t deferLargeBaseline_ = 0;
+#endif
+
   js::UniquePtr<InliningRoot> inliningRoot_;
 
 #ifdef DEBUG
@@ -392,6 +416,12 @@ class alignas(uintptr_t) JitScript final : public TrailingArray {
   static constexpr size_t offsetOfBaselineScript() {
     return offsetof(JitScript, baselineScript_);
   }
+#if defined(XP_WIN) && (defined(JS_CODEGEN_X86) || \
+                        (defined(JS_CODEGEN_X64) && defined(MYPAL_X64_LARGE_BASELINE_PROBE)))
+  static constexpr size_t offsetOfDeferLargeBaseline() {
+    return offsetof(JitScript, deferLargeBaseline_);
+  }
+#endif
   static constexpr size_t offsetOfIonScript() {
     return offsetof(JitScript, ionScript_);
   }

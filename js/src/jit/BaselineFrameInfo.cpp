@@ -1,3 +1,16 @@
+/**
+ * @file BaselineFrameInfo.cpp
+ * @brief Track and synchronize the Baseline compiler's virtual stack.
+ *
+ * Responsibilities:
+ *  - Emit stack operations for virtual values during Baseline compilation.
+ * Invariants:
+ *  - Synchronized stack values precede all unsynchronized values.
+ * Thread-safety:
+ *  - Each frame belongs to its compiler and assembler.
+ * Performance notes:
+ *  - Stack synchronization skips the already synchronized prefix.
+ */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -64,7 +77,21 @@ void CompilerFrameInfo::syncStack(uint32_t uses) {
 
   uint32_t depth = stackDepth() - uses;
 
-  for (uint32_t i = 0; i < depth; i++) {
+  // Synced values form a prefix, so find the unsynced suffix without
+  // revisiting every already-synced value on each bytecode operation.
+  uint32_t firstUnsynced = depth;
+  while (firstUnsynced > 0 &&
+         stack[firstUnsynced - 1].kind() != StackValue::Stack) {
+    firstUnsynced--;
+  }
+
+#ifdef DEBUG
+  for (uint32_t i = 0; i < firstUnsynced; i++) {
+    MOZ_ASSERT(stack[i].kind() == StackValue::Stack);
+  }
+#endif
+
+  for (uint32_t i = firstUnsynced; i < depth; i++) {
     StackValue* current = &stack[i];
     sync(current);
   }

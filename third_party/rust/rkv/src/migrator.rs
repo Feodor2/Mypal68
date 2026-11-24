@@ -76,25 +76,32 @@ macro_rules! fn_migrator {
             S: std::ops::Deref<Target = Rkv<$src_env>>,
             D: std::ops::Deref<Target = Rkv<$dst_env>>,
         {
-            let src_dbs = src_env.get_dbs().unwrap();
+            let src_dbs = src_env.get_dbs()?;
             if src_dbs.is_empty() {
                 return Err(MigrateError::SourceEmpty);
             }
-            let dst_dbs = dst_env.get_dbs().unwrap();
+            let dst_dbs = dst_env.get_dbs()?;
             if !dst_dbs.is_empty() {
                 return Err(MigrateError::DestinationNotEmpty);
             }
+            // Open all stores before starting either transaction: backends may
+            // prohibit opening a store while a transaction is active.
+            let mut stores = Vec::with_capacity(src_dbs.len());
             for name in src_dbs {
                 let src_store = src_env.open_single(name.as_deref(), StoreOptions::default())?;
                 let dst_store = dst_env.open_single(name.as_deref(), StoreOptions::create())?;
-                let reader = src_env.read()?;
-                let mut writer = dst_env.write()?;
-                let mut iter = src_store.iter_start(&reader)?;
-                while let Some(Ok((key, value))) = iter.next() {
-                    dst_store.put(&mut writer, key, &value).expect("wrote");
-                }
-                writer.commit()?;
+                stores.push((src_store, dst_store));
             }
+            let reader = src_env.read()?;
+            let mut writer = dst_env.write()?;
+            for (src_store, dst_store) in stores {
+                let iter = src_store.iter_start(&reader)?;
+                for entry in iter {
+                    let (key, value) = entry?;
+                    dst_store.put(&mut writer, key, &value)?;
+                }
+            }
+            writer.commit()?;
             Ok(())
         }
     };

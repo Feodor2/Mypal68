@@ -912,9 +912,54 @@ fn consume_ident_like<'a>(tokenizer: &mut Tokenizer<'a>) -> Token<'a> {
     }
 }
 
+// The SSE2 path is compiled only for an x86 target that already requires it.
+// Every load stays within the input, and only ASCII name bytes are advanced.
+#[cfg(all(target_arch = "x86", target_feature = "sse2"))]
+#[inline]
+fn skip_ascii_name_prefix_sse2(tokenizer: &mut Tokenizer<'_>) {
+    use std::arch::x86::{
+        __m128i, _mm_and_si128, _mm_cmpeq_epi8, _mm_cmpgt_epi8, _mm_loadu_si128,
+        _mm_movemask_epi8, _mm_or_si128, _mm_set1_epi8,
+    };
+
+    while tokenizer.input.len() - tokenizer.position >= 16 {
+        // SAFETY: The loop condition guarantees 16 accessible bytes. loadu
+        // does not require an aligned pointer, and x86 SSE2 is enabled above.
+        let mask = unsafe {
+            let ptr = tokenizer.input.as_ptr().add(tokenizer.position) as *const __m128i;
+            let bytes = _mm_loadu_si128(ptr);
+            let lower = _mm_or_si128(bytes, _mm_set1_epi8(0x20));
+            let letters = _mm_and_si128(
+                _mm_cmpgt_epi8(lower, _mm_set1_epi8(b'a' as i8 - 1)),
+                _mm_cmpgt_epi8(_mm_set1_epi8(b'z' as i8 + 1), lower),
+            );
+            let digits = _mm_and_si128(
+                _mm_cmpgt_epi8(bytes, _mm_set1_epi8(b'0' as i8 - 1)),
+                _mm_cmpgt_epi8(_mm_set1_epi8(b'9' as i8 + 1), bytes),
+            );
+            let punctuation = _mm_or_si128(
+                _mm_cmpeq_epi8(bytes, _mm_set1_epi8(b'_' as i8)),
+                _mm_cmpeq_epi8(bytes, _mm_set1_epi8(b'-' as i8)),
+            );
+            _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(letters, digits), punctuation)) as u32
+        };
+        let valid = if mask == 0xffff {
+            16
+        } else {
+            ((!mask) & 0xffff).trailing_zeros() as usize
+        };
+        tokenizer.advance(valid);
+        if valid != 16 {
+            break;
+        }
+    }
+}
+
 fn consume_name<'a>(tokenizer: &mut Tokenizer<'a>) -> CowRcStr<'a> {
     // start_pos is the end of the previous token, therefore at a code point boundary
     let start_pos = tokenizer.position();
+    #[cfg(all(target_arch = "x86", target_feature = "sse2"))]
+    skip_ascii_name_prefix_sse2(tokenizer);
     let mut value_bytes;
     loop {
         if tokenizer.is_eof() {

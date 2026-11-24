@@ -1,3 +1,16 @@
+/**
+ * @file nsLookAndFeel.cpp
+ * @brief Provide Windows look-and-feel values to Gecko.
+ *
+ * Responsibilities:
+ *  - Query and refresh Windows theme and input capability values.
+ * Invariants:
+ *  - Theme refresh and imported process state invalidate mouse count caching.
+ * Thread-safety:
+ *  - Mouse enumeration cache invalidation is atomic across threads.
+ * Performance notes:
+ *  - Pointer media queries reuse the current mouse interface count.
+ */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +22,7 @@
 #include "nsUXThemeData.h"
 #include "nsUXThemeConstants.h"
 #include "WinUtils.h"
+#include "InputDeviceUtils.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/WindowsVersion.h"
@@ -89,6 +103,7 @@ void nsLookAndFeel::NativeInit() { EnsureInit(); }
 
 /* virtual */
 void nsLookAndFeel::RefreshImpl() {
+  InputDeviceUtils::InvalidateMouseDeviceCount();
   nsXPLookAndFeel::RefreshImpl();
 
   for (auto e = mSystemFontCache.begin(), end = mSystemFontCache.end();
@@ -769,6 +784,7 @@ nsTArray<LookAndFeelInt> nsLookAndFeel::GetIntCacheImpl() {
 
 void nsLookAndFeel::SetIntCacheImpl(
     const nsTArray<LookAndFeelInt>& aLookAndFeelIntCache) {
+  InputDeviceUtils::InvalidateMouseDeviceCount();
   for (auto entry : aLookAndFeelIntCache) {
     switch (entry.id) {
       case IntID::UseAccessibilityTheme:

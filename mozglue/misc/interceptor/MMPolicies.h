@@ -1,3 +1,15 @@
+/**
+ * @file MMPolicies.h
+ * @brief Manage Windows interception trampoline reservations.
+ * Responsibilities:
+ *  - Select address ranges compatible with x64 detour encoding.
+ * Invariants:
+ *  - Randomized XP64 reservations leave the upper system-DLL range free.
+ * Thread-safety:
+ *  - Windows virtual-memory APIs arbitrate reservations between callers.
+ * Performance notes:
+ *  - The OS-version check runs during x64 trampoline allocation only.
+ */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -8,6 +20,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/Types.h"
+#include "mozilla/WindowsVersion.h"
 
 #include <windows.h>
 
@@ -80,14 +93,18 @@ class MMPolicyBase {
       return nullptr;
     }
 
-    // Generate a randomized base address that falls within the interval
-    // [1MiB, 2GiB - aDesiredBytesLen]
+    // XP64 USER32 has a preferred image in the upper part of the low 2 GiB.
+    // A trampoline there can prevent its later load with ERROR_INVALID_ADDRESS.
+    // Leave that range free on XP64; keep the existing range on Vista and later.
+    // Reserve() retains its existing system-selected allocation fallback.
     unsigned int rnd = 0;
     rand_s(&rnd);
 
     // Reduce rnd to a value that falls within the acceptable range
     const uint64_t kMinAddress = 0x0000000000100000ULL;
-    const uint64_t kMaxAddress = 0x0000000080000000ULL;
+    const uint64_t kMaxAddress =
+        mozilla::IsVistaOrLater() ? 0x0000000080000000ULL
+                                  : 0x0000000070000000ULL;
     uint64_t maxOffset =
         (kMaxAddress - kMinAddress - aDesiredBytesLen) / granularity;
     uint64_t offset = (uint64_t(rnd) % maxOffset) * granularity;

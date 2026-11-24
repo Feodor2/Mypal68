@@ -44,6 +44,28 @@ def Libxul(name, output_category=None):
             'api-ms-win-core-winrt-string-l1-1-0.dll',
         ]
 
+    if CONFIG['MYPAL_XP64_STARTUP']:
+        # Keep USER32-dependent imports out of XUL's initial loader traversal.
+        DELAYLOAD_DLLS += [
+            'crypt32.dll',
+            'dhcpcsvc.dll',
+            'gdi32.dll',
+            'imm32.dll',
+            'iphlpapi.dll',
+            'ole32.dll',
+            'oleaut32.dll',
+            'setupapi.dll',
+            'shell32.dll',
+            'shlwapi.dll',
+            'user32.dll',
+            'userenv.dll',
+            'usp10.dll',
+            'uxtheme.dll',
+            'winmm.dll',
+            'wintrust.dll',
+            'wtsapi32.dll',
+        ]
+
     if CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['ACCESSIBILITY']:
         LOCAL_INCLUDES += ['!/accessible/interfaces/gecko/']
 

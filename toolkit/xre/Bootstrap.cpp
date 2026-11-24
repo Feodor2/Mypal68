@@ -1,3 +1,15 @@
+/**
+ * @file Bootstrap.cpp
+ * @brief Create the process-wide XUL bootstrap implementation.
+ * Responsibilities:
+ *  - Complete deferred XP64 toolkit startup before creating the bootstrap.
+ * Invariants:
+ *  - Bootstrap initialization occurs once per process.
+ * Thread-safety:
+ *  - The initial bootstrap caller owns initialization.
+ * Performance notes:
+ *  - Other build configurations retain the original initialization path.
+ */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,6 +18,10 @@
 #include "nsXPCOM.h"
 
 #include "AutoSQLiteLifetime.h"
+
+#if defined(MYPAL_XP64_STARTUP)
+extern "C" void MypalXP64InitializeToolkit();
+#endif
 
 #ifdef MOZ_WIDGET_ANDROID
 #  ifdef MOZ_PROFILE_GENERATE
@@ -109,6 +125,9 @@ XRE_GetBootstrap(Bootstrap::UniquePtr& b) {
   MOZ_RELEASE_ASSERT(!sBootstrapInitialized);
 
   sBootstrapInitialized = true;
+#if defined(MYPAL_XP64_STARTUP)
+  MypalXP64InitializeToolkit();
+#endif
   b.reset(new BootstrapImpl());
 }
 

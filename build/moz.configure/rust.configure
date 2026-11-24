@@ -174,6 +174,33 @@ def rust_supported_targets(rustc):
     return data
 
 
+option('--enable-xp64-startup', default=False,
+       help='Enable load-time XUL initialization for Windows XP x64')
+
+
+@depends('--enable-xp64-startup', target, c_compiler, when=rust_compiler)
+def mypal_xp64_startup(value, target, compiler):
+    if value and (target.cpu != 'x86_64' or target.kernel != 'WINNT' or
+                  compiler.type != 'clang-cl'):
+        die('--enable-xp64-startup requires a Windows x64 clang-cl target')
+    return True if value else None
+
+
+set_config('MYPAL_XP64_STARTUP', mypal_xp64_startup)
+set_define('MYPAL_XP64_STARTUP', mypal_xp64_startup)
+
+
+option(env='MYPAL_XP64_RUST_TARGET', nargs=1, when=rust_compiler,
+       help='Use an installed XP64-compatible Rust target')
+
+
+@depends('MYPAL_XP64_RUST_TARGET', mypal_xp64_startup, when=rust_compiler)
+def mypal_xp64_rust_target(value, enabled):
+    if value and (not enabled or value[0] != 'x86_64-xp-windows-msvc'):
+        die('MYPAL_XP64_RUST_TARGET requires XP64 startup and x86_64-xp-windows-msvc')
+    return value[0] if value else None
+
+
 @template
 def rust_triple_alias(host_or_target, host_or_target_c_compiler):
     """Template defining the alias used for rustc's --target flag.
@@ -185,7 +212,8 @@ def rust_triple_alias(host_or_target, host_or_target_c_compiler):
     host_or_target_str = {host: 'host', target: 'target'}[host_or_target]
 
     @depends(rustc, host_or_target, host_or_target_c_compiler,
-             rust_supported_targets, arm_target, when=rust_compiler)
+             rust_supported_targets, arm_target, mypal_xp64_rust_target,
+             when=rust_compiler)
     @checking('for rust %s triplet' % host_or_target_str)
     @imports('os')
     @imports(_from='mozbuild.configure.util', _import='LineIO')
@@ -194,7 +222,7 @@ def rust_triple_alias(host_or_target, host_or_target_c_compiler):
     @imports(_from='tempfile', _import='mkstemp')
     @imports(_from='textwrap', _import='dedent')
     def rust_target(rustc, host_or_target, compiler_info,
-                    rust_supported_targets, arm_target):
+                    rust_supported_targets, arm_target, xp64_target):
         # Rust's --target options are similar to, but not exactly the same
         # as, the autoconf-derived targets we use.  An example would be that
         # Rust uses distinct target triples for targetting the GNU C++ ABI
@@ -309,6 +337,8 @@ def rust_triple_alias(host_or_target, host_or_target_c_compiler):
             return None
 
         rustc_target = find_candidate(candidates)
+        if xp64_target and host_or_target_str == 'target':
+            rustc_target = xp64_target
 
         if rustc_target is None:
             die("Don't know how to translate {} for rustc".format(

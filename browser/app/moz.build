@@ -41,6 +41,12 @@ SOURCES += [
     'nsBrowserApp.cpp',
 ]
 
+if CONFIG['MYPAL_XP64_STARTUP']:
+    # Keep standalone glue, but force XUL into the initial loader graph so XP64
+    # initializes its PE TLS before any LoadLibrary-based bootstrap calls.
+    USE_LIBS += ['xul-real']
+    WIN32_EXE_LDFLAGS += ['-INCLUDE:__imp_XRE_GetBootstrap']
+
 # Neither channel-prefs.js nor firefox.exe want to end up in dist/bin/browser.
 DIST_SUBDIR = ""
 

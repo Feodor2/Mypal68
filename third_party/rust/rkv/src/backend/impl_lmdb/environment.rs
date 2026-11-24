@@ -38,6 +38,23 @@ use crate::backend::traits::{
     BackendStat,
 };
 
+// The opt-in XP64 configuration uses LMDB's documented transaction reader slots.
+// Preserve all flags supplied by the caller; other targets keep their defaults.
+#[cfg(all(mypal_xp64_lmdb_notls, not(all(target_os = "windows", target_arch = "x86_64"))))]
+compile_error!("mypal_xp64_lmdb_notls requires the Win64 target");
+
+#[inline]
+fn effective_environment_flags(flags: lmdb::EnvironmentFlags) -> lmdb::EnvironmentFlags {
+    #[cfg(mypal_xp64_lmdb_notls)]
+    {
+        flags | lmdb::EnvironmentFlags::NO_TLS
+    }
+    #[cfg(not(mypal_xp64_lmdb_notls))]
+    {
+        flags
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub struct EnvironmentBuilderImpl {
     builder: lmdb::EnvironmentBuilder,
@@ -53,8 +70,10 @@ impl<'b> BackendEnvironmentBuilder<'b> for EnvironmentBuilderImpl {
     type Flags = EnvironmentFlagsImpl;
 
     fn new() -> EnvironmentBuilderImpl {
+        let mut builder = lmdb::Environment::new();
+        builder.set_flags(effective_environment_flags(lmdb::EnvironmentFlags::empty()));
         EnvironmentBuilderImpl {
-            builder: lmdb::Environment::new(),
+            builder,
             env_path_type: EnvironmentPathType::SubDir,
             env_lock_type: EnvironmentLockType::Lockfile,
             env_db_type: EnvironmentDefaultDbType::SingleDatabase,
@@ -73,7 +92,7 @@ impl<'b> BackendEnvironmentBuilder<'b> for EnvironmentBuilderImpl {
         if flags.0 == lmdb::EnvironmentFlags::NO_LOCK {
             self.env_lock_type = EnvironmentLockType::NoLockfile;
         }
-        self.builder.set_flags(flags.0);
+        self.builder.set_flags(effective_environment_flags(flags.0));
         self
     }
 
@@ -271,5 +290,37 @@ impl<'e> BackendEnvironment<'e> for EnvironmentImpl {
         }
 
         store
+    }
+}
+
+#[cfg(test)]
+mod xp64_flag_tests {
+    use super::{effective_environment_flags, EnvironmentBuilderImpl};
+    use crate::backend::{BackendEnvironmentBuilder, EnvironmentFlags};
+
+    #[test]
+    fn preserves_requested_flags() {
+        let requested = lmdb::EnvironmentFlags::NO_SUB_DIR | lmdb::EnvironmentFlags::READ_ONLY;
+        let effective = effective_environment_flags(requested);
+        assert!(effective.contains(requested));
+        assert_eq!(effective.contains(lmdb::EnvironmentFlags::NO_TLS), cfg!(mypal_xp64_lmdb_notls));
+    }
+
+    #[test]
+    fn initializes_empty_flags_consistently() {
+        let effective = effective_environment_flags(lmdb::EnvironmentFlags::empty());
+        assert_eq!(effective.contains(lmdb::EnvironmentFlags::NO_TLS), cfg!(mypal_xp64_lmdb_notls));
+    }
+
+    #[test]
+    fn builder_applies_effective_flags_at_creation_and_after_set_flags() {
+        let mut actual = EnvironmentBuilderImpl::new();
+        let mut expected = lmdb::Environment::new();
+        expected.set_flags(effective_environment_flags(lmdb::EnvironmentFlags::empty()));
+        assert_eq!(actual.builder, expected);
+
+        actual.set_flags(EnvironmentFlags::READ_ONLY);
+        expected.set_flags(effective_environment_flags(lmdb::EnvironmentFlags::READ_ONLY));
+        assert_eq!(actual.builder, expected);
     }
 }

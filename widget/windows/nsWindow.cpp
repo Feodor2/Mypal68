@@ -1,3 +1,11 @@
+/**
+ * @file nsWindow.cpp
+ * @brief Dispatch native Windows widget events.
+ * Responsibilities: manage windows and input-capability invalidations.
+ * Invariants: device/session changes invalidate the mouse-count cache.
+ * Thread-safety: dispatch follows the owning UI thread.
+ * Performance notes: invalidation does not enumerate devices.
+ */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -5023,10 +5031,13 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
     } break;
 
     case WM_WTSSESSION_CHANGE: {
+      InputDeviceUtils::InvalidateMouseDeviceCount();
       switch (wParam) {
         case WTS_CONSOLE_CONNECT:
         case WTS_REMOTE_CONNECT:
         case WTS_SESSION_UNLOCK:
+          // Propagate changed input capabilities to content processes.
+          NotifyThemeChanged();
           // When a session becomes visible, we should invalidate.
           Invalidate(true, true, true);
           break;
@@ -5086,6 +5097,10 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
     } break;
 
     case WM_DEVICECHANGE: {
+      InputDeviceUtils::InvalidateMouseDeviceCount();
+      if (wParam == DBT_DEVNODES_CHANGED) {
+        NotifyThemeChanged();
+      }
       if (wParam == DBT_DEVICEARRIVAL || wParam == DBT_DEVICEREMOVECOMPLETE) {
         DEV_BROADCAST_HDR* hdr = reinterpret_cast<DEV_BROADCAST_HDR*>(lParam);
         // Check dbch_devicetype explicitly since we will get other device types

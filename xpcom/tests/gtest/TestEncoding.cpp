@@ -1,13 +1,5 @@
 /**
  * @file TestEncoding.cpp
- * @brief Test string encoding and comparison behavior.
- * Responsibilities: verify conversion and comparison semantics.
- * Invariants: expected Unicode ordering and error behavior are preserved.
- * Thread-safety: test data belongs to each test invocation.
- * Performance notes: correctness checks do not benchmark the implementation.
- */
-/**
- * @file TestEncoding.cpp
  * @brief Tests for UTF conversion and comparison behavior.
  *
  * Responsibilities:

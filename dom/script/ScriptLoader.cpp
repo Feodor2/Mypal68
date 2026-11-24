@@ -1,3 +1,19 @@
+/**
+ * @file ScriptLoader.cpp
+ * @brief Load, compile, execute, and cache document scripts.
+ *
+ * Responsibilities:
+ *  - Coordinate script requests, execution, and bytecode caching.
+ *
+ * Invariants:
+ *  - Bytecode encoding requires an eligible cache channel and source request.
+ *
+ * Thread-safety:
+ *  - Document and script loader operations follow their owning thread rules.
+ *
+ * Performance notes:
+ *  - Optional bytecode caching trades encoding and storage for later decoding.
+ */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -1400,6 +1416,14 @@ nsresult ScriptLoader::ProcessOffThreadRequest(ScriptLoadRequest* aRequest) {
   }
 
   aRequest->SetReady();
+
+  // A speculative async compile can finish while its request is still in
+  // mLoadingAsyncRequests. Move it before processing the ready queue. A request
+  // already removed for compilation is not in either async queue.
+  if (aRequest->GetScriptLoadContext()->mInAsyncList && aRequest->isInList()) {
+    MOZ_ASSERT(mLoadingAsyncRequests.Contains(aRequest));
+    MaybeMoveToLoadedList(aRequest);
+  }
 
   if (aRequest == mParserBlockingRequest) {
     if (!ReadyToExecuteParserBlockingScripts()) {

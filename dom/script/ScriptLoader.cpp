@@ -1,8 +1,25 @@
+/**
+ * @file ScriptLoader.cpp
+ * @brief Load, compile, execute, and cache document scripts.
+ *
+ * Responsibilities:
+ *  - Coordinate script requests, execution, and bytecode caching.
+ *
+ * Invariants:
+ *  - Bytecode encoding requires an eligible cache channel and source request.
+ *
+ * Thread-safety:
+ *  - Document and script loader operations follow their owning thread rules.
+ *
+ * Performance notes:
+ *  - Optional bytecode caching trades encoding and storage for later decoding.
+ */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ScriptLoader.h"
+#include "BytecodeCachePolicy.h"
 #include "ScriptLoadHandler.h"
 #include "ScriptTrace.h"
 #include "ModuleLoader.h"
@@ -1976,6 +1993,21 @@ bool ScriptLoader::ShouldCacheBytecode(ScriptLoadRequest* aRequest) {
   LOG(("ScriptLoadRequest (%p): Bytecode-cache: strategy = %d.", aRequest,
        strategy));
   switch (strategy) {
+    case -3: {
+      // Experimental opt-in: cache only large scripts to limit write amplification.
+      hasSourceLengthMin = true;
+      hasFetchCountMin = false;
+      sourceLengthMin = kEagerBytecodeSourceLength;
+      break;
+    }
+    case -5: {
+      // Experimental opt-in: retain the default policy for small scripts.
+      hasSourceLengthMin = true;
+      hasFetchCountMin = true;
+      sourceLengthMin = 1024;
+      fetchCountMin = 4;
+      break;
+    }
     case -2: {
       // Reader mode, keep requesting alternate data but no longer save it.
       LOG(("ScriptLoadRequest (%p): Bytecode-cache: Encoding disabled.",
@@ -2013,6 +2045,9 @@ bool ScriptLoader::ShouldCacheBytecode(ScriptLoadRequest* aRequest) {
       LOG(("ScriptLoadRequest (%p): Bytecode-cache: Script is too small.",
            aRequest));
       return false;
+    }
+    if (SkipHybridBytecodeFetchThreshold(strategy, sourceLength)) {
+      hasFetchCountMin = false;
     }
   }
 

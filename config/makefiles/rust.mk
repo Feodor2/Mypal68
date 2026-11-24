@@ -104,6 +104,12 @@ endif
 
 rustflags_override = $(MOZ_RUST_DEFAULT_FLAGS) $(rustflags_neon)
 
+ifdef MYPAL_XP64_STARTUP
+# Use LMDB transaction-owned reader slots in the XP64 configuration.
+# HOST_RECIPES below retain their separate rustflags_override assignment.
+RUSTFLAGS += --cfg mypal_xp64_lmdb_notls
+endif
+
 ifdef MOZ_USING_SCCACHE
 export RUSTC_WRAPPER=$(CCACHE)
 endif

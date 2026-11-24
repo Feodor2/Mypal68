@@ -1,3 +1,15 @@
+/**
+ * @file nsBrowserApp.cpp
+ * @brief Bootstrap the browser and dispatch its process role.
+ * Responsibilities:
+ *  - Initialize the XP64 child locale before profiler and IPC workers start.
+ * Invariants:
+ *  - The child DLL blocklist is initialized once before locale setup.
+ * Thread-safety:
+ *  - Early locale setup runs on the initial thread before worker startup.
+ * Performance notes:
+ *  - Other OS and architecture startup paths retain their existing ordering.
+ */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +23,11 @@
 #if defined(XP_WIN)
 #  include <windows.h>
 #  include <stdlib.h>
+#  if defined(_WIN64)
+#    include <locale.h>
+#    include <string.h>
+#    include "mozilla/WindowsVersion.h"
+#  endif
 #elif defined(XP_UNIX)
 #  include <sys/resource.h>
 #  include <unistd.h>
@@ -244,6 +261,22 @@ uint32_t gBlocklistInitFlags = eDllBlocklistInitFlagDefault;
 int main(int argc, char* argv[], char* envp[]) {
   mozilla::TimeStamp start = mozilla::TimeStamp::Now();
 
+#if defined(XP_WIN) && defined(_WIN64) && defined(MOZ_BROWSER_CAN_BE_CONTENTPROC)
+  // XP64's UCRT can acquire the loader lock during the first locale change.
+  // Preserve XPCOM's default-locale behavior before profiler and IPC startup.
+  const bool earlyXp64Child = argc > 1 && IsArg(argv[1], "contentproc") &&
+                              !mozilla::IsVistaOrLater();
+  if (earlyXp64Child) {
+#  ifdef HAS_DLL_BLOCKLIST
+    DllBlocklist_Initialize(eDllBlocklistInitFlagIsChildProcess);
+#  endif
+    const char* currentLocale = setlocale(LC_ALL, nullptr);
+    if (currentLocale && strcmp(currentLocale, "C") == 0) {
+      (void)setlocale(LC_ALL, "");
+    }
+  }
+#endif
+
   AUTO_BASE_PROFILER_INIT;
   AUTO_BASE_PROFILER_LABEL("nsBrowserApp main", OTHER);
 
@@ -252,7 +285,13 @@ int main(int argc, char* argv[], char* envp[]) {
   // main
   if (argc > 1 && IsArg(argv[1], "contentproc")) {
 #  ifdef HAS_DLL_BLOCKLIST
+#    if defined(XP_WIN) && defined(_WIN64)
+    if (!earlyXp64Child) {
+      DllBlocklist_Initialize(eDllBlocklistInitFlagIsChildProcess);
+    }
+#    else
     DllBlocklist_Initialize(eDllBlocklistInitFlagIsChildProcess);
+#    endif
 #  endif
 #  if defined(XP_WIN) && defined(MOZ_SANDBOX)
     // We need to initialize the sandbox TargetServices before InitXPCOMGlue

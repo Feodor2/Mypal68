@@ -1,3 +1,17 @@
+/**
+ * @file TestEncoding.cpp
+ * @brief Tests for UTF conversion and comparison behavior.
+ *
+ * Responsibilities:
+ *  - Verify encoding conversions and Unicode comparison edge cases.
+ * Invariants:
+ *  - Invalid sequences preserve replacement and accumulated error semantics.
+ * Thread-safety:
+ *  - Tests use independent local strings.
+ * Performance notes:
+ *  - These correctness tests are outside performance-sensitive paths.
+ */
+
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -5,6 +19,48 @@
 #include <stdlib.h>
 #include "nsString.h"
 #include "gtest/gtest.h"
+
+TEST(Encoding, CompareAsciiPrefixAndErrors)
+{
+  bool error = true;
+  EXPECT_EQ(0, CompareUTF8toUTF16(nsDependentCString("prefix"),
+                                   nsDependentString(u"prefix"), &error));
+  EXPECT_TRUE(error);
+
+  error = false;
+  EXPECT_LT(CompareUTF8toUTF16(nsDependentCString("prefix-a"),
+                               nsDependentString(u"prefix-b"), &error), 0);
+  EXPECT_FALSE(error);
+
+  const char invalidUtf8[] = {'a', static_cast<char>(0xff), 0};
+  const char16_t replacement[] = {u'a', 0xfffd, 0};
+  error = false;
+  EXPECT_EQ(0, CompareUTF8toUTF16(nsDependentCString(invalidUtf8),
+                                   nsDependentString(replacement), &error));
+  EXPECT_TRUE(error);
+
+  const char16_t invalidUtf16[] = {u'a', 0xd800, 0};
+  error = false;
+  EXPECT_EQ(0, CompareUTF8toUTF16(nsDependentCString("a\xef\xbf\xbd"),
+                                   nsDependentString(invalidUtf16), &error));
+  EXPECT_TRUE(error);
+}
+
+TEST(Encoding, CompareEveryAsciiCodeUnit)
+{
+  for (unsigned int byte = 0; byte < 128; ++byte) {
+    for (unsigned int word = 0; word < 128; ++word) {
+      const char utf8 = static_cast<char>(byte);
+      const char16_t utf16 = static_cast<char16_t>(word);
+      bool error = false;
+      const int32_t actual = CompareUTF8toUTF16(
+          nsDependentCString(&utf8, 1), nsDependentString(&utf16, 1), &error);
+      const int32_t expected = byte < word ? -1 : byte > word ? 1 : 0;
+      ASSERT_EQ(expected, actual);
+      ASSERT_FALSE(error);
+    }
+  }
+}
 
 TEST(Encoding, GoodSurrogatePair)
 {

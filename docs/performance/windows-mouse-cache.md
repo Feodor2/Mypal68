@@ -21,3 +21,7 @@ These are historical downstream results from a larger source stack on a Core 2 D
 The included production-header test covers cache hits, failed enumeration, competing fills, generation saturation and invalidation during an in-flight enumeration. Earlier downstream mocked enumeration and race checks passed. Compile the standalone test with C++17, MYPAL_MOUSE_CACHE_TEST, the widget include path and generated Mypal headers; test real device/session invalidation on the clean browser.
 
 The public diff contains only this change, its related tests and this note. Lab automation, profiles, cookies, SDK/runtime patches, CPU tuning, diagnostics and unrelated optimizations are excluded.
+
+## Export control
+
+The extracted production-header race test was compiled with the local MinGW C++17 compiler and returned `MOUSE_COUNT_CACHE_TEST_OK`, exit 0, on the developer Windows x64 host. It used the matching existing generated Mypal include directory. This checks the exported cache logic, not browser device notifications or a clean XP browser build.

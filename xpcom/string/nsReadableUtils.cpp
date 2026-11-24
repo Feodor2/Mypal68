@@ -1,3 +1,17 @@
+/**
+ * @file nsReadableUtils.cpp
+ * @brief String comparison and conversion utilities.
+ *
+ * Responsibilities:
+ *  - Implement readable string comparisons and conversion helpers.
+ * Invariants:
+ *  - UTF-8 and UTF-16 comparisons preserve Unicode and error semantics.
+ * Thread-safety:
+ *  - Callers synchronize concurrent changes to string buffers.
+ * Performance notes:
+ *  - Matching ASCII prefixes avoid general Unicode decoding.
+ */
+
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -604,8 +618,20 @@ int32_t CompareUTF8toUTF16(const nsACString& aUTF8String,
     if (u16 == u16end) {
       return 1;
     }
-    // No need for ASCII optimization, since both NextChar()
-    // calls get inlined.
+    // Matching ASCII has identical scalar values in both encodings and cannot
+    // set the accumulated error flag. Leave all other cases to the decoders.
+    const uint8_t first = static_cast<uint8_t>(*u8);
+    if (MOZ_LIKELY(first < 0x80 && *u16 == first)) {
+      ++u8;
+      ++u16;
+      continue;
+    }
+    // Unequal ASCII scalars have the same ordering as their code units and
+    // cannot change the accumulated error flag.
+    if (first < 0x80 && *u16 < 0x80) {
+      return first < *u16 ? -1 : 1;
+    }
+
     uint32_t scalar8 = UTF8CharEnumerator::NextChar(&u8, u8end, aErr);
     uint32_t scalar16 = UTF16CharEnumerator::NextChar(&u16, u16end, aErr);
     if (scalar16 == scalar8) {
